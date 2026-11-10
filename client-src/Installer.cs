@@ -22,14 +22,15 @@ namespace AIBlockerInstaller
     {
         private TextBox txtInstallDir;
         private CheckBox chkDesktopShortcut;
+        private CheckBox chkAutoStart;
         private CheckBox chkLaunchAfter;
         private Button btnInstall;
         private Label lblStatus;
 
         public SetupForm()
         {
-            this.Text = "GuardAgent — Setup Instalasi Perangkat Ujian";
-            this.Size = new Size(520, 340);
+            this.Text = "GuardAgent — Setup Instalasi Perangkat (Aktif Terus & Dikendalikan Admin)";
+            this.Size = new Size(520, 370);
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.MaximizeBox = false;
             this.StartPosition = FormStartPosition.CenterScreen;
@@ -45,7 +46,7 @@ namespace AIBlockerInstaller
             };
             Label title = new Label
             {
-                Text = "Instalasi GuardAgent v1.2",
+                Text = "Instalasi GuardAgent v1.3 (Always-On)",
                 Font = new Font("Segoe UI", 12.5f, FontStyle.Bold),
                 ForeColor = Color.White,
                 Location = new Point(20, 13),
@@ -53,7 +54,7 @@ namespace AIBlockerInstaller
             };
             Label sub = new Label
             {
-                Text = "Sistem Proteksi Endpoint Ujian & Integritas Akademik",
+                Text = "Agen Sistem Terpusat — Aktif & Nonaktif Dikendalikan Penuh dari Dashboard Admin",
                 Font = new Font("Segoe UI", 8.5f),
                 ForeColor = Color.FromArgb(203, 213, 225),
                 Location = new Point(20, 39),
@@ -85,10 +86,21 @@ namespace AIBlockerInstaller
             };
             this.Controls.Add(txtInstallDir);
 
+            chkAutoStart = new CheckBox
+            {
+                Text = "Aktif terus di sistem (Jalankan otomatis saat Windows menyala)",
+                Location = new Point(22, 144),
+                AutoSize = true,
+                Checked = true,
+                ForeColor = Color.FromArgb(15, 23, 42),
+                Font = new Font("Segoe UI", 9f, FontStyle.Bold)
+            };
+            this.Controls.Add(chkAutoStart);
+
             chkDesktopShortcut = new CheckBox
             {
                 Text = "Buat pintasan aplikasi pada layar Desktop",
-                Location = new Point(22, 148),
+                Location = new Point(22, 172),
                 AutoSize = true,
                 Checked = true,
                 ForeColor = Color.FromArgb(15, 23, 42)
@@ -97,8 +109,8 @@ namespace AIBlockerInstaller
 
             chkLaunchAfter = new CheckBox
             {
-                Text = "Jalankan aplikasi setelah proses instalasi selesai",
-                Location = new Point(22, 176),
+                Text = "Jalankan agen langsung setelah instalasi selesai",
+                Location = new Point(22, 200),
                 AutoSize = true,
                 Checked = true,
                 ForeColor = Color.FromArgb(15, 23, 42)
@@ -108,7 +120,7 @@ namespace AIBlockerInstaller
             lblStatus = new Label
             {
                 Text = "Siap memasang komponen agen pada perangkat ini.",
-                Location = new Point(22, 214),
+                Location = new Point(22, 236),
                 AutoSize = true,
                 ForeColor = Color.FromArgb(100, 116, 139),
                 Font = new Font("Segoe UI", 8.5f)
@@ -118,7 +130,7 @@ namespace AIBlockerInstaller
             btnInstall = new Button
             {
                 Text = "Pasang Agen",
-                Location = new Point(322, 244),
+                Location = new Point(322, 268),
                 Size = new Size(160, 38),
                 BackColor = Color.FromArgb(15, 23, 42),
                 ForeColor = Color.White,
@@ -162,13 +174,24 @@ namespace AIBlockerInstaller
                 string restoreBat = Path.Combine(targetDir, "Restore-Normal.bat");
                 File.WriteAllText(restoreBat, "@echo off\r\n\"" + targetExe + "\" --restore\r\n");
 
+                if (chkAutoStart.Checked)
+                {
+                    try
+                    {
+                        string args = "/Create /TN \"AIBlockerGuardAgent\" /TR \"\\\"" + targetExe + "\\\" --autostart\" /SC ONLOGON /RL HIGHEST /F";
+                        Process pTask = Process.Start(new ProcessStartInfo("schtasks.exe", args) { CreateNoWindow = true, UseShellExecute = false });
+                        if (pTask != null) pTask.WaitForExit(2500);
+                    }
+                    catch { }
+                }
+
                 if (chkDesktopShortcut.Checked)
                 {
                     CreateDesktopShortcut(targetExe);
                 }
 
                 lblStatus.Text = "Instalasi selesai pada: " + targetDir;
-                MessageBox.Show("GuardAgent berhasil dipasang pada perangkat ini.", "Instalasi Selesai", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("GuardAgent berhasil dipasang dan siap dikendalikan dari Dashboard Admin.", "Instalasi Selesai", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
                 if (chkLaunchAfter.Checked)
                 {

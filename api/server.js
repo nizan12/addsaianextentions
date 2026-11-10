@@ -338,7 +338,16 @@ module.exports = async (req, res) => {
                 }
 
                 const st = data.students[studentId];
-                if (!st.room_code) st.room_code = data.config.room_code || 'KUIS-AI-01';
+                if (name) st.name = name;
+                if (body.room_code) {
+                    const reqRoom = registerRoomIfNeeded(data, body.room_code);
+                    if (st.room_code !== reqRoom) {
+                        st.room_code = reqRoom;
+                        st.target_status = data.config.room_statuses[reqRoom] || globalTarget;
+                    }
+                } else if (!st.room_code) {
+                    st.room_code = data.config.room_code || 'KUIS-AI-01';
+                }
                 registerRoomIfNeeded(data, st.room_code);
                 const prevVpn = Boolean(st.vpn_detected);
 
@@ -367,7 +376,8 @@ module.exports = async (req, res) => {
                         block_vpn: data.config.block_vpn,
                         quarantine_extensions: data.config.quarantine_extensions,
                         kill_processes: data.config.kill_processes
-                    }
+                    },
+                    blocklist: data.blocklist
                 });
             }
 

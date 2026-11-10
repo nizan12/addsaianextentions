@@ -9,6 +9,7 @@ using System.Net.NetworkInformation;
 using System.Security.Principal;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
@@ -18,6 +19,8 @@ namespace AIBlockerGuard
 {
     static class Program
     {
+        private static Mutex appMutex;
+
         [STAThread]
         static void Main(string[] args)
         {
@@ -36,9 +39,20 @@ namespace AIBlockerGuard
                 return;
             }
 
+            bool createdNew;
+            appMutex = new Mutex(true, "Global\\AIBlockerGuard_Singleton_Mutex", out createdNew);
+            if (!createdNew)
+            {
+                return;
+            }
+
+            bool startInTray = args != null && args.Any(a =>
+                a.Equals("--autostart", StringComparison.OrdinalIgnoreCase) ||
+                a.Equals("--tray", StringComparison.OrdinalIgnoreCase));
+
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new MainForm());
+            Application.Run(new MainForm(startInTray));
         }
     }
 
@@ -53,6 +67,15 @@ namespace AIBlockerGuard
         public string QuarantinedAt { get; set; }
     }
 
+    public class AgentConfig
+    {
+        public string Nim { get; set; }
+        public string Name { get; set; }
+        public string RoomCode { get; set; }
+        public string ServerUrl { get; set; }
+        public bool AutoStart { get; set; }
+    }
+
     // ============================================================================
     // 4-LAYER AI BLOCKER ENGINE
     // ============================================================================
@@ -65,6 +88,7 @@ namespace AIBlockerGuard
         public static readonly string QuarantineDir = Path.Combine(AppDataDir, "Quarantine");
         public static readonly string ManifestFile = Path.Combine(AppDataDir, "quarantine_manifest.json");
         public static readonly string VsCodeBackupFile = Path.Combine(AppDataDir, "vscode_settings_backup.json");
+        public static readonly string AgentConfigFile = Path.Combine(AppDataDir, "agent_config.json");
         public static readonly string HostsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), @"drivers\etc\hosts");
         public static readonly string HostsStartMarker = "# >>> AI-BLOCKER-GUARD START >>>";
         public static readonly string HostsEndMarker = "# <<< AI-BLOCKER-GUARD END <<<";
@@ -785,10 +809,97 @@ namespace AIBlockerGuard
             RemoveBrowserPolicies();
             RestoreQuarantinedExtensions();
         }
+
+        public static AgentConfig LoadAgentConfig()
+        {
+            try
+            {
+                if (File.Exists(AgentConfigFile))
+                {
+                    string json = File.ReadAllText(AgentConfigFile, Encoding.UTF8);
+                    JavaScriptSerializer ser = new JavaScriptSerializer();
+                    AgentConfig cfg = ser.Deserialize<AgentConfig>(json);
+                    if (cfg != null) return cfg;
+                }
+            }
+            catch { }
+
+            return new AgentConfig
+            {
+                Nim = Environment.MachineName,
+                Name = Environment.UserName + " (" + Environment.MachineName + ")",
+                RoomCode = "KUIS-AI-01",
+                ServerUrl = "https://blockai-wheat.vercel.app/api/index.php",
+                AutoStart = true
+            };
+        }
+
+        public static void SaveAgentConfig(AgentConfig cfg)
+        {
+            try
+            {
+                EnsureDirectories();
+                JavaScriptSerializer ser = new JavaScriptSerializer();
+                File.WriteAllText(AgentConfigFile, ser.Serialize(cfg), Encoding.UTF8);
+            }
+            catch { }
+        }
+
+        public static void EnsureAutoStartRegistered(bool enable)
+        {
+            string exePath = Application.ExecutablePath;
+            string runVal = "\"" + exePath + "\" --autostart";
+
+            // 1. Registry CurrentUser & LocalMachine Run
+            try
+            {
+                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true))
+                {
+                    if (key != null)
+                    {
+                        if (enable) key.SetValue("AIBlockerGuard", runVal, RegistryValueKind.String);
+                        else key.DeleteValue("AIBlockerGuard", false);
+                    }
+                }
+            }
+            catch { }
+
+            try
+            {
+                using (RegistryKey key = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true))
+                {
+                    if (key != null)
+                    {
+                        if (enable) key.SetValue("AIBlockerGuard", runVal, RegistryValueKind.String);
+                        else key.DeleteValue("AIBlockerGuard", false);
+                    }
+                }
+            }
+            catch { }
+
+            // 2. Windows Task Scheduler (ONLOGON dengan RL HIGHEST agar selalu berjalan sebagai Administrator tanpa UAC)
+            try
+            {
+                string args = enable
+                    ? "/Create /TN \"AIBlockerGuardAgent\" /TR \"\\\"" + exePath + "\\\" --autostart\" /SC ONLOGON /RL HIGHEST /F"
+                    : "/Delete /TN \"AIBlockerGuardAgent\" /F";
+                ProcessStartInfo psi = new ProcessStartInfo("schtasks.exe", args)
+                {
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    WindowStyle = ProcessWindowStyle.Hidden
+                };
+                using (Process p = Process.Start(psi))
+                {
+                    if (p != null) p.WaitForExit(2500);
+                }
+            }
+            catch { }
+        }
     }
 
     // ============================================================================
-    // MAIN DESKTOP FORM UI (PC MAHASISWA)
+    // MAIN DESKTOP FORM UI (PC MAHASISWA — ALWAYS-ON SYSTEM AGENT)
     // ============================================================================
     public class MainForm : Form
     {
@@ -796,12 +907,18 @@ namespace AIBlockerGuard
         private bool isLocked = false;
         private bool isDryRun = false;
         private bool isServerMode = true;
+        private bool startMinimizedInTray = false;
+        private bool allowProcessExit = false;
         private string offlinePin = "202699";
         private int killedCounter = 0;
         private List<string> quarantinedExtensions = new List<string>();
-        private Timer guardTimer;
-        private Timer heartbeatTimer;
+        private System.Windows.Forms.Timer guardTimer;
+        private System.Windows.Forms.Timer heartbeatTimer;
         private JavaScriptSerializer jsonSerializer = new JavaScriptSerializer();
+
+        // System Tray
+        private NotifyIcon trayIcon;
+        private ContextMenuStrip trayMenu;
 
         // UI Controls
         private Panel headerBanner;
@@ -816,10 +933,11 @@ namespace AIBlockerGuard
         private RadioButton rbServerMode;
         private RadioButton rbOfflineMode;
         private CheckBox chkDryRun;
+        private CheckBox chkAutoStart;
 
         private Button btnActivateLock;
         private Button btnUnlockWithPin;
-        private Button btnEmergencyRestore;
+        private Button btnHideToTray;
 
         private Label lblStatDomains;
         private Label lblStatExtensions;
@@ -827,17 +945,74 @@ namespace AIBlockerGuard
         private Label lblStatVpn;
         private ListBox lstLogs;
 
-        public MainForm()
+        public MainForm(bool startInTray = false)
         {
+            this.startMinimizedInTray = startInTray;
             InitializeUi();
+            InitializeTrayIcon();
             CheckInitialEnvironment();
+            this.Shown += MainForm_Shown;
+        }
+
+        private void InitializeTrayIcon()
+        {
+            trayMenu = new ContextMenuStrip();
+            ToolStripMenuItem itemOpen = new ToolStripMenuItem("Buka Jendela Status GuardAgent");
+            itemOpen.Font = new Font("Segoe UI", 9f, FontStyle.Bold);
+            itemOpen.Click += (s, e) => ShowFromTray();
+
+            ToolStripMenuItem itemSync = new ToolStripMenuItem("Sinkronkan dengan Server Admin Sekarang");
+            itemSync.Click += async (s, e) => await ConnectAndSyncServerAsync(false);
+
+            ToolStripMenuItem itemExit = new ToolStripMenuItem("Matikan / Keluar Agen (Wajib PIN Pengawas)");
+            itemExit.Click += async (s, e) => await PromptPinAndExitApplicationAsync();
+
+            trayMenu.Items.Add(itemOpen);
+            trayMenu.Items.Add(itemSync);
+            trayMenu.Items.Add(new ToolStripSeparator());
+            trayMenu.Items.Add(itemExit);
+
+            trayIcon = new NotifyIcon
+            {
+                Icon = SystemIcons.Shield,
+                Text = "GuardAgent — Aktif & Dikendalikan Admin",
+                ContextMenuStrip = trayMenu,
+                Visible = true
+            };
+            trayIcon.DoubleClick += (s, e) => ShowFromTray();
+        }
+
+        private void ShowFromTray()
+        {
+            this.Show();
+            this.ShowInTaskbar = true;
+            this.WindowState = FormWindowState.Normal;
+            this.BringToFront();
+            this.Activate();
+        }
+
+        private void HideToTray(bool showBalloon = true)
+        {
+            this.Hide();
+            this.ShowInTaskbar = false;
+            if (showBalloon && trayIcon != null)
+            {
+                trayIcon.ShowBalloonTip(
+                    2500,
+                    "GuardAgent Aktif di Latar Belakang",
+                    "Agen tetap aktif di sistem. Penguncian dan pembukaan akses AI dikendalikan langsung oleh Admin.",
+                    ToolTipIcon.Info
+                );
+            }
         }
 
         private void InitializeUi()
         {
-            this.Text = "GuardAgent — Sistem Integritas & Proteksi Endpoint Ujian";
-            this.Size = new Size(860, 650);
-            this.MinimumSize = new Size(820, 620);
+            AgentConfig savedCfg = GuardEngine.LoadAgentConfig();
+
+            this.Text = "GuardAgent — Agen Sistem Terpusat (Dikendalikan Admin)";
+            this.Size = new Size(860, 660);
+            this.MinimumSize = new Size(820, 630);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.BackColor = Color.FromArgb(248, 250, 252); // #F8FAFC Surface
             this.ForeColor = Color.FromArgb(15, 23, 42);    // #0F172A Ink
@@ -849,14 +1024,14 @@ namespace AIBlockerGuard
             {
                 Dock = DockStyle.Top,
                 Height = 82,
-                BackColor = Color.FromArgb(15, 23, 42), // Deep Slate saat persiapan
+                BackColor = Color.FromArgb(15, 23, 42), // Deep Slate saat siaga
                 Padding = new Padding(22, 14, 22, 14)
             };
 
             lblBannerTitle = new Label
             {
-                Text = "STATUS ENDPOINT: PERSIAPAN SESI (BELUM TERKUNCI)",
-                Font = new Font("Segoe UI", 12.5f, FontStyle.Bold),
+                Text = "STATUS ENDPOINT: MODE SIAGA (DIKENDALIKAN PENUH OLEH ADMIN)",
+                Font = new Font("Segoe UI", 12f, FontStyle.Bold),
                 ForeColor = Color.White,
                 AutoSize = true,
                 Location = new Point(22, 16)
@@ -864,8 +1039,8 @@ namespace AIBlockerGuard
 
             lblBannerSub = new Label
             {
-                Text = "Lengkapi identitas peserta di bawah ini lalu aktifkan proteksi sebelum ujian dimulai.",
-                Font = new Font("Segoe UI", 9f, FontStyle.Regular),
+                Text = "Agen aktif terus di latar belakang sistem. Penguncian & pembukaan kunci mengikuti instruksi Dashboard Admin secara otomatis.",
+                Font = new Font("Segoe UI", 8.8f, FontStyle.Regular),
                 ForeColor = Color.FromArgb(203, 213, 225),
                 AutoSize = true,
                 Location = new Point(22, 44)
@@ -873,7 +1048,7 @@ namespace AIBlockerGuard
 
             lblAdminBadge = new Label
             {
-                Text = GuardEngine.IsAdministrator() ? "ADMINISTRATOR" : "STANDARD USER",
+                Text = GuardEngine.IsAdministrator() ? "SYSTEM ADMIN" : "STANDARD USER",
                 Font = new Font("Consolas", 8.5f, FontStyle.Bold),
                 ForeColor = GuardEngine.IsAdministrator() ? Color.FromArgb(167, 243, 208) : Color.FromArgb(253, 230, 138),
                 BackColor = Color.FromArgb(30, 41, 59),
@@ -892,7 +1067,7 @@ namespace AIBlockerGuard
             Panel configPanel = new Panel
             {
                 Location = new Point(22, 98),
-                Size = new Size(800, 182),
+                Size = new Size(800, 192),
                 BackColor = Color.White,
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
             };
@@ -900,30 +1075,30 @@ namespace AIBlockerGuard
 
             Label lblSection1 = new Label
             {
-                Text = "PARAMETER PESERTA & KONEKSI SESI UJIAN",
+                Text = "IDENTITAS PERANGKAT / PESERTA & KONEKSI SERVER ADMIN",
                 UseMnemonic = false,
                 Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(71, 85, 105),
-                Location = new Point(18, 14),
+                Location = new Point(18, 12),
                 AutoSize = true
             };
             configPanel.Controls.Add(lblSection1);
 
             // Baris Input 1: NIM & Nama
-            configPanel.Controls.Add(MakeLabel("Nomor Induk Mahasiswa (NIM)", 18, 42));
-            txtNim = MakeTextBox("240101001", 18, 62, 170);
+            configPanel.Controls.Add(MakeLabel("NIM / ID Perangkat", 18, 38));
+            txtNim = MakeTextBox(savedCfg.Nim, 18, 58, 170);
             configPanel.Controls.Add(txtNim);
 
-            configPanel.Controls.Add(MakeLabel("Nama Lengkap Peserta", 204, 42));
-            txtName = MakeTextBox(Environment.UserName, 204, 62, 230);
+            configPanel.Controls.Add(MakeLabel("Nama Peserta / Nama PC Lab", 204, 38));
+            txtName = MakeTextBox(savedCfg.Name, 204, 58, 230);
             configPanel.Controls.Add(txtName);
 
-            configPanel.Controls.Add(MakeLabel("Kode Ruangan Sesi", 450, 42));
-            txtRoomCode = MakeTextBox("KUIS-AI-01", 450, 62, 130);
+            configPanel.Controls.Add(MakeLabel("Kode Ruangan Sesi", 450, 38));
+            txtRoomCode = MakeTextBox(savedCfg.RoomCode, 450, 58, 130);
             configPanel.Controls.Add(txtRoomCode);
 
-            configPanel.Controls.Add(MakeLabel("Identitas Perangkat", 596, 42));
-            TextBox txtHost = MakeTextBox(Environment.MachineName, 596, 62, 184);
+            configPanel.Controls.Add(MakeLabel("Hostname Windows", 596, 38));
+            TextBox txtHost = MakeTextBox(Environment.MachineName, 596, 58, 184);
             txtHost.ReadOnly = true;
             txtHost.BackColor = Color.FromArgb(241, 245, 249);
             txtHost.ForeColor = Color.FromArgb(100, 116, 139);
@@ -932,8 +1107,8 @@ namespace AIBlockerGuard
             // Baris Input 2: Mode Server vs Offline & URL Server
             rbServerMode = new RadioButton
             {
-                Text = "Terhubung Konsol Pengawas (Server)",
-                Location = new Point(18, 102),
+                Text = "Sinkronisasi Otomatis dengan Konsol Admin (24/7)",
+                Location = new Point(18, 96),
                 AutoSize = true,
                 Checked = true,
                 ForeColor = Color.FromArgb(15, 23, 42),
@@ -947,43 +1122,58 @@ namespace AIBlockerGuard
 
             rbOfflineMode = new RadioButton
             {
-                Text = "Mode Mandiri / Offline (Otorisasi PIN Lokal)",
-                Location = new Point(265, 102),
+                Text = "Mode Mandiri / Offline (PIN Lokal)",
+                Location = new Point(335, 96),
                 AutoSize = true,
                 ForeColor = Color.FromArgb(15, 23, 42),
                 Font = new Font("Segoe UI", 9f, FontStyle.Regular)
             };
             configPanel.Controls.Add(rbOfflineMode);
 
-            configPanel.Controls.Add(MakeLabel("Endpoint Server:", 18, 136));
-            txtServerUrl = MakeTextBox("https://blockai-wheat.vercel.app/api/index.php", 125, 133, 395);
+            configPanel.Controls.Add(MakeLabel("Endpoint Server:", 18, 128));
+            txtServerUrl = MakeTextBox(savedCfg.ServerUrl, 125, 125, 405);
             configPanel.Controls.Add(txtServerUrl);
 
             chkDryRun = new CheckBox
             {
-                Text = "Mode Uji Coba (Tanpa Blokir)",
-                Location = new Point(540, 135),
+                Text = "Mode Simulasi",
+                Location = new Point(545, 127),
                 AutoSize = true,
                 ForeColor = Color.FromArgb(71, 85, 105),
                 Font = new Font("Segoe UI", 8.5f, FontStyle.Regular)
             };
             configPanel.Controls.Add(chkDryRun);
 
+            chkAutoStart = new CheckBox
+            {
+                Text = "Aktif terus di sistem (Jalankan otomatis saat Windows menyala & berjalan di System Tray)",
+                Location = new Point(18, 158),
+                AutoSize = true,
+                Checked = savedCfg.AutoStart,
+                ForeColor = Color.FromArgb(15, 23, 42),
+                Font = new Font("Segoe UI", 8.5f, FontStyle.Bold)
+            };
+            chkAutoStart.CheckedChanged += (s, e) => {
+                GuardEngine.EnsureAutoStartRegistered(chkAutoStart.Checked);
+                SaveCurrentAgentConfig();
+            };
+            configPanel.Controls.Add(chkAutoStart);
+
             this.Controls.Add(configPanel);
 
             // 3. KARTU TELEMETRI 4-LAYER
-            int cardY = 294;
+            int cardY = 304;
             int cardW = 191;
-            lblStatDomains = CreateStatCard("CAKUPAN DOMAIN & API", GuardEngine.BlockedDomains.Count + " Domain", Color.FromArgb(15, 23, 42), 22, cardY, cardW);
+            lblStatDomains = CreateStatCard("CAKUPAN DOMAIN & ROBLOX", GuardEngine.BlockedDomains.Count + " Domain", Color.FromArgb(15, 23, 42), 22, cardY, cardW);
             lblStatExtensions = CreateStatCard("KARANTINA EKSTENSI IDE", "0 Ekstensi", Color.FromArgb(15, 23, 42), 225, cardY, cardW);
-            lblStatKilled = CreateStatCard("INTERSEPSI PROSES AI", "0 Insiden", Color.FromArgb(15, 23, 42), 428, cardY, cardW);
-            lblStatVpn = CreateStatCard("INTEGRITAS JARINGAN", "Terverifikasi", Color.FromArgb(4, 120, 87), 631, cardY, cardW);
+            lblStatKilled = CreateStatCard("INTERSEPSI PROSES", "0 Insiden", Color.FromArgb(15, 23, 42), 428, cardY, cardW);
+            lblStatVpn = CreateStatCard("KENDALI SERVER ADMIN", "Menghubungkan...", Color.FromArgb(4, 120, 87), 631, cardY, cardW);
 
             // 4. TOMBOL KONTROL UTAMA
             btnActivateLock = new Button
             {
-                Text = "Aktifkan Proteksi Ujian",
-                Location = new Point(22, 384),
+                Text = "Simpan Identitas & Sinkronkan ke Server Admin",
+                Location = new Point(22, 392),
                 Size = new Size(375, 42),
                 BackColor = Color.FromArgb(15, 23, 42),
                 ForeColor = Color.White,
@@ -997,9 +1187,9 @@ namespace AIBlockerGuard
 
             btnUnlockWithPin = new Button
             {
-                Text = "Buka Kunci (PIN Pengawas)",
-                Location = new Point(410, 384),
-                Size = new Size(245, 42),
+                Text = "Buka Kunci Darurat (PIN Admin)",
+                Location = new Point(410, 392),
+                Size = new Size(235, 42),
                 BackColor = Color.White,
                 ForeColor = Color.FromArgb(15, 23, 42),
                 FlatStyle = FlatStyle.Flat,
@@ -1011,36 +1201,36 @@ namespace AIBlockerGuard
             btnUnlockWithPin.Click += BtnUnlockWithPin_Click;
             this.Controls.Add(btnUnlockWithPin);
 
-            btnEmergencyRestore = new Button
+            btnHideToTray = new Button
             {
-                Text = "Pulihkan Standar",
-                Location = new Point(667, 384),
-                Size = new Size(155, 42),
+                Text = "Sembunyikan ke Tray",
+                Location = new Point(657, 392),
+                Size = new Size(165, 42),
                 BackColor = Color.White,
                 ForeColor = Color.FromArgb(71, 85, 105),
                 FlatStyle = FlatStyle.Flat,
                 Font = new Font("Segoe UI", 9f, FontStyle.Regular),
                 Cursor = Cursors.Hand
             };
-            btnEmergencyRestore.FlatAppearance.BorderColor = Color.FromArgb(203, 213, 225);
-            btnEmergencyRestore.Click += BtnEmergencyRestore_Click;
-            this.Controls.Add(btnEmergencyRestore);
+            btnHideToTray.FlatAppearance.BorderColor = Color.FromArgb(203, 213, 225);
+            btnHideToTray.Click += (s, e) => HideToTray(true);
+            this.Controls.Add(btnHideToTray);
 
             // 5. LOG AKTIVITAS REAL-TIME
             Label lblLogHeader = new Label
             {
-                Text = "JURNAL AUDIT ENDPOINT LOKAL",
+                Text = "JURNAL SINKRONISASI & PENGAWASAN ENDPOINT",
                 UseMnemonic = false,
                 Font = new Font("Segoe UI", 8f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(100, 116, 139),
-                Location = new Point(22, 442),
+                Location = new Point(22, 448),
                 AutoSize = true
             };
             this.Controls.Add(lblLogHeader);
 
             lstLogs = new ListBox
             {
-                Location = new Point(22, 464),
+                Location = new Point(22, 470),
                 Size = new Size(800, 132),
                 BackColor = Color.White,
                 ForeColor = Color.FromArgb(51, 65, 85),
@@ -1050,12 +1240,39 @@ namespace AIBlockerGuard
             };
             this.Controls.Add(lstLogs);
 
-            // Timers
-            guardTimer = new Timer { Interval = 2500 };
+            // Timers: heartbeatTimer berjalan TERUS-MENERUS (24/7) agar Admin dapat mengunci/membuka kapan saja
+            guardTimer = new System.Windows.Forms.Timer { Interval = 2500 };
             guardTimer.Tick += GuardTimer_Tick;
 
-            heartbeatTimer = new Timer { Interval = 4000 };
+            heartbeatTimer = new System.Windows.Forms.Timer { Interval = 3500 };
             heartbeatTimer.Tick += HeartbeatTimer_Tick;
+        }
+
+        private async void MainForm_Shown(object sender, EventArgs e)
+        {
+            GuardEngine.EnsureAutoStartRegistered(chkAutoStart.Checked);
+            SaveCurrentAgentConfig();
+
+            if (startMinimizedInTray)
+            {
+                HideToTray(false);
+            }
+
+            // Langsung aktifkan heartbeat 24/7 dan sinkronkan status dari Server Admin
+            heartbeatTimer.Start();
+            await ConnectAndSyncServerAsync(false);
+        }
+
+        private void SaveCurrentAgentConfig()
+        {
+            GuardEngine.SaveAgentConfig(new AgentConfig
+            {
+                Nim = string.IsNullOrWhiteSpace(txtNim.Text) ? Environment.MachineName : txtNim.Text.Trim(),
+                Name = string.IsNullOrWhiteSpace(txtName.Text) ? Environment.UserName : txtName.Text.Trim(),
+                RoomCode = string.IsNullOrWhiteSpace(txtRoomCode.Text) ? "KUIS-AI-01" : txtRoomCode.Text.Trim().ToUpperInvariant(),
+                ServerUrl = txtServerUrl.Text.Trim(),
+                AutoStart = chkAutoStart.Checked
+            });
         }
 
         private void DrawCardBorder(object sender, PaintEventArgs e)
@@ -1130,10 +1347,10 @@ namespace AIBlockerGuard
 
         private void CheckInitialEnvironment()
         {
-            AddLog("Agen Guard siap. Hak akses Administrator: " + (GuardEngine.IsAdministrator() ? "AKTIF" : "TIDAK AKTIF"));
+            AddLog("GuardAgent berjalan dalam Mode Aktif Terus (Always-On). Hak Administrator: " + (GuardEngine.IsAdministrator() ? "AKTIF" : "TIDAK AKTIF"));
             if (!GuardEngine.IsAdministrator())
             {
-                AddLog("PERINGATAN: Jalankan aplikasi sebagai Administrator agar penguncian Hosts & Registry DoH berlaku penuh.");
+                AddLog("PERINGATAN: Jalankan aplikasi sebagai Administrator agar penguncian Hosts & Registry berlaku penuh.");
             }
         }
 
@@ -1150,32 +1367,71 @@ namespace AIBlockerGuard
         }
 
         // ====================================================================
-        // AKTIVASI & PENONAKTIFAN KUNCI UJIAN
+        // SINKRONISASI & KENDALI PENUH OLEH ADMIN SERVER
         // ====================================================================
         private async void BtnActivateLock_Click(object sender, EventArgs e)
         {
             if (string.IsNullOrWhiteSpace(txtNim.Text) || string.IsNullOrWhiteSpace(txtName.Text))
             {
-                MessageBox.Show("NIM dan Nama Lengkap wajib diisi sebelum mengaktifkan proteksi ujian.", "Validasi Identitas", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("NIM / ID Perangkat dan Nama wajib diisi.", "Validasi Identitas", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
             isDryRun = chkDryRun.Checked;
-            btnActivateLock.Enabled = false;
+            SaveCurrentAgentConfig();
 
             if (isServerMode)
             {
-                AddLog("Menghubungi Konsol Pengawas (" + txtServerUrl.Text.Trim() + ")...");
-                bool joined = await JoinServerAsync();
-                if (!joined)
-                {
-                    AddLog("Koneksi ke server gagal. Anda dapat memilih 'Mode Mandiri / Offline' apabila ujian dilaksanakan tanpa server.");
-                    btnActivateLock.Enabled = true;
-                    return;
-                }
+                await ConnectAndSyncServerAsync(true);
+            }
+            else
+            {
+                ActivateProtectionState();
+            }
+        }
+
+        private async Task ConnectAndSyncServerAsync(bool showDialogOnError)
+        {
+            if (!isServerMode) return;
+            AddLog("Menghubungkan & menyinkronkan status dengan Server Admin (" + txtRoomCode.Text.Trim().ToUpperInvariant() + ")...");
+            string targetStatus = await JoinServerAsync(showDialogOnError);
+            if (string.IsNullOrEmpty(targetStatus))
+            {
+                lblStatVpn.Text = "Menunggu Server";
+                lblStatVpn.ForeColor = Color.FromArgb(180, 83, 9);
+                return;
             }
 
-            ActivateProtectionState();
+            lblStatVpn.Text = "Tersambung Admin";
+            lblStatVpn.ForeColor = Color.FromArgb(4, 120, 87);
+
+            if (targetStatus.Equals("LOCKED", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!isLocked) ActivateProtectionState();
+            }
+            else
+            {
+                if (isLocked)
+                {
+                    DeactivateProtectionState("Status ruangan/perangkat pada Dashboard Admin: TERBUKA (UNLOCKED)");
+                }
+                else
+                {
+                    SetStandbyBannerUI();
+                }
+            }
+        }
+
+        private void SetStandbyBannerUI()
+        {
+            headerBanner.BackColor = Color.FromArgb(15, 23, 42);
+            lblBannerTitle.Text = "STATUS ENDPOINT: SIAGA / TIDAK TERKUNCI (DIKENDALIKAN ADMIN)";
+            lblBannerSub.Text = string.Format("Terhubung ke Ruangan [{0}] sebagai {1} ({2}) · Menunggu instruksi Kunci dari Admin.",
+                txtRoomCode.Text.Trim().ToUpperInvariant(), txtName.Text.Trim(), txtNim.Text.Trim());
+            if (trayIcon != null)
+            {
+                trayIcon.Text = "GuardAgent: SIAGA (Terbuka) — [" + txtRoomCode.Text.Trim().ToUpperInvariant() + "]";
+            }
         }
 
         private void ActivateProtectionState()
@@ -1185,10 +1441,15 @@ namespace AIBlockerGuard
             // Update UI Banner ke Emerald (Terkunci & Terverifikasi)
             headerBanner.BackColor = isDryRun ? Color.FromArgb(30, 58, 138) : Color.FromArgb(6, 95, 70);
             lblBannerTitle.Text = isDryRun
-                ? "STATUS ENDPOINT: MODE SIMULASI AKTIF (PEMANTAUAN TANPA BLOKIR)"
-                : "STATUS ENDPOINT: PROTEKSI UJIAN AKTIF — AKSES AI DIBLOKIR";
-            lblBannerSub.Text = string.Format("Peserta: {0} ({1}) · Sesi: {2} · Penutupan aplikasi dinonaktifkan selama ujian.",
-                txtName.Text.Trim(), txtNim.Text.Trim(), txtRoomCode.Text.Trim());
+                ? "STATUS ENDPOINT: MODE SIMULASI AKTIF (DIKENDALIKAN ADMIN)"
+                : "STATUS ENDPOINT: TERKUNCI OLEH ADMIN — AI & ROBLOX DIBLOKIR";
+            lblBannerSub.Text = string.Format("Peserta: {0} ({1}) · Ruangan: {2} · Hanya Admin yang dapat membuka kunci sesi ini.",
+                txtName.Text.Trim(), txtNim.Text.Trim(), txtRoomCode.Text.Trim().ToUpperInvariant());
+
+            if (trayIcon != null)
+            {
+                trayIcon.Text = "GuardAgent: TERKUNCI (AI & Roblox Diblokir) — [" + txtRoomCode.Text.Trim().ToUpperInvariant() + "]";
+            }
 
             txtNim.Enabled = false;
             txtName.Enabled = false;
@@ -1197,8 +1458,8 @@ namespace AIBlockerGuard
             rbServerMode.Enabled = false;
             rbOfflineMode.Enabled = false;
             chkDryRun.Enabled = false;
+            chkAutoStart.Enabled = false;
             btnActivateLock.Enabled = false;
-            btnEmergencyRestore.Enabled = false;
             btnUnlockWithPin.Enabled = true;
 
             // Layer 1: Hosts & DNS
@@ -1213,13 +1474,13 @@ namespace AIBlockerGuard
                 ? "[SIMULASI] Kebijakan penonaktifan DNS-over-HTTPS (DoH) Chrome/Edge/Brave disiapkan."
                 : "Layer 2 Aktif: Kebijakan DNS-over-HTTPS (DoH) & AI Browser dinonaktifkan.");
 
-            // Layer 3: Karantina Ekstensi VS Code
+            // Layer 3: Karantina Ekstensi VS Code + Built-in Copilot
             quarantinedExtensions = GuardEngine.ScanAndQuarantineExtensions(isDryRun);
-            lblStatExtensions.Text = quarantinedExtensions.Count + " Ekstensi";
+            lblStatExtensions.Text = quarantinedExtensions.Count + " Modul";
             if (quarantinedExtensions.Count > 0)
             {
-                string extMsg = (isDryRun ? "[SIMULASI] Terdeteksi " : "Layer 3 Aktif: Mengkarantina ") +
-                    quarantinedExtensions.Count + " ekstensi AI IDE: " + string.Join(", ", quarantinedExtensions);
+                string extMsg = (isDryRun ? "[SIMULASI] Terdeteksi " : "Layer 3 Aktif: Mengunci ") +
+                    quarantinedExtensions.Count + " modul AI IDE: " + string.Join(", ", quarantinedExtensions);
                 AddLog(extMsg);
                 if (isServerMode)
                 {
@@ -1231,9 +1492,9 @@ namespace AIBlockerGuard
                 AddLog("Layer 3 Aktif: Direktori ekstensi IDE bersih dari modul AI.");
             }
 
-            // Layer 4: Mulai Timer Watcher Proses & Heartbeat
+            // Layer 4: Mulai Timer Watcher Proses & pastikan Heartbeat tetap berjalan
             guardTimer.Start();
-            if (isServerMode) heartbeatTimer.Start();
+            if (isServerMode && !heartbeatTimer.Enabled) heartbeatTimer.Start();
             RunGuardCycle();
         }
 
@@ -1241,15 +1502,18 @@ namespace AIBlockerGuard
         {
             isLocked = false;
             guardTimer.Stop();
-            heartbeatTimer.Stop();
+            // PENTING: heartbeatTimer TIDAK dihentikan agar Admin bisa mengunci kembali kapan saja!
+            if (isServerMode && !heartbeatTimer.Enabled)
+            {
+                heartbeatTimer.Start();
+            }
 
             GuardEngine.RemoveHostsBlock();
             GuardEngine.RemoveBrowserPolicies();
             int restoredCount = GuardEngine.RestoreQuarantinedExtensions();
 
-            headerBanner.BackColor = Color.FromArgb(15, 23, 42);
-            lblBannerTitle.Text = "STATUS ENDPOINT: SESI SELESAI — KONFIGURASI PC DIPULIHKAN";
-            lblBannerSub.Text = reason + string.Format(" ({0} ekstensi IDE telah dikembalikan).", restoredCount);
+            SetStandbyBannerUI();
+            lblBannerSub.Text = reason + string.Format(" ({0} modul IDE dipulihkan · Agen tetap siaga memantau perintah Admin).", restoredCount);
 
             txtNim.Enabled = true;
             txtName.Enabled = true;
@@ -1258,16 +1522,17 @@ namespace AIBlockerGuard
             rbServerMode.Enabled = true;
             rbOfflineMode.Enabled = true;
             chkDryRun.Enabled = true;
+            chkAutoStart.Enabled = true;
             btnActivateLock.Enabled = true;
-            btnEmergencyRestore.Enabled = true;
             btnUnlockWithPin.Enabled = false;
 
-            lblStatExtensions.Text = "0 Ekstensi";
-            AddLog("SESI BERAKHIR: " + reason + ". File hosts, kebijakan DNS, dan " + restoredCount + " ekstensi IDE telah dipulihkan.");
+            quarantinedExtensions.Clear();
+            lblStatExtensions.Text = "0 Modul";
+            AddLog("MODE SIAGA: " + reason + ". File hosts, kebijakan DNS, dan ekstensi IDE telah dipulihkan.");
         }
 
         // ====================================================================
-        // TIMER SIKLUS PENGAWASAN LOKAL (SETIAP 2.5 DETIK)
+        // TIMER SIKLUS PENGAWASAN LOKAL (SETIAP 2.5 DETIK SAAT TERKUNCI)
         // ====================================================================
         private void GuardTimer_Tick(object sender, EventArgs e)
         {
@@ -1287,14 +1552,14 @@ namespace AIBlockerGuard
                 if (isServerMode) { var u1 = SendViolationAsync("HOSTS_TAMPER", alert, "DANGER"); }
             }
 
-            // 2. Cek & matikan proses AI IDE / Local LLM
+            // 2. Cek & matikan proses AI IDE / Local LLM / Roblox
             List<string> killed = GuardEngine.ScanAndKillAiProcesses(isDryRun);
             if (killed.Count > 0)
             {
                 killedCounter += killed.Count;
                 lblStatKilled.Text = killedCounter + " Insiden";
                 lblStatKilled.ForeColor = Color.FromArgb(185, 28, 28);
-                string actionWord = isDryRun ? "[SIMULASI] Terdeteksi proses AI aktif: " : "Menghentikan proses/port AI terlarang: ";
+                string actionWord = isDryRun ? "[SIMULASI] Terdeteksi proses terlarang: " : "Menghentikan proses terlarang (AI/Roblox): ";
                 string fullMsg = actionWord + string.Join(", ", killed);
                 AddLog("INTERSEPSI: " + fullMsg);
                 if (isServerMode) { var u2 = SendViolationAsync("PROCESS_KILLED", fullMsg, "DANGER"); }
@@ -1305,7 +1570,7 @@ namespace AIBlockerGuard
             if (newlyQuarantined.Count != quarantinedExtensions.Count)
             {
                 quarantinedExtensions = newlyQuarantined;
-                lblStatExtensions.Text = quarantinedExtensions.Count + " Ekstensi";
+                lblStatExtensions.Text = quarantinedExtensions.Count + " Modul";
             }
 
             // 4. Cek VPN / Tunneling
@@ -1318,38 +1583,40 @@ namespace AIBlockerGuard
             }
             else
             {
-                lblStatVpn.Text = "Terverifikasi";
+                lblStatVpn.Text = "Tersambung Admin";
                 lblStatVpn.ForeColor = Color.FromArgb(4, 120, 87);
             }
         }
 
         // ====================================================================
-        // KOMUNIKASI DENGAN SERVER DASHBOARD DOSEN
+        // KOMUNIKASI 24/7 DENGAN SERVER DASHBOARD ADMIN
         // ====================================================================
-        private async Task<bool> JoinServerAsync()
+        private async Task<string> JoinServerAsync(bool showErrorDialog)
         {
             try
             {
                 var payload = new Dictionary<string, object>
                 {
                     { "action", "join" },
-                    { "nim", txtNim.Text.Trim() },
-                    { "name", txtName.Text.Trim() },
+                    { "nim", string.IsNullOrWhiteSpace(txtNim.Text) ? Environment.MachineName : txtNim.Text.Trim() },
+                    { "name", string.IsNullOrWhiteSpace(txtName.Text) ? Environment.UserName : txtName.Text.Trim() },
                     { "hostname", Environment.MachineName },
-                    { "room_code", txtRoomCode.Text.Trim() },
+                    { "room_code", string.IsNullOrWhiteSpace(txtRoomCode.Text) ? "KUIS-AI-01" : txtRoomCode.Text.Trim().ToUpperInvariant() },
                     { "os_info", Environment.OSVersion.VersionString },
-                    { "version", "1.0.0" }
+                    { "version", "1.3.0" }
                 };
 
                 var response = await PostJsonAsync(txtServerUrl.Text.Trim(), payload);
                 if (response == null || !response.ContainsKey("ok") || !(bool)response["ok"])
                 {
-                    string err = response != null && response.ContainsKey("error") ? Convert.ToString(response["error"]) : "Koneksi ke server gagal.";
-                    MessageBox.Show(err, "Gagal Terhubung ke Ruangan", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    return false;
+                    if (showErrorDialog)
+                    {
+                        string err = response != null && response.ContainsKey("error") ? Convert.ToString(response["error"]) : "Koneksi ke server gagal.";
+                        MessageBox.Show(err, "Gagal Terhubung ke Server Admin", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    }
+                    return null;
                 }
 
-                // Sinkronkan daftar blokir dari Server jika ada
                 if (response.ContainsKey("blocklist"))
                 {
                     var bl = response["blocklist"] as Dictionary<string, object>;
@@ -1359,13 +1626,26 @@ namespace AIBlockerGuard
                     }
                 }
 
-                AddLog("Berhasil terhubung ke Server Ruangan: " + txtRoomCode.Text.Trim());
-                return true;
+                string targetStatus = "LOCKED";
+                if (response.ContainsKey("config"))
+                {
+                    var cfg = response["config"] as Dictionary<string, object>;
+                    if (cfg != null && cfg.ContainsKey("target_status"))
+                    {
+                        targetStatus = Convert.ToString(cfg["target_status"]);
+                    }
+                }
+
+                AddLog("Tersambung ke Server Admin · Ruangan [" + txtRoomCode.Text.Trim().ToUpperInvariant() + "] · Instruksi: " + targetStatus);
+                return targetStatus;
             }
             catch (Exception ex)
             {
-                MessageBox.Show("Tidak dapat menghubungi Server Dashboard:\n" + ex.Message, "Koneksi Server", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return false;
+                if (showErrorDialog)
+                {
+                    MessageBox.Show("Tidak dapat menghubungi Server Dashboard:\n" + ex.Message, "Koneksi Server", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+                return null;
             }
         }
 
@@ -1380,9 +1660,10 @@ namespace AIBlockerGuard
                 var payload = new Dictionary<string, object>
                 {
                     { "action", "heartbeat" },
-                    { "nim", txtNim.Text.Trim() },
-                    { "name", txtName.Text.Trim() },
+                    { "nim", string.IsNullOrWhiteSpace(txtNim.Text) ? Environment.MachineName : txtNim.Text.Trim() },
+                    { "name", string.IsNullOrWhiteSpace(txtName.Text) ? Environment.UserName : txtName.Text.Trim() },
                     { "hostname", Environment.MachineName },
+                    { "room_code", string.IsNullOrWhiteSpace(txtRoomCode.Text) ? "KUIS-AI-01" : txtRoomCode.Text.Trim().ToUpperInvariant() },
                     { "status", isDryRun ? "DRY_RUN" : (isLocked ? "LOCKED" : "UNLOCKED") },
                     { "quarantined_count", quarantinedExtensions.Count },
                     { "quarantined_list", quarantinedExtensions },
@@ -1393,13 +1674,20 @@ namespace AIBlockerGuard
                 var res = await PostJsonAsync(txtServerUrl.Text.Trim(), payload);
                 if (res != null && res.ContainsKey("ok") && (bool)res["ok"])
                 {
+                    if (res.ContainsKey("blocklist"))
+                    {
+                        var bl = res["blocklist"] as Dictionary<string, object>;
+                        if (bl != null) UpdateLocalBlocklistFromServer(bl);
+                    }
+
                     string target = res.ContainsKey("target_status") ? Convert.ToString(res["target_status"]) : "LOCKED";
                     if (target.Equals("UNLOCKED", StringComparison.OrdinalIgnoreCase) && isLocked)
                     {
-                        DeactivateProtectionState("Dibuka dari jarak jauh oleh Dosen melalui Dashboard Pengawas");
+                        DeactivateProtectionState("Dinonaktifkan dari jarak jauh oleh Admin melalui Dashboard Pengawas");
                     }
                     else if (target.Equals("LOCKED", StringComparison.OrdinalIgnoreCase) && !isLocked)
                     {
+                        AddLog("INSTRUKSI ADMIN DITERIMA: Mengaktifkan penguncian AI & Roblox secara otomatis...");
                         ActivateProtectionState();
                     }
                 }
@@ -1464,6 +1752,7 @@ namespace AIBlockerGuard
                             .ToList();
                     }
                 }
+                lblStatDomains.Text = GuardEngine.BlockedDomains.Count + " Domain";
             }
             catch { }
         }
@@ -1513,12 +1802,11 @@ namespace AIBlockerGuard
         }
 
         // ====================================================================
-        // BUKA KUNCI DENGAN PIN DOSEN & PEMULIHAN
+        // OTORISASI PIN ADMIN UNTUK BUKA KUNCI DARURAT / MATIKAN AGEN
         // ====================================================================
-        private async void BtnUnlockWithPin_Click(object sender, EventArgs e)
+        private async Task<bool> VerifyAdminPinAsync(string inputPin)
         {
-            string inputPin = PromptPinDialog();
-            if (string.IsNullOrEmpty(inputPin)) return;
+            if (string.IsNullOrEmpty(inputPin)) return false;
 
             if (isServerMode)
             {
@@ -1533,54 +1821,72 @@ namespace AIBlockerGuard
                 var res = await PostJsonAsync(txtServerUrl.Text.Trim(), payload);
                 if (res != null && res.ContainsKey("unlocked") && (bool)res["unlocked"])
                 {
-                    DeactivateProtectionState("Kunci dibuka menggunakan PIN Dosen yang terverifikasi Server");
-                    return;
+                    return true;
                 }
             }
 
-            // Fallback ke PIN Offline default jika server tidak terjangkau atau Mode Offline
-            if (inputPin.Trim() == offlinePin)
+            return inputPin.Trim() == offlinePin;
+        }
+
+        private async void BtnUnlockWithPin_Click(object sender, EventArgs e)
+        {
+            string inputPin = PromptPinDialog("Masukkan PIN Admin/Pengawas untuk membuka kunci secara lokal:");
+            if (string.IsNullOrEmpty(inputPin)) return;
+
+            if (await VerifyAdminPinAsync(inputPin))
             {
-                DeactivateProtectionState("Kunci dibuka menggunakan PIN Pengawas Lokal");
+                DeactivateProtectionState("Kunci dibuka menggunakan PIN Otorisasi Admin");
             }
             else
             {
-                AddLog("PERINGATAN: Percobaan membuka kunci gagal (PIN Pengawas salah)!");
-                MessageBox.Show("PIN Dosen/Pengawas yang dimasukkan salah!", "Akses Ditolak", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                AddLog("PERINGATAN: Percobaan membuka kunci gagal (PIN Admin salah)!");
+                MessageBox.Show("PIN Admin/Pengawas yang dimasukkan salah!", "Akses Ditolak", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
-        private void BtnEmergencyRestore_Click(object sender, EventArgs e)
+        private async Task PromptPinAndExitApplicationAsync()
         {
-            if (isLocked)
+            string inputPin = PromptPinDialog("Masukkan PIN Admin/Pengawas untuk mematikan agen latar belakang:");
+            if (string.IsNullOrEmpty(inputPin)) return;
+
+            if (await VerifyAdminPinAsync(inputPin))
             {
-                MessageBox.Show("Tidak dapat memulihkan tanpa PIN saat Mode Ujian sedang Terkunci!", "Terkunci", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
+                allowProcessExit = true;
+                heartbeatTimer.Stop();
+                guardTimer.Stop();
+                GuardEngine.EmergencyRestoreAll();
+                if (trayIcon != null)
+                {
+                    trayIcon.Visible = false;
+                    trayIcon.Dispose();
+                }
+                Application.Exit();
             }
-            GuardEngine.EmergencyRestoreAll();
-            AddLog("Pemulihan bersih selesai: File hosts, Browser DoH, dan ekstensi IDE telah dipastikan normal.");
-            MessageBox.Show("Sistem PC Anda telah dipastikan bersih dan kembali ke pengaturan normal.", "Pemulihan Selesai", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            else
+            {
+                MessageBox.Show("PIN Admin/Pengawas salah! Agen tetap aktif di sistem.", "Akses Ditolak", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
-        private string PromptPinDialog()
+        private string PromptPinDialog(string labelText)
         {
             using (Form prompt = new Form())
             {
                 prompt.Width = 380;
                 prompt.Height = 190;
                 prompt.FormBorderStyle = FormBorderStyle.FixedDialog;
-                prompt.Text = "Masukkan PIN Dosen / Pengawas";
-                prompt.StartPosition = FormStartPosition.CenterParent;
+                prompt.Text = "Otorisasi PIN Admin / Pengawas";
+                prompt.StartPosition = FormStartPosition.CenterScreen;
                 prompt.MaximizeBox = false;
                 prompt.MinimizeBox = false;
                 prompt.BackColor = Color.FromArgb(15, 23, 42);
                 prompt.ForeColor = Color.White;
 
-                Label lbl = new Label { Left = 20, Top = 20, Width = 320, Text = "Masukkan PIN Pengawas untuk membuka blokir AI:" };
-                TextBox txt = new TextBox { Left = 20, Top = 50, Width = 320, PasswordChar = '●', Font = new Font("Consolas", 12f) };
+                Label lbl = new Label { Left = 20, Top = 20, Width = 330, Text = labelText };
+                TextBox txt = new TextBox { Left = 20, Top = 52, Width = 320, PasswordChar = '●', Font = new Font("Consolas", 12f) };
                 Button btnOk = new Button
                 {
-                    Text = "Verifikasi & Buka Kunci",
+                    Text = "Verifikasi PIN",
                     Left = 170,
                     Width = 170,
                     Top = 95,
@@ -1601,20 +1907,18 @@ namespace AIBlockerGuard
 
         private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
         {
-            if (isLocked)
+            // Jika pengguna menekan tombol [X], JANGAN matikan aplikasi — sembunyikan ke System Tray
+            // agar tetap aktif terus di sistem dan dikendalikan penuh oleh Admin!
+            if (!allowProcessExit && e.CloseReason == CloseReason.UserClosing)
             {
                 e.Cancel = true;
-                MessageBox.Show(
-                    "Aplikasi AI-Blocker Guard tidak dapat ditutup selama sesi kuis/ujian masih TERKUNCI!\n\nMinta Dosen/Pengawas untuk membuka kunci dari Dashboard atau masukkan PIN Pengawas.",
-                    "Proteksi Ujian Aktif",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Stop
-                );
+                HideToTray(true);
+                return;
             }
-            else
+
+            if (trayIcon != null)
             {
-                // Pastikan semua aturan dibersihkan saat keluar dalam keadaan tidak terkunci
-                GuardEngine.EmergencyRestoreAll();
+                trayIcon.Visible = false;
             }
         }
     }

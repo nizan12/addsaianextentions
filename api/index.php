@@ -146,7 +146,16 @@ try {
                 }
 
                 $student = &$data['students'][$studentId];
-                if (empty($student['room_code'])) {
+                if ($name !== '') {
+                    $student['name'] = $name;
+                }
+                if (!empty($jsonInput['room_code'])) {
+                    $reqRoom = Storage::registerRoomIfNeeded($data, $jsonInput['room_code']);
+                    if (($student['room_code'] ?? '') !== $reqRoom) {
+                        $student['room_code'] = $reqRoom;
+                        $student['target_status'] = $data['config']['room_statuses'][$reqRoom] ?? $globalTarget;
+                    }
+                } elseif (empty($student['room_code'])) {
                     $student['room_code'] = $data['config']['room_code'] ?? 'KUIS-AI-01';
                 }
                 Storage::registerRoomIfNeeded($data, $student['room_code']);
@@ -179,7 +188,8 @@ try {
                         'block_vpn' => $data['config']['block_vpn'],
                         'quarantine_extensions' => $data['config']['quarantine_extensions'],
                         'kill_processes' => $data['config']['kill_processes']
-                    ]
+                    ],
+                    'blocklist' => $data['blocklist']
                 ];
             });
 
