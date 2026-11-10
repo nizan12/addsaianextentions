@@ -43,7 +43,7 @@
 <body class="h-screen overflow-hidden flex bg-[#F8FAFC] text-slate-900">
 
     <!-- ======================================================================= -->
-    <!-- GERBANG OTENTIKASI PENGAWAS / ADMIN (FIREBASE AUTH + ADMIN CREDENTIALS) -->
+    <!-- GERBANG OTENTIKASI PENGAWAS / ADMIN                                     -->
     <!-- ======================================================================= -->
     <div id="authGateOverlay" class="fixed inset-0 z-50 bg-[#0F172A] flex items-center justify-center p-4">
         <div class="w-full max-w-md bg-white rounded-2xl border border-slate-200 shadow-2xl overflow-hidden">
@@ -56,23 +56,22 @@
                     </div>
                     <div>
                         <h1 class="text-sm font-semibold tracking-tight">GuardConsole Admin</h1>
-                        <p class="text-[11px] text-slate-400">Otentikasi Konsol Pengawas & Firebase Cloud</p>
+                        <p class="text-[11px] text-slate-400">Otentikasi Konsol Pengawas Ujian</p>
                     </div>
                 </div>
-                <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-emerald-400 border border-slate-700">blockai-ba569</span>
             </div>
 
-            <form onsubmit="handleAdminLogin(event)" class="p-6 space-y-4">
+            <form onsubmit="handleAdminLogin(event)" autocomplete="off" class="p-6 space-y-4">
                 <div id="loginErrorBox" class="hidden p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700 font-medium"></div>
 
                 <div>
                     <label class="block text-xs font-semibold text-slate-700 mb-1.5">Email Pengawas / ID Admin</label>
-                    <input type="text" id="loginEmail" required value="admin@guard.edu" placeholder="admin@guard.edu" class="w-full rounded-lg bg-slate-50 border border-slate-300 px-3.5 py-2.5 text-xs font-mono text-slate-900 focus:bg-white focus:border-slate-900 focus:outline-none">
+                    <input type="text" id="loginEmail" name="guard_auth_user" required autocomplete="off" readonly onfocus="this.removeAttribute('readonly')" value="" placeholder="Masukkan email atau ID pengawas" class="w-full rounded-lg bg-slate-50 border border-slate-300 px-3.5 py-2.5 text-xs font-mono text-slate-900 focus:bg-white focus:border-slate-900 focus:outline-none">
                 </div>
 
                 <div>
-                    <label class="block text-xs font-semibold text-slate-700 mb-1.5">Kata Sandi / PIN Master Pengawas</label>
-                    <input type="password" id="loginPassword" required placeholder="Masukkan kata sandi atau PIN Master (default: admin123 / 202699)" class="w-full rounded-lg bg-slate-50 border border-slate-300 px-3.5 py-2.5 text-xs font-mono text-slate-900 focus:bg-white focus:border-slate-900 focus:outline-none">
+                    <label class="block text-xs font-semibold text-slate-700 mb-1.5">Kata Sandi Pengawas</label>
+                    <input type="password" id="loginPassword" name="guard_auth_secret" required autocomplete="new-password" readonly onfocus="this.removeAttribute('readonly')" value="" placeholder="Masukkan kata sandi pengawas" class="w-full rounded-lg bg-slate-50 border border-slate-300 px-3.5 py-2.5 text-xs font-mono text-slate-900 focus:bg-white focus:border-slate-900 focus:outline-none">
                 </div>
 
                 <div class="pt-1">
@@ -82,7 +81,7 @@
                 </div>
 
                 <div class="pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
-                    <span>Terhubung ke Firebase Project: <code class="text-slate-600 font-mono">blockai-ba569</code></span>
+                    <span>Sistem Pengawasan Integritas Akademik</span>
                     <span>v1.5</span>
                 </div>
             </form>
@@ -188,14 +187,14 @@
             </div>
 
             <div class="pt-2 border-t border-slate-200/80 flex items-center justify-between text-[11px] text-slate-500">
-                <span id="sidebarAdminEmail" class="truncate font-mono text-[10px] text-slate-600">admin@guard.edu</span>
+                <span id="sidebarAdminEmail" class="truncate font-mono text-[10px] text-slate-600">Pengawas Aktif</span>
                 <button onclick="handleAdminLogout()" class="text-rose-600 hover:text-rose-700 font-semibold shrink-0">Keluar</button>
             </div>
 
             <div class="pt-1 flex items-center justify-between text-[11px] text-slate-400">
                 <span class="flex items-center gap-1.5">
                     <span id="firebaseSyncDot" class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
-                    <span id="firebaseSyncLabel">Firebase Sync</span>
+                    <span id="firebaseSyncLabel">Sinkronisasi Aktif</span>
                 </span>
                 <span id="lastSyncClock" class="font-mono tabular-nums">--:--:--</span>
             </div>
@@ -515,11 +514,11 @@
                                 </div>
                                 <div>
                                     <label class="block text-xs font-medium text-slate-700 mb-1.5">Email Login Pengawas</label>
-                                    <input type="text" id="cfgAdminEmail" autocomplete="off" class="w-full rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono font-medium text-slate-900 focus:border-slate-500 focus:outline-none" value="admin@guard.edu">
+                                    <input type="text" id="cfgAdminEmail" autocomplete="off" readonly onfocus="this.removeAttribute('readonly')" placeholder="Kosongkan jika tidak diubah" class="w-full rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono font-medium text-slate-900 focus:border-slate-500 focus:outline-none" value="">
                                 </div>
                                 <div>
                                     <label class="block text-xs font-medium text-slate-700 mb-1.5">Kata Sandi Login Dashboard</label>
-                                    <input type="text" id="cfgAdminPassword" autocomplete="off" style="-webkit-text-security: disc;" placeholder="Kosongkan jika tidak diubah" class="w-full rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono font-medium text-slate-900 focus:border-slate-500 focus:outline-none">
+                                    <input type="text" id="cfgAdminPassword" autocomplete="off" readonly onfocus="this.removeAttribute('readonly')" style="-webkit-text-security: disc;" placeholder="Kosongkan jika tidak diubah" class="w-full rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono font-medium text-slate-900 focus:border-slate-500 focus:outline-none" value="">
                                 </div>
                             </div>
 
@@ -931,13 +930,13 @@
             btn.textContent = 'Memverifikasi Kredensial...';
 
             try {
-                // 1. Coba login melalui Firebase Auth jika akun terdaftar di Firebase Authentication
+                // 1. Coba login melalui Cloud Auth jika akun terdaftar
                 if (window.__firebaseApp && window.__firebaseApp.auth && email.includes('@')) {
                     try {
                         const cred = await window.__firebaseApp.signInWithEmailAndPassword(window.__firebaseApp.auth, email, password);
                         if (cred && cred.user) {
                             completeAdminAuth(cred.user.email);
-                            showToast('Login berhasil melalui Firebase Authentication');
+                            showToast('Selamat datang di Konsol Pengawas GuardConsole');
                             btn.disabled = false;
                             btn.textContent = 'Masuk ke Konsol Pengawas';
                             return;
@@ -958,7 +957,7 @@
                     completeAdminAuth(data.user?.email || email);
                     showToast('Selamat datang di Konsol Pengawas GuardConsole');
                 } else {
-                    errBox.textContent = data.error || 'Email atau Kata Sandi / PIN Master tidak valid.';
+                    errBox.textContent = data.error || 'Email atau Kata Sandi tidak valid.';
                     errBox.classList.remove('hidden');
                 }
             } catch (err) {
@@ -975,7 +974,10 @@
             if (window.__firebaseApp && window.__firebaseApp.auth) {
                 try { await window.__firebaseApp.signOut(window.__firebaseApp.auth); } catch (e) {}
             }
-            document.getElementById('loginPassword').value = '';
+            const emailInp = document.getElementById('loginEmail');
+            const passInp = document.getElementById('loginPassword');
+            if (emailInp) { emailInp.value = ''; emailInp.setAttribute('readonly', 'readonly'); }
+            if (passInp) { passInp.value = ''; passInp.setAttribute('readonly', 'readonly'); }
             document.getElementById('authGateOverlay').classList.remove('hidden');
         }
 
@@ -1356,9 +1358,6 @@
                     document.getElementById('inputExtensions').value = (data.blocklist.ide_extensions || []).join('\n');
                     document.getElementById('cfgRoomCode').value = currentRoomCode;
                     document.getElementById('cfgUnlockPin').value = currentUnlockPin;
-                    if (data.config.admin_email) {
-                        document.getElementById('cfgAdminEmail').value = data.config.admin_email;
-                    }
                     blocklistLoaded = true;
                 }
 
