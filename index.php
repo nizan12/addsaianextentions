@@ -128,12 +128,15 @@
 
             <div class="pt-2 border-t border-slate-200/80">
                 <div class="flex items-center justify-between text-[11px] text-slate-500">
-                    <span>PIN Otorisasi Pengawas</span>
-                    <button onclick="togglePinVisibility()" id="btnTogglePin" class="text-slate-600 hover:text-slate-900 font-medium underline decoration-slate-300">Tampilkan</button>
+                    <span id="sidebarPinLabel">PIN Master Pengawas</span>
+                    <div class="flex items-center gap-2">
+                        <button onclick="copyActiveRoomPin()" class="text-slate-400 hover:text-slate-700 font-medium">Salin</button>
+                        <button onclick="togglePinVisibility()" id="btnTogglePin" class="text-slate-600 hover:text-slate-900 font-medium underline decoration-slate-300">Tampilkan</button>
+                    </div>
                 </div>
                 <div class="flex items-center justify-between mt-0.5">
                     <span id="sidebarUnlockPin" class="font-mono text-sm font-semibold text-slate-900 tracking-wider">••••••</span>
-                    <span class="text-[10px] text-slate-400">Aman untuk Proyektor</span>
+                    <span class="text-[10px] text-slate-400">PIN Keluar / Buka</span>
                 </div>
             </div>
 
@@ -382,18 +385,19 @@
                 <!-- VIEW 4: MANAJEMEN MULTI-RUANGAN & PIN -->
                 <section id="view-settings" class="hidden">
                     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                        <!-- Kolom Kiri: Daftar Multi-Ruangan -->
+                        <!-- Kolom Kiri: Daftar Multi-Ruangan & PIN Masing-Masing Ruangan -->
                         <div class="lg:col-span-7 card-surface rounded-xl p-6 space-y-5">
                             <div class="border-b border-slate-200 pb-4 flex items-center justify-between gap-4">
                                 <div>
-                                    <h2 class="text-sm font-semibold text-slate-900">Manajemen Ruangan Ujian / Laboratorium</h2>
-                                    <p class="text-xs text-slate-500 mt-0.5">Kelola banyak ruangan sekaligus. Mahasiswa cukup memasukkan Kode Ruangan yang sesuai pada aplikasi desktop mereka.</p>
+                                    <h2 class="text-sm font-semibold text-slate-900">Manajemen Ruangan & PIN Otorisasi Per-Ruangan</h2>
+                                    <p class="text-xs text-slate-500 mt-0.5">Setiap ruangan memiliki Kode Ruangan dan PIN Otorisasi Keluar tersendiri. Ketika aplikasi dibuka di PC, peserta memilih salah satu ruangan di bawah ini.</p>
                                 </div>
                             </div>
 
-                            <div class="flex items-center gap-2">
-                                <input type="text" id="newRoomInput" placeholder="Masukkan Kode Ruangan baru (contoh: LAB-04, RUANG-301)..." class="flex-1 rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono uppercase text-slate-900 focus:border-slate-500 focus:outline-none">
-                                <button onclick="addRoomFromInput()" class="px-4 py-2 rounded-lg text-xs font-medium bg-slate-900 hover:bg-slate-800 text-white transition shrink-0">
+                            <div class="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                                <input type="text" id="newRoomInput" placeholder="Kode Ruangan baru (misal: LAB-04)..." class="sm:col-span-5 rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono uppercase text-slate-900 focus:border-slate-500 focus:outline-none">
+                                <input type="text" id="newRoomPinInput" placeholder="PIN Keluar Ruangan (opsional, 6 digit)" class="sm:col-span-4 rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono text-slate-900 focus:border-slate-500 focus:outline-none">
+                                <button onclick="addRoomFromInput()" class="sm:col-span-3 px-3 py-2 rounded-lg text-xs font-medium bg-slate-900 hover:bg-slate-800 text-white transition shrink-0">
                                     + Tambah Ruangan
                                 </button>
                             </div>
@@ -403,11 +407,11 @@
                             </div>
                         </div>
 
-                        <!-- Kolom Kanan: PIN Otorisasi & Modul Proteksi -->
+                        <!-- Kolom Kanan: PIN Master & Modul Proteksi -->
                         <div class="lg:col-span-5 card-surface rounded-xl p-6 space-y-6">
                             <div class="border-b border-slate-200 pb-4">
-                                <h2 class="text-sm font-semibold text-slate-900">Otorisasi PIN & Modul Proteksi</h2>
-                                <p class="text-xs text-slate-500 mt-0.5">PIN digunakan oleh pengawas untuk membuka kunci PC mahasiswa secara manual atau saat mode offline.</p>
+                                <h2 class="text-sm font-semibold text-slate-900">PIN Master Admin & Modul Proteksi</h2>
+                                <p class="text-xs text-slate-500 mt-0.5">PIN Master dapat digunakan untuk membuka kunci atau menutup aplikasi di seluruh ruangan, selain PIN khusus masing-masing ruangan.</p>
                             </div>
 
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -416,7 +420,7 @@
                                     <input type="text" id="cfgRoomCode" class="w-full rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono font-medium text-slate-900 focus:border-slate-500 focus:outline-none" value="KUIS-AI-01">
                                 </div>
                                 <div>
-                                    <label class="block text-xs font-medium text-slate-700 mb-1.5">PIN Otorisasi Pengawas</label>
+                                    <label class="block text-xs font-medium text-slate-700 mb-1.5">PIN Master Pengawas (Semua Ruangan)</label>
                                     <input type="text" id="cfgUnlockPin" class="w-full rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono font-medium text-slate-900 focus:border-slate-500 focus:outline-none" value="202699">
                                 </div>
                             </div>
@@ -433,7 +437,7 @@
                                 </label>
                                 <label class="flex items-start gap-3 text-xs text-slate-700 cursor-pointer">
                                     <input type="checkbox" id="cfgKillProcs" class="mt-0.5 rounded border-slate-300 text-slate-900" checked>
-                                    <span><strong>Terminasi Proses AI-IDE & Local LLM</strong> — Menghentikan proses Cursor, Windsurf, Ollama, dan LM Studio.</span>
+                                    <span><strong>Terminasi Proses AI-IDE, Local LLM & Roblox</strong> — Menghentikan proses Cursor, Windsurf, Ollama, LM Studio, dan Roblox Player/Studio.</span>
                                 </label>
                                 <label class="flex items-start gap-3 text-xs text-slate-700 cursor-pointer">
                                     <input type="checkbox" id="cfgBlockVpn" class="mt-0.5 rounded border-slate-300 text-slate-900" checked>
@@ -443,7 +447,7 @@
 
                             <div class="pt-2">
                                 <button onclick="saveConfig()" class="w-full py-2 px-4 rounded-lg text-xs font-medium bg-slate-900 hover:bg-slate-800 text-white transition">
-                                    Simpan Pengaturan & PIN
+                                    Simpan Pengaturan & PIN Master
                                 </button>
                             </div>
                         </div>
@@ -477,7 +481,7 @@
                                             <span class="text-[11px] font-mono text-slate-500">~62 KB</span>
                                         </div>
                                         <div class="text-sm font-semibold text-slate-900 mt-1">AIBlockerSetup.exe</div>
-                                        <p class="text-xs text-slate-600 mt-1.5 leading-relaxed">Memasang agen ke direktori <code>Program Files\AIBlockerGuard</code> dan membuat pintasan di Desktop mahasiswa.</p>
+                                        <p class="text-xs text-slate-600 mt-1.5 leading-relaxed">Memasang agen ke direktori <code>Program Files\AIBlockerGuard</code> dan mendaftarkan agen berjalan otomatis di sistem.</p>
                                     </div>
                                     <div class="mt-5">
                                         <a href="dist/AIBlockerSetup.exe" download class="w-full py-2 px-3 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium flex items-center justify-center gap-2 transition">
@@ -491,10 +495,10 @@
                                     <div>
                                         <div class="flex items-center justify-between">
                                             <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Paket Lab / Portable</span>
-                                            <span class="text-[11px] font-mono text-slate-500">~52 KB</span>
+                                            <span class="text-[11px] font-mono text-slate-500">~54 KB</span>
                                         </div>
                                         <div class="text-sm font-semibold text-slate-900 mt-1">AIBlockerGuard.exe</div>
-                                        <p class="text-xs text-slate-600 mt-1.5 leading-relaxed">Eksekusi tunggal tanpa proses instalasi. Cocok untuk komputer laboratorium kampus.</p>
+                                        <p class="text-xs text-slate-600 mt-1.5 leading-relaxed">Eksekusi tunggal tanpa proses instalasi. Saat dibuka, peserta memilih ruangan yang tersedia dari daftar.</p>
                                     </div>
                                     <div class="mt-5">
                                         <a href="dist/AIBlockerGuard.exe" download class="w-full py-2 px-3 rounded-lg bg-white hover:bg-slate-50 text-slate-900 border border-slate-300 text-xs font-medium flex items-center justify-center gap-2 transition">
@@ -520,16 +524,16 @@
                             <h3 class="text-sm font-semibold text-slate-900 border-b border-slate-200 pb-3">Standar Operasional Multi-Ruangan</h3>
                             <ol class="space-y-3.5 text-xs text-slate-600 list-decimal list-inside leading-relaxed">
                                 <li>
-                                    <strong class="text-slate-900">Distribusi Agen:</strong> Bagikan file <code>AIBlockerSetup.exe</code> atau <code>AIBlockerGuard.exe</code> kepada peserta.
+                                    <strong class="text-slate-900">Siapkan Ruangan & PIN:</strong> Buat ruangan di menu <strong>Ruangan & PIN Pengawas</strong>. Setiap ruangan memiliki PIN Otorisasi Keluar tersendiri.
                                 </li>
                                 <li>
-                                    <strong class="text-slate-900">Kode Ruangan Fleksibel:</strong> Peserta mengisi NIM, Nama, dan <strong>Kode Ruangan</strong> sesuai kelasnya (misal <code>LAB-01</code>, <code>LAB-02</code>, atau <code>KUIS-AI-01</code>).
+                                    <strong class="text-slate-900">Pilih Ruangan di Aplikasi:</strong> Ketika aplikasi dibuka di PC mahasiswa, aplikasi tidak membuat ruangan sendiri melainkan meminta peserta memilih ruangan dari dropdown.
                                 </li>
                                 <li>
-                                    <strong class="text-slate-900">Kontrol Per-Ruangan:</strong> Pengawas dapat memfilter ruangan tertentu dari dropdown di bagian atas untuk mengunci atau membuka kunci ruangan tersebut secara terpisah.
+                                    <strong class="text-slate-900">Kontrol Per-Ruangan:</strong> Pengawas dapat mengunci atau membuka kunci ruangan tertentu secara langsung dari dashboard kapan saja.
                                 </li>
                                 <li>
-                                    <strong class="text-slate-900">Penyelesaian Sesi:</strong> Pengawas menekan tombol <strong>Buka Kunci & Pulihkan</strong> untuk ruangan terkait (atau memberikan PIN Otorisasi).
+                                    <strong class="text-slate-900">PIN Otorisasi Keluar Per-Ruangan:</strong> Untuk menutup agen sepenuhnya dari System Tray, gunakan PIN sesuai ruangan tersebut atau PIN Master Pengawas.
                                 </li>
                             </ol>
                         </div>
@@ -572,6 +576,35 @@
         </div>
     </div>
 
+    <!-- Modal Tambah / Edit Ruangan & PIN Otorisasi -->
+    <div id="roomModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-[1px] hidden z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl border border-slate-200 shadow-xl max-w-md w-full overflow-hidden">
+            <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+                <div>
+                    <h3 id="roomModalTitle" class="text-sm font-semibold text-slate-900">Edit Ruangan & PIN Otorisasi</h3>
+                    <p id="roomModalSub" class="text-xs text-slate-500 mt-0.5">Atur Kode Ruangan dan PIN Otorisasi untuk keluar/membuka kunci ruangan ini.</p>
+                </div>
+                <button onclick="closeRoomModal()" class="text-slate-400 hover:text-slate-700 text-sm font-medium px-2 py-1">✕</button>
+            </div>
+            <div class="p-5 space-y-4 text-xs">
+                <input type="hidden" id="modalOldRoomCode" value="">
+                <div>
+                    <label class="block text-xs font-medium text-slate-700 mb-1.5">Kode Ruangan</label>
+                    <input type="text" id="modalRoomCodeInput" placeholder="Contoh: LAB-01, RUANG-UJIAN-A" class="w-full rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono uppercase font-semibold text-slate-900 focus:border-slate-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-700 mb-1.5">PIN Otorisasi Keluar / Buka Kunci Ruangan</label>
+                    <input type="text" id="modalRoomPinInput" placeholder="Contoh: 202601 (4-12 karakter)" class="w-full rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono font-semibold text-slate-900 focus:border-slate-500 focus:outline-none">
+                    <p class="text-[11px] text-slate-400 mt-1">Digunakan pada PC di ruangan ini ketika pengawas ingin membuka kunci manual atau menghentikan agen.</p>
+                </div>
+            </div>
+            <div class="px-5 py-3 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
+                <button onclick="closeRoomModal()" class="px-3.5 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium">Batal</button>
+                <button onclick="submitRoomModal()" class="px-4 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium">Simpan Ruangan</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Subtle Notification Toast -->
     <div id="toast" class="fixed bottom-5 right-5 hidden z-50 px-4 py-2.5 rounded-lg bg-slate-900 text-white text-xs font-medium shadow-lg"></div>
 
@@ -584,6 +617,7 @@
         let cachedLogs = [];
         let cachedRooms = ['KUIS-AI-01', 'LAB-01', 'LAB-02', 'LAB-03'];
         let cachedRoomStatuses = {};
+        let cachedRoomPins = {};
         let cachedGlobalStatus = 'LOCKED';
         let blocklistLoaded = false;
         let pinVisible = false;
@@ -610,10 +644,37 @@
             showToast(msg || 'Teks disalin');
         }
 
+        function getActiveDisplayPin() {
+            if (selectedRoom !== 'ALL' && cachedRoomPins[selectedRoom]) {
+                return cachedRoomPins[selectedRoom];
+            }
+            return currentUnlockPin;
+        }
+
+        function copyActiveRoomPin() {
+            const pin = getActiveDisplayPin();
+            const label = selectedRoom === 'ALL' ? 'PIN Master Pengawas' : `PIN Ruangan [${selectedRoom}]`;
+            copyText(pin, `${label} (${pin}) disalin`);
+        }
+
+        function updateSidebarPinUI() {
+            const lbl = document.getElementById('sidebarPinLabel');
+            const val = document.getElementById('sidebarUnlockPin');
+            const btn = document.getElementById('btnTogglePin');
+            if (lbl) {
+                lbl.textContent = selectedRoom === 'ALL' ? 'PIN Master Pengawas' : `PIN Ruangan [${selectedRoom}]`;
+            }
+            if (val) {
+                val.textContent = pinVisible ? getActiveDisplayPin() : '••••••';
+            }
+            if (btn) {
+                btn.textContent = pinVisible ? 'Sembunyikan' : 'Tampilkan';
+            }
+        }
+
         function togglePinVisibility() {
             pinVisible = !pinVisible;
-            document.getElementById('sidebarUnlockPin').textContent = pinVisible ? currentUnlockPin : '••••••';
-            document.getElementById('btnTogglePin').textContent = pinVisible ? 'Sembunyikan' : 'Tampilkan';
+            updateSidebarPinUI();
         }
 
         function switchTab(tab) {
@@ -646,6 +707,7 @@
         function onSelectRoom(room) {
             selectedRoom = room || 'ALL';
             document.getElementById('sidebarRoomCode').textContent = selectedRoom === 'ALL' ? 'SEMUA RUANGAN' : selectedRoom;
+            updateSidebarPinUI();
             updateHeaderStatusUI();
             updateScopedStats();
             renderCurrentStudents();
@@ -688,7 +750,8 @@
                 counts[r] = (counts[r] || 0) + 1;
             });
 
-            const allRooms = Array.from(new Set([...cachedRooms, ...Object.keys(counts)]));
+            // Gunakan daftar ruangan resmi dari konfigurasi server agar ruangan yang dihapus tidak muncul kembali
+            const allRooms = Array.from(new Set(cachedRooms));
             cachedRooms = allRooms;
 
             let html = `<option value="ALL">Semua Ruangan (${cachedStudents.length} PC)</option>`;
@@ -702,6 +765,7 @@
                 selectedRoom = 'ALL';
             }
             sel.value = selectedRoom;
+            document.getElementById('sidebarRoomCode').textContent = selectedRoom === 'ALL' ? 'SEMUA RUANGAN' : selectedRoom;
         }
 
         function updateHeaderStatusUI() {
@@ -725,7 +789,7 @@
                 btnUnlock.className = 'px-3 py-1.5 rounded-md text-xs font-medium transition flex items-center gap-1.5 text-slate-600 hover:text-slate-900';
             } else {
                 gBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200';
-                gBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> ${selectedRoom === 'ALL' ? ' tidak terkunci' : 'Ruangan ' + escapeHtml(selectedRoom) + ' Terbuka'}`;
+                gBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> ${selectedRoom === 'ALL' ? 'Semua Ruangan Terbuka' : 'Ruangan ' + escapeHtml(selectedRoom) + ' Terbuka'}`;
                 btnUnlock.className = 'px-3 py-1.5 rounded-md text-xs font-medium transition flex items-center gap-1.5 bg-slate-900 text-white shadow-sm';
                 btnLock.className = 'px-3 py-1.5 rounded-md text-xs font-medium transition flex items-center gap-1.5 text-slate-600 hover:text-slate-900';
             }
@@ -764,10 +828,9 @@
                 cachedGlobalStatus = data.config.global_status || 'LOCKED';
                 cachedRooms = Array.isArray(data.config.rooms) && data.config.rooms.length ? data.config.rooms : [currentRoomCode, 'LAB-01', 'LAB-02', 'LAB-03'];
                 cachedRoomStatuses = data.config.room_statuses || {};
+                cachedRoomPins = data.config.room_pins || {};
 
-                if (pinVisible) {
-                    document.getElementById('sidebarUnlockPin').textContent = currentUnlockPin;
-                }
+                updateSidebarPinUI();
                 const timePart = (data.server_time || '').split(' ')[1] || '--:--:--';
                 document.getElementById('lastSyncClock').textContent = timePart;
 
@@ -948,20 +1011,26 @@
             box.innerHTML = cachedRooms.map(r => {
                 const count = counts[r] || 0;
                 const status = (cachedRoomStatuses[r] || cachedGlobalStatus) === 'LOCKED' ? 'LOCKED' : 'UNLOCKED';
+                const roomPin = cachedRoomPins[r] || currentUnlockPin || '202699';
                 const badge = status === 'LOCKED'
                     ? `<span class="px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-50 text-emerald-800 border border-emerald-200">Terkunci</span>`
                     : `<span class="px-2 py-0.5 rounded text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200">Terbuka</span>`;
 
                 return `
                     <div class="p-3.5 flex flex-wrap items-center justify-between gap-3 hover:bg-slate-50/80 transition text-xs">
-                        <div class="flex items-center gap-3">
+                        <div class="flex flex-wrap items-center gap-2.5">
                             <span class="font-mono font-semibold text-slate-900 px-2.5 py-1 rounded bg-slate-100 border border-slate-200">${escapeHtml(r)}</span>
                             ${badge}
-                            <span class="text-slate-500">${count} perangkat terdaftar</span>
+                            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-slate-50 border border-slate-200 text-slate-700">
+                                <span class="text-[11px] text-slate-500">PIN Keluar/Buka:</span>
+                                <strong class="font-mono text-slate-900">${escapeHtml(roomPin)}</strong>
+                                <button onclick="copyText('${escapeHtml(roomPin)}', 'PIN Ruangan [${escapeHtml(r)}] disalin')" class="text-[10px] text-slate-400 hover:text-slate-800 underline ml-0.5">Salin</button>
+                            </span>
+                            <span class="text-slate-500">${count} PC</span>
                         </div>
                         <div class="flex items-center gap-1.5">
                             <button onclick="onSelectRoom('${escapeHtml(r)}'); switchTab('monitor');" class="px-2.5 py-1 rounded border border-slate-200 hover:bg-slate-100 text-slate-700 font-medium">Pantau</button>
-                            <button onclick="renameRoomPrompt('${escapeHtml(r)}')" class="px-2.5 py-1 rounded border border-slate-200 hover:bg-slate-100 text-slate-700 font-medium">Edit</button>
+                            <button onclick="openEditRoomModal('${escapeHtml(r)}')" class="px-2.5 py-1 rounded border border-slate-200 hover:bg-slate-100 text-slate-700 font-medium">Edit & PIN</button>
                             <button onclick="setRoomStatusDirect('${escapeHtml(r)}', 'LOCKED')" class="px-2.5 py-1 rounded border ${status === 'LOCKED' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 hover:bg-slate-100 text-slate-700'} font-medium">Kunci</button>
                             <button onclick="setRoomStatusDirect('${escapeHtml(r)}', 'UNLOCKED')" class="px-2.5 py-1 rounded border ${status === 'UNLOCKED' ? 'border-amber-600 bg-amber-600 text-white' : 'border-slate-200 hover:bg-slate-100 text-slate-700'} font-medium">Buka</button>
                             ${cachedRooms.length > 1 ? `<button onclick="deleteRoom('${escapeHtml(r)}')" class="px-2 py-1 rounded text-slate-400 hover:text-rose-600" title="Hapus ruangan">✕</button>` : ''}
@@ -1055,57 +1124,105 @@
             }
         }
 
-        async function promptNewRoom() {
-            const code = prompt('Masukkan Kode Ruangan baru (contoh: LAB-04, RUANG-A):');
-            if (!code || !code.trim()) return;
-            await createRoom(code.trim());
+        function promptNewRoom() {
+            document.getElementById('roomModalTitle').textContent = 'Tambah Ruangan Baru';
+            document.getElementById('roomModalSub').textContent = 'Buat Kode Ruangan baru beserta PIN Otorisasi khusus untuk ruangan ini.';
+            document.getElementById('modalOldRoomCode').value = '';
+            document.getElementById('modalRoomCodeInput').value = '';
+            const nextPin = '2026' + String(cachedRooms.length + 1).padStart(2, '0');
+            document.getElementById('modalRoomPinInput').value = nextPin;
+            document.getElementById('roomModal').classList.remove('hidden');
+            setTimeout(() => document.getElementById('modalRoomCodeInput').focus(), 50);
         }
 
-        async function promptEditSelectedRoom() {
+        function promptEditSelectedRoom() {
             if (selectedRoom === 'ALL') {
                 switchTab('settings');
-                showToast('Pilih ruangan tertentu di dropdown atas, atau klik tombol Edit pada daftar ruangan di bawah ini.');
+                showToast('Pilih ruangan yang ingin diedit pada daftar di bawah ini, atau pilih dari dropdown atas.');
                 return;
             }
-            await renameRoomPrompt(selectedRoom);
+            openEditRoomModal(selectedRoom);
         }
 
-        async function renameRoomPrompt(oldRoom) {
-            const newCode = prompt(`Ubah nama Kode Ruangan [${oldRoom}] menjadi:`, oldRoom);
-            if (!newCode || !newCode.trim() || newCode.trim().toUpperCase() === oldRoom) return;
+        function openEditRoomModal(roomCode) {
+            const pin = cachedRoomPins[roomCode] || currentUnlockPin || '202699';
+            document.getElementById('roomModalTitle').textContent = `Edit Ruangan [${roomCode}] & PIN`;
+            document.getElementById('roomModalSub').textContent = 'Ubah Kode Ruangan atau ganti PIN Otorisasi Keluar untuk ruangan ini.';
+            document.getElementById('modalOldRoomCode').value = roomCode;
+            document.getElementById('modalRoomCodeInput').value = roomCode;
+            document.getElementById('modalRoomPinInput').value = pin;
+            document.getElementById('roomModal').classList.remove('hidden');
+            setTimeout(() => document.getElementById('modalRoomCodeInput').focus(), 50);
+        }
+
+        function closeRoomModal() {
+            document.getElementById('roomModal').classList.add('hidden');
+        }
+
+        async function submitRoomModal() {
+            const oldRoom = document.getElementById('modalOldRoomCode').value.trim();
+            const newRoom = document.getElementById('modalRoomCodeInput').value.trim();
+            const roomPin = document.getElementById('modalRoomPinInput').value.trim();
+
+            if (!newRoom) {
+                showToast('Kode Ruangan tidak boleh kosong', true);
+                return;
+            }
+
+            if (!oldRoom) {
+                await createRoom(newRoom, roomPin);
+                closeRoomModal();
+                return;
+            }
+
             const res = await fetch('api/index.php?action=rename_room', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({old_room_code: oldRoom, new_room_code: newCode.trim()})
+                body: JSON.stringify({old_room_code: oldRoom, new_room_code: newRoom, room_pin: roomPin})
             });
             const data = await res.json();
             if (data.ok) {
+                if (Array.isArray(data.rooms)) cachedRooms = data.rooms;
+                if (data.room_statuses) cachedRoomStatuses = data.room_statuses;
+                if (data.room_pins) cachedRoomPins = data.room_pins;
                 if (selectedRoom === oldRoom) selectedRoom = data.room_code;
-                showToast(`Kode ruangan [${oldRoom}] diubah menjadi [${data.room_code}]`);
+                closeRoomModal();
+                showToast(`Ruangan [${data.room_code}] & PIN (${data.room_pin || roomPin}) berhasil disimpan`);
                 fetchDashboard();
             } else {
-                showToast(data.error || 'Gagal mengubah kode ruangan', true);
+                showToast(data.error || 'Gagal menyimpan perubahan ruangan', true);
             }
         }
 
         async function addRoomFromInput() {
             const inp = document.getElementById('newRoomInput');
-            if (!inp || !inp.value.trim()) return;
-            await createRoom(inp.value.trim());
+            const pinInp = document.getElementById('newRoomPinInput');
+            if (!inp || !inp.value.trim()) {
+                showToast('Masukkan Kode Ruangan baru terlebih dahulu', true);
+                return;
+            }
+            const pinVal = pinInp ? pinInp.value.trim() : '';
+            await createRoom(inp.value.trim(), pinVal);
             inp.value = '';
+            if (pinInp) pinInp.value = '';
         }
 
-        async function createRoom(room_code) {
+        async function createRoom(room_code, room_pin = '') {
             const res = await fetch('api/index.php?action=add_room', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({room_code})
+                body: JSON.stringify({room_code, room_pin})
             });
             const data = await res.json();
             if (data.ok) {
+                if (Array.isArray(data.rooms)) cachedRooms = data.rooms;
+                if (data.room_statuses) cachedRoomStatuses = data.room_statuses;
+                if (data.room_pins) cachedRoomPins = data.room_pins;
                 selectedRoom = data.room_code;
-                showToast(`Ruangan [${data.room_code}] berhasil ditambahkan`);
+                showToast(`Ruangan [${data.room_code}] ditambahkan (PIN: ${data.room_pin})`);
                 fetchDashboard();
+            } else {
+                showToast(data.error || 'Gagal menambahkan ruangan', true);
             }
         }
 
@@ -1117,9 +1234,15 @@
             });
             const data = await res.json();
             if (data.ok) {
+                if (Array.isArray(data.rooms)) cachedRooms = data.rooms;
+                if (data.room_statuses) cachedRoomStatuses = data.room_statuses;
+                if (data.room_pins) cachedRoomPins = data.room_pins;
+                cachedStudents = cachedStudents.filter(st => (st.room_code || '').toUpperCase() !== room_code.toUpperCase());
                 if (selectedRoom === room_code) selectedRoom = 'ALL';
-                showToast(`Ruangan [${room_code}] dihapus`);
+                showToast(`Ruangan [${room_code}] berhasil dihapus`);
                 fetchDashboard();
+            } else {
+                showToast(data.error || 'Gagal menghapus ruangan', true);
             }
         }
 

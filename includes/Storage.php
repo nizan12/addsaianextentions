@@ -29,6 +29,12 @@ class Storage {
                     'LAB-02' => 'LOCKED',
                     'LAB-03' => 'LOCKED'
                 ],
+                'room_pins' => [
+                    'KUIS-AI-01' => '202601',
+                    'LAB-01' => '202602',
+                    'LAB-02' => '202603',
+                    'LAB-03' => '202604'
+                ],
                 'unlock_pin' => '202699',
                 'admin_password' => 'admin123',
                 'global_status' => 'LOCKED', // LOCKED | UNLOCKED
@@ -203,9 +209,15 @@ class Storage {
         if (empty($data['config']['room_statuses']) || !is_array($data['config']['room_statuses'])) {
             $data['config']['room_statuses'] = [];
         }
-        foreach ($data['config']['rooms'] as $r) {
+        if (empty($data['config']['room_pins']) || !is_array($data['config']['room_pins'])) {
+            $data['config']['room_pins'] = [];
+        }
+        foreach (array_values($data['config']['rooms']) as $idx => $r) {
             if (!isset($data['config']['room_statuses'][$r])) {
                 $data['config']['room_statuses'][$r] = $data['config']['global_status'] ?? 'LOCKED';
+            }
+            if (empty($data['config']['room_pins'][$r])) {
+                $data['config']['room_pins'][$r] = (string)(202601 + $idx);
             }
         }
         $defaults = self::getDefaultSchema()['blocklist'];
@@ -215,14 +227,22 @@ class Storage {
         }
     }
 
-    public static function registerRoomIfNeeded(&$data, $roomCode) {
+    public static function registerRoomIfNeeded(&$data, $roomCode, $customPin = '') {
         self::ensureRoomsConfig($data);
-        $norm = strtoupper(trim($roomCode ?: ($data['config']['room_code'] ?? 'KUIS-AI-01')));
+        $norm = strtoupper(preg_replace('/[^a-zA-Z0-9_-]/', '-', trim($roomCode ?: '')));
+        if ($norm === '') {
+            return '';
+        }
         if (!in_array($norm, $data['config']['rooms'], true)) {
             $data['config']['rooms'][] = $norm;
         }
         if (!isset($data['config']['room_statuses'][$norm])) {
             $data['config']['room_statuses'][$norm] = $data['config']['global_status'] ?? 'LOCKED';
+        }
+        if (trim($customPin) !== '') {
+            $data['config']['room_pins'][$norm] = trim($customPin);
+        } elseif (empty($data['config']['room_pins'][$norm])) {
+            $data['config']['room_pins'][$norm] = (string)(202600 + count($data['config']['rooms']));
         }
         return $norm;
     }

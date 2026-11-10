@@ -38,27 +38,49 @@ try {
         // ====================================================================
         // ENDPOINT UNTUK APLIKASI DESKTOP MAHASISWA (CLIENT)
         // ====================================================================
+        case 'get_rooms':
+            $data = Storage::read();
+            Storage::ensureRoomsConfig($data);
+            respond([
+                'ok' => true,
+                'rooms' => $data['config']['rooms'],
+                'room_statuses' => $data['config']['room_statuses'],
+                'default_room' => $data['config']['room_code'] ?? ($data['config']['rooms'][0] ?? 'KUIS-AI-01')
+            ]);
+            break;
+
         case 'join':
         case 'handshake':
             $nim = trim($jsonInput['nim'] ?? '');
             $name = trim($jsonInput['name'] ?? '');
             $hostname = trim($jsonInput['hostname'] ?? gethostname());
-            $roomCode = trim($jsonInput['room_code'] ?? '');
+            $roomCode = strtoupper(trim($jsonInput['room_code'] ?? ''));
             $osInfo = trim($jsonInput['os_info'] ?? 'Windows');
-            $clientVersion = trim($jsonInput['version'] ?? '1.0.0');
+            $clientVersion = trim($jsonInput['version'] ?? '1.4.0');
 
             if ($nim === '' || $name === '') {
                 respond(['ok' => false, 'error' => 'NIM dan Nama Mahasiswa wajib diisi.'], 400);
             }
 
             $result = Storage::update(function (&$data) use ($nim, $name, $hostname, $roomCode, $osInfo, $clientVersion) {
-                $normalizedRoom = Storage::registerRoomIfNeeded($data, $roomCode);
+                Storage::ensureRoomsConfig($data);
+                if ($roomCode === '' || !in_array($roomCode, $data['config']['rooms'], true)) {
+                    return [
+                        'ok' => false,
+                        'error' => "Kode Ruangan [{$roomCode}] tidak ditemukan. Silakan pilih Ruangan yang tersedia terlebih dahulu.",
+                        'rooms' => $data['config']['rooms']
+                    ];
+                }
 
+                $normalizedRoom = $roomCode;
                 $studentId = preg_replace('/[^a-zA-Z0-9_-]/', '_', $nim);
                 $existing = $data['students'][$studentId] ?? null;
 
                 $roomDefaultState = $data['config']['room_statuses'][$normalizedRoom] ?? $data['config']['global_status'] ?? 'LOCKED';
-                $desiredState = $existing['target_status'] ?? $roomDefaultState;
+                $desiredState = ($existing && ($existing['room_code'] ?? '') === $normalizedRoom && !empty($existing['target_status']))
+                    ? $existing['target_status']
+                    : $roomDefaultState;
+                $roomPin = $data['config']['room_pins'][$normalizedRoom] ?? ($data['config']['unlock_pin'] ?? '202699');
 
                 $data['students'][$studentId] = [
                     'id' => $studentId,
@@ -95,8 +117,10 @@ try {
                 return [
                     'ok' => true,
                     'student_id' => $studentId,
+                    'rooms' => $data['config']['rooms'],
                     'config' => [
                         'room_code' => $normalizedRoom,
+                        'room_pin' => $roomPin,
                         'target_status' => $desiredState,
                         'block_doh' => $data['config']['block_doh'],
                         'block_vpn' => $data['config']['block_vpn'],
@@ -107,14 +131,14 @@ try {
                 ];
             });
 
-            respond($result, $result['ok'] ? 200 : 403);
+            respond($result, $result['ok'] ? 200 : 400);
             break;
 
         case 'heartbeat':
             $nim = trim($jsonInput['nim'] ?? '');
             $name = trim($jsonInput['name'] ?? 'Mahasiswa');
             $hostname = trim($jsonInput['hostname'] ?? 'PC');
-            $currentStatus = trim($jsonInput['status'] ?? 'LOCKED'); // LOCKED | UNLOCKED | DRY_RUN
+            $currentStatus = trim($jsonInput['status'] ?? 'LOCKED');
             $quarantinedCount = (int)($jsonInput['quarantined_count'] ?? 0);
             $quarantinedList = $jsonInput['quarantined_list'] ?? [];
             $killedCount = (int)($jsonInput['killed_processes_count'] ?? 0);
@@ -128,19 +152,27 @@ try {
                 Storage::ensureRoomsConfig($data);
                 $studentId = preg_replace('/[^a-zA-Z0-9_-]/', '_', $nim);
                 $globalTarget = $data['config']['global_status'] ?? 'LOCKED';
+                $reqRoom = strtoupper(trim($jsonInput['room_code'] ?? ''));
 
                 if (!isset($data['students'][$studentId])) {
-                    $defaultRoom = Storage::registerRoomIfNeeded($data, $jsonInput['room_code'] ?? $data['config']['room_code'] ?? 'KUIS-AI-01');
+                    if ($reqRoom === '' || !in_array($reqRoom, $data['config']['rooms'], true)) {
+                        return [
+                            'ok' => false,
+                            'require_room_selection' => true,
+                            'rooms' => $data['config']['rooms'],
+                            'error' => 'Silakan pilih ruangan yang aktif terlebih dahulu.'
+                        ];
+                    }
                     $data['students'][$studentId] = [
                         'id' => $studentId,
                         'nim' => $nim,
                         'name' => $name,
                         'hostname' => $hostname,
-                        'room_code' => $defaultRoom,
+                        'room_code' => $reqRoom,
                         'ip' => $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
                         'os_info' => 'Windows',
-                        'version' => '1.0.0',
-                        'target_status' => $data['config']['room_statuses'][$defaultRoom] ?? $globalTarget,
+                        'version' => '1.4.0',
+                        'target_status' => $data['config']['room_statuses'][$reqRoom] ?? $globalTarget,
                         'joined_at' => date('Y-m-d H:i:s')
                     ];
                 }
@@ -149,16 +181,21 @@ try {
                 if ($name !== '') {
                     $student['name'] = $name;
                 }
-                if (!empty($jsonInput['room_code'])) {
-                    $reqRoom = Storage::registerRoomIfNeeded($data, $jsonInput['room_code']);
-                    if (($student['room_code'] ?? '') !== $reqRoom) {
+                if (empty($student['room_code']) || !in_array($student['room_code'], $data['config']['rooms'], true)) {
+                    if ($reqRoom !== '' && in_array($reqRoom, $data['config']['rooms'], true)) {
                         $student['room_code'] = $reqRoom;
-                        $student['target_status'] = $data['config']['room_statuses'][$reqRoom] ?? $globalTarget;
+                    } else {
+                        unset($data['students'][$studentId]);
+                        return [
+                            'ok' => false,
+                            'require_room_selection' => true,
+                            'rooms' => $data['config']['rooms'],
+                            'target_status' => 'UNLOCKED',
+                            'error' => 'Ruangan sebelumnya telah dihapus oleh Admin. Silakan pilih ruangan kembali.'
+                        ];
                     }
-                } elseif (empty($student['room_code'])) {
-                    $student['room_code'] = $data['config']['room_code'] ?? 'KUIS-AI-01';
                 }
-                Storage::registerRoomIfNeeded($data, $student['room_code']);
+
                 $prevVpn = $student['vpn_detected'] ?? false;
 
                 $student['status'] = $currentStatus;
@@ -178,12 +215,15 @@ try {
                 }
 
                 $targetStatus = $student['target_status'] ?? ($data['config']['room_statuses'][$student['room_code']] ?? $globalTarget);
+                $roomPin = $data['config']['room_pins'][$student['room_code']] ?? ($data['config']['unlock_pin'] ?? '202699');
 
                 return [
                     'ok' => true,
                     'target_status' => $targetStatus,
+                    'rooms' => $data['config']['rooms'],
                     'config' => [
                         'room_code' => $student['room_code'],
+                        'room_pin' => $roomPin,
                         'block_doh' => $data['config']['block_doh'],
                         'block_vpn' => $data['config']['block_vpn'],
                         'quarantine_extensions' => $data['config']['quarantine_extensions'],
@@ -225,21 +265,25 @@ try {
             $nim = trim($jsonInput['nim'] ?? '');
             $name = trim($jsonInput['name'] ?? 'Mahasiswa');
             $hostname = trim($jsonInput['hostname'] ?? 'PC');
+            $reqRoom = strtoupper(trim($jsonInput['room_code'] ?? ''));
 
-            $result = Storage::update(function (&$data) use ($pin, $nim, $name, $hostname) {
-                $validPin = (string)($data['config']['unlock_pin'] ?? '202699');
+            $result = Storage::update(function (&$data) use ($pin, $nim, $name, $hostname, $reqRoom) {
+                Storage::ensureRoomsConfig($data);
+                $masterPin = (string)($data['config']['unlock_pin'] ?? '202699');
                 $studentId = preg_replace('/[^a-zA-Z0-9_-]/', '_', $nim);
-                $stRoom = $data['students'][$studentId]['room_code'] ?? ($data['config']['room_code'] ?? 'KUIS-AI-01');
-                if ($pin !== '' && hash_equals($validPin, $pin)) {
+                $stRoom = $reqRoom ?: ($data['students'][$studentId]['room_code'] ?? ($data['config']['room_code'] ?? 'KUIS-AI-01'));
+                $roomPin = (string)($data['config']['room_pins'][$stRoom] ?? '');
+
+                if ($pin !== '' && (($roomPin !== '' && hash_equals($roomPin, $pin)) || hash_equals($masterPin, $pin))) {
                     if (isset($data['students'][$studentId])) {
                         $data['students'][$studentId]['target_status'] = 'UNLOCKED';
                         $data['students'][$studentId]['status'] = 'UNLOCKED';
                     }
-                    Storage::addLog($data, $nim, $name, $hostname, 'PIN_UNLOCK', 'Kunci dibuka menggunakan PIN Dosen/Pengawas yang valid.', 'INFO', $stRoom);
+                    Storage::addLog($data, $nim, $name, $hostname, 'PIN_UNLOCK', "Kunci dibuka / otorisasi keluar menggunakan PIN Ruangan [{$stRoom}] yang valid.", 'INFO', $stRoom);
                     return ['ok' => true, 'unlocked' => true];
                 } else {
-                    Storage::addLog($data, $nim, $name, $hostname, 'PIN_FAILED', "Percobaan membuka kunci gagal (PIN salah: {$pin}).", 'WARNING', $stRoom);
-                    return ['ok' => false, 'unlocked' => false, 'error' => 'PIN Pengawas salah!'];
+                    Storage::addLog($data, $nim, $name, $hostname, 'PIN_FAILED', "Percobaan PIN gagal di ruangan [{$stRoom}] (PIN salah: {$pin}).", 'WARNING', $stRoom);
+                    return ['ok' => false, 'unlocked' => false, 'error' => "PIN Otorisasi untuk ruangan [{$stRoom}] salah!"];
                 }
             });
 
@@ -264,58 +308,61 @@ try {
         // ENDPOINT UNTUK WEB DASHBOARD PENGAWAS / DOSEN
         // ====================================================================
         case 'dashboard_state':
-            $data = Storage::read();
-            Storage::ensureRoomsConfig($data);
             $now = time();
-            $students = [];
-            $onlineCount = 0;
-            $lockedCount = 0;
-            $violationCount = 0;
+            $result = Storage::update(function (&$data) use ($now) {
+                Storage::ensureRoomsConfig($data);
+                $students = [];
+                $onlineCount = 0;
+                $lockedCount = 0;
+                $violationCount = 0;
 
-            foreach (($data['students'] ?? []) as $id => $st) {
-                if (empty($st['room_code'])) {
-                    $st['room_code'] = $data['config']['room_code'] ?? 'KUIS-AI-01';
+                foreach (($data['students'] ?? []) as $id => $st) {
+                    $stRoom = strtoupper(trim($st['room_code'] ?? ''));
+                    if ($stRoom === '' || !in_array($stRoom, $data['config']['rooms'], true)) {
+                        unset($data['students'][$id]);
+                        continue;
+                    }
+                    $isSimulated = !empty($st['is_simulated']);
+                    $isOnline = $isSimulated ? true : (($now - ($st['last_seen'] ?? 0)) <= 25);
+                    $st['is_online'] = $isOnline;
+                    $st['seconds_ago'] = $isSimulated ? 1 : max(0, $now - ($st['last_seen'] ?? $now));
+                    if ($isOnline) {
+                        $onlineCount++;
+                    }
+                    if (($st['status'] ?? '') === 'LOCKED' || ($st['status'] ?? '') === 'DRY_RUN') {
+                        $lockedCount++;
+                    }
+                    $violationCount += (int)($st['killed_processes_count'] ?? 0);
+                    $students[] = $st;
                 }
-                Storage::registerRoomIfNeeded($data, $st['room_code']);
-                $isSimulated = !empty($st['is_simulated']);
-                $isOnline = $isSimulated ? true : (($now - ($st['last_seen'] ?? 0)) <= 25);
-                $st['is_online'] = $isOnline;
-                $st['seconds_ago'] = $isSimulated ? 1 : max(0, $now - ($st['last_seen'] ?? $now));
-                if ($isOnline) {
-                    $onlineCount++;
-                }
-                if (($st['status'] ?? '') === 'LOCKED' || ($st['status'] ?? '') === 'DRY_RUN') {
-                    $lockedCount++;
-                }
-                $violationCount += (int)($st['killed_processes_count'] ?? 0);
-                $students[] = $st;
-            }
 
-            // Urutkan yang online di atas
-            usort($students, function ($a, $b) {
-                if ($a['is_online'] !== $b['is_online']) {
-                    return $a['is_online'] ? -1 : 1;
-                }
-                return strcmp($a['nim'], $b['nim']);
+                usort($students, function ($a, $b) {
+                    if ($a['is_online'] !== $b['is_online']) {
+                        return $a['is_online'] ? -1 : 1;
+                    }
+                    return strcmp($a['nim'], $b['nim']);
+                });
+
+                return [
+                    'ok' => true,
+                    'server_time' => date('Y-m-d H:i:s'),
+                    'config' => $data['config'],
+                    'stats' => [
+                        'total_students' => count($students),
+                        'online_students' => $onlineCount,
+                        'locked_students' => $lockedCount,
+                        'total_violations' => $violationCount,
+                        'domains_count' => count($data['blocklist']['domains'] ?? []),
+                        'processes_count' => count($data['blocklist']['processes'] ?? []),
+                        'extensions_count' => count($data['blocklist']['ide_extensions'] ?? [])
+                    ],
+                    'students' => $students,
+                    'logs' => array_slice($data['logs'] ?? [], 0, 100),
+                    'blocklist' => $data['blocklist']
+                ];
             });
 
-            respond([
-                'ok' => true,
-                'server_time' => date('Y-m-d H:i:s'),
-                'config' => $data['config'],
-                'stats' => [
-                    'total_students' => count($students),
-                    'online_students' => $onlineCount,
-                    'locked_students' => $lockedCount,
-                    'total_violations' => $violationCount,
-                    'domains_count' => count($data['blocklist']['domains'] ?? []),
-                    'processes_count' => count($data['blocklist']['processes'] ?? []),
-                    'extensions_count' => count($data['blocklist']['ide_extensions'] ?? [])
-                ],
-                'students' => $students,
-                'logs' => array_slice($data['logs'] ?? [], 0, 100),
-                'blocklist' => $data['blocklist']
-            ]);
+            respond($result);
             break;
 
         case 'set_global_status':
@@ -344,10 +391,12 @@ try {
                     $label = $target === 'LOCKED' ? 'MENGUNCI (Aktifkan Blokir AI)' : 'MEMBUKA KUNCI (Pulihkan PC)';
                     Storage::addLog($data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'GLOBAL_COMMAND', "Pengawas memilih {$label} untuk SELURUH RUANGAN.", 'INFO', 'ALL');
                 } else {
-                    Storage::registerRoomIfNeeded($data, $targetRoom);
+                    if (!in_array($targetRoom, $data['config']['rooms'], true)) {
+                        return ['ok' => false, 'error' => 'Ruangan tidak ditemukan.'];
+                    }
                     $data['config']['room_statuses'][$targetRoom] = $target;
                     foreach ($data['students'] as $id => &$st) {
-                        $stRoom = strtoupper($st['room_code'] ?? $data['config']['room_code'] ?? 'KUIS-AI-01');
+                        $stRoom = strtoupper($st['room_code'] ?? '');
                         if ($stRoom === $targetRoom) {
                             $st['target_status'] = $target;
                             $st['status'] = $target;
@@ -368,53 +417,79 @@ try {
 
         case 'add_room':
             $newRoom = strtoupper(preg_replace('/[^a-zA-Z0-9_-]/', '-', trim($jsonInput['room_code'] ?? '')));
+            $customPin = trim($jsonInput['room_pin'] ?? '');
             if ($newRoom === '') {
                 respond(['ok' => false, 'error' => 'Kode ruangan wajib diisi.'], 400);
             }
-            $result = Storage::update(function (&$data) use ($newRoom) {
-                Storage::registerRoomIfNeeded($data, $newRoom);
-                Storage::addLog($data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ROOM_ADDED', "Ruangan baru [{$newRoom}] ditambahkan ke sistem.", 'INFO', $newRoom);
-                return ['ok' => true, 'room_code' => $newRoom, 'rooms' => $data['config']['rooms'], 'room_statuses' => $data['config']['room_statuses']];
+            $result = Storage::update(function (&$data) use ($newRoom, $customPin) {
+                Storage::ensureRoomsConfig($data);
+                if (in_array($newRoom, $data['config']['rooms'], true)) {
+                    return ['ok' => false, 'error' => "Ruangan [{$newRoom}] sudah ada."];
+                }
+                Storage::registerRoomIfNeeded($data, $newRoom, $customPin);
+                $pinAssigned = $data['config']['room_pins'][$newRoom];
+                Storage::addLog($data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ROOM_ADDED', "Ruangan baru [{$newRoom}] ditambahkan (PIN: {$pinAssigned}).", 'INFO', $newRoom);
+                return [
+                    'ok' => true,
+                    'room_code' => $newRoom,
+                    'room_pin' => $pinAssigned,
+                    'rooms' => $data['config']['rooms'],
+                    'room_statuses' => $data['config']['room_statuses'],
+                    'room_pins' => $data['config']['room_pins']
+                ];
             });
-            respond($result);
+            respond($result, $result['ok'] ? 200 : 400);
             break;
 
         case 'rename_room':
             $oldRoom = strtoupper(trim($jsonInput['old_room_code'] ?? ''));
-            $newRoom = strtoupper(preg_replace('/[^a-zA-Z0-9_-]/', '-', trim($jsonInput['new_room_code'] ?? '')));
+            $newRoom = strtoupper(preg_replace('/[^a-zA-Z0-9_-]/', '-', trim($jsonInput['new_room_code'] ?? $oldRoom)));
+            $newPin = trim($jsonInput['room_pin'] ?? '');
             if ($oldRoom === '' || $newRoom === '') {
-                respond(['ok' => false, 'error' => 'Kode ruangan lama dan baru wajib diisi.'], 400);
+                respond(['ok' => false, 'error' => 'Kode ruangan wajib diisi.'], 400);
             }
-            $result = Storage::update(function (&$data) use ($oldRoom, $newRoom) {
+            $result = Storage::update(function (&$data) use ($oldRoom, $newRoom, $newPin) {
                 Storage::ensureRoomsConfig($data);
-                if ($oldRoom === $newRoom) {
-                    return ['ok' => true, 'room_code' => $newRoom, 'rooms' => $data['config']['rooms'], 'room_statuses' => $data['config']['room_statuses']];
+                if (!in_array($oldRoom, $data['config']['rooms'], true)) {
+                    return ['ok' => false, 'error' => "Ruangan [{$oldRoom}] tidak ditemukan."];
                 }
                 $oldStatus = $data['config']['room_statuses'][$oldRoom] ?? ($data['config']['global_status'] ?? 'LOCKED');
-                $idx = array_search($oldRoom, $data['config']['rooms'], true);
-                if ($idx !== false) {
-                    if (in_array($newRoom, $data['config']['rooms'], true)) {
-                        array_splice($data['config']['rooms'], $idx, 1);
-                    } else {
-                        $data['config']['rooms'][$idx] = $newRoom;
+                $resolvedPin = $newPin !== '' ? $newPin : ($data['config']['room_pins'][$oldRoom] ?? '202601');
+
+                if ($oldRoom !== $newRoom) {
+                    $idx = array_search($oldRoom, $data['config']['rooms'], true);
+                    if ($idx !== false) {
+                        if (in_array($newRoom, $data['config']['rooms'], true)) {
+                            array_splice($data['config']['rooms'], $idx, 1);
+                        } else {
+                            $data['config']['rooms'][$idx] = $newRoom;
+                        }
                     }
-                } elseif (!in_array($newRoom, $data['config']['rooms'], true)) {
-                    $data['config']['rooms'][] = $newRoom;
-                }
-                $data['config']['rooms'] = array_values(array_unique($data['config']['rooms']));
-                $data['config']['room_statuses'][$newRoom] = $oldStatus;
-                unset($data['config']['room_statuses'][$oldRoom]);
-                if (($data['config']['room_code'] ?? '') === $oldRoom) {
-                    $data['config']['room_code'] = $newRoom;
-                }
-                foreach ($data['students'] as &$st) {
-                    if (strtoupper($st['room_code'] ?? '') === $oldRoom) {
-                        $st['room_code'] = $newRoom;
+                    $data['config']['rooms'] = array_values(array_unique($data['config']['rooms']));
+                    $data['config']['room_statuses'][$newRoom] = $oldStatus;
+                    unset($data['config']['room_statuses'][$oldRoom]);
+                    unset($data['config']['room_pins'][$oldRoom]);
+                    if (($data['config']['room_code'] ?? '') === $oldRoom) {
+                        $data['config']['room_code'] = $newRoom;
                     }
+                    foreach ($data['students'] as &$st) {
+                        if (strtoupper($st['room_code'] ?? '') === $oldRoom) {
+                            $st['room_code'] = $newRoom;
+                        }
+                    }
+                    unset($st);
                 }
-                unset($st);
-                Storage::addLog($data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ROOM_RENAMED', "Kode ruangan [{$oldRoom}] diubah menjadi [{$newRoom}].", 'INFO', $newRoom);
-                return ['ok' => true, 'room_code' => $newRoom, 'rooms' => $data['config']['rooms'], 'room_statuses' => $data['config']['room_statuses']];
+
+                $data['config']['room_pins'][$newRoom] = $resolvedPin;
+                Storage::addLog($data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ROOM_UPDATED', "Ruangan [{$oldRoom}] diperbarui menjadi [{$newRoom}] (PIN: {$resolvedPin}).", 'INFO', $newRoom);
+                return [
+                    'ok' => true,
+                    'room_code' => $newRoom,
+                    'room_pin' => $resolvedPin,
+                    'rooms' => $data['config']['rooms'],
+                    'room_statuses' => $data['config']['room_statuses'],
+                    'room_pins' => $data['config']['room_pins']
+                ];
             });
             respond($result, $result['ok'] ? 200 : 400);
             break;
@@ -430,11 +505,22 @@ try {
                     return $r !== $delRoom;
                 }));
                 unset($data['config']['room_statuses'][$delRoom]);
+                unset($data['config']['room_pins'][$delRoom]);
                 if (($data['config']['room_code'] ?? '') === $delRoom) {
                     $data['config']['room_code'] = $data['config']['rooms'][0];
                 }
-                Storage::addLog($data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ROOM_REMOVED', "Ruangan [{$delRoom}] dihapus dari daftar ruangan.", 'INFO');
-                return ['ok' => true, 'rooms' => $data['config']['rooms'], 'room_statuses' => $data['config']['room_statuses']];
+                foreach ($data['students'] as $id => $st) {
+                    if (strtoupper($st['room_code'] ?? '') === $delRoom) {
+                        unset($data['students'][$id]);
+                    }
+                }
+                Storage::addLog($data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ROOM_REMOVED', "Ruangan [{$delRoom}] beserta sesi di dalamnya dihapus.", 'INFO');
+                return [
+                    'ok' => true,
+                    'rooms' => $data['config']['rooms'],
+                    'room_statuses' => $data['config']['room_statuses'],
+                    'room_pins' => $data['config']['room_pins']
+                ];
             });
             respond($result, $result['ok'] ? 200 : 400);
             break;

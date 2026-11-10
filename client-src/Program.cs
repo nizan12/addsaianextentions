@@ -74,6 +74,7 @@ namespace AIBlockerGuard
         public string RoomCode { get; set; }
         public string ServerUrl { get; set; }
         public bool AutoStart { get; set; }
+        public bool IsConfigured { get; set; }
     }
 
     // ============================================================================
@@ -828,9 +829,10 @@ namespace AIBlockerGuard
             {
                 Nim = Environment.MachineName,
                 Name = Environment.UserName + " (" + Environment.MachineName + ")",
-                RoomCode = "KUIS-AI-01",
+                RoomCode = "",
                 ServerUrl = "https://blockai-wheat.vercel.app/api/index.php",
-                AutoStart = true
+                AutoStart = true,
+                IsConfigured = false
             };
         }
 
@@ -903,13 +905,17 @@ namespace AIBlockerGuard
     // ============================================================================
     public class MainForm : Form
     {
+        private const string RoomPlaceholder = "-- Pilih Ruangan --";
+
         // State
         private bool isLocked = false;
         private bool isDryRun = false;
         private bool isServerMode = true;
+        private bool isRoomConfirmed = false;
         private bool startMinimizedInTray = false;
         private bool allowProcessExit = false;
         private string offlinePin = "202699";
+        private string activeRoomCode = "";
         private int killedCounter = 0;
         private List<string> quarantinedExtensions = new List<string>();
         private System.Windows.Forms.Timer guardTimer;
@@ -929,7 +935,8 @@ namespace AIBlockerGuard
         private TextBox txtNim;
         private TextBox txtName;
         private TextBox txtServerUrl;
-        private TextBox txtRoomCode;
+        private ComboBox cmbRoomCode;
+        private Button btnRefreshRooms;
         private RadioButton rbServerMode;
         private RadioButton rbOfflineMode;
         private CheckBox chkDryRun;
@@ -964,7 +971,7 @@ namespace AIBlockerGuard
             ToolStripMenuItem itemSync = new ToolStripMenuItem("Sinkronkan dengan Server Admin Sekarang");
             itemSync.Click += async (s, e) => await ConnectAndSyncServerAsync(false);
 
-            ToolStripMenuItem itemExit = new ToolStripMenuItem("Matikan / Keluar Agen (Wajib PIN Pengawas)");
+            ToolStripMenuItem itemExit = new ToolStripMenuItem("Matikan / Keluar Agen (Wajib PIN Ruangan / Pengawas)");
             itemExit.Click += async (s, e) => await PromptPinAndExitApplicationAsync();
 
             trayMenu.Items.Add(itemOpen);
@@ -1009,6 +1016,8 @@ namespace AIBlockerGuard
         private void InitializeUi()
         {
             AgentConfig savedCfg = GuardEngine.LoadAgentConfig();
+            isRoomConfirmed = savedCfg.IsConfigured && !string.IsNullOrWhiteSpace(savedCfg.RoomCode);
+            activeRoomCode = isRoomConfirmed ? savedCfg.RoomCode.Trim().ToUpperInvariant() : "";
 
             this.Text = "GuardAgent — Agen Sistem Terpusat (Dikendalikan Admin)";
             this.Size = new Size(860, 660);
@@ -1030,7 +1039,7 @@ namespace AIBlockerGuard
 
             lblBannerTitle = new Label
             {
-                Text = "STATUS ENDPOINT: MODE SIAGA (DIKENDALIKAN PENUH OLEH ADMIN)",
+                Text = "PERSIAPAN: PILIH RUANGAN UJIAN / LABORATORIUM TERLEBIH DAHULU",
                 Font = new Font("Segoe UI", 12f, FontStyle.Bold),
                 ForeColor = Color.White,
                 AutoSize = true,
@@ -1039,7 +1048,7 @@ namespace AIBlockerGuard
 
             lblBannerSub = new Label
             {
-                Text = "Agen aktif terus di latar belakang sistem. Penguncian & pembukaan kunci mengikuti instruksi Dashboard Admin secara otomatis.",
+                Text = "Silakan pilih Ruangan yang tersedia pada daftar di bawah ini lalu klik 'Hubungkan ke Ruangan'.",
                 Font = new Font("Segoe UI", 8.8f, FontStyle.Regular),
                 ForeColor = Color.FromArgb(203, 213, 225),
                 AutoSize = true,
@@ -1075,7 +1084,7 @@ namespace AIBlockerGuard
 
             Label lblSection1 = new Label
             {
-                Text = "IDENTITAS PERANGKAT / PESERTA & KONEKSI SERVER ADMIN",
+                Text = "IDENTITAS PERANGKAT / PESERTA & PEMILIHAN RUANGAN SERVER",
                 UseMnemonic = false,
                 Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(71, 85, 105),
@@ -1084,21 +1093,54 @@ namespace AIBlockerGuard
             };
             configPanel.Controls.Add(lblSection1);
 
-            // Baris Input 1: NIM & Nama
+            // Baris Input 1: NIM, Nama, Dropdown Pilih Ruangan & Tombol Refresh Ruangan
             configPanel.Controls.Add(MakeLabel("NIM / ID Perangkat", 18, 38));
-            txtNim = MakeTextBox(savedCfg.Nim, 18, 58, 170);
+            txtNim = MakeTextBox(savedCfg.Nim, 18, 58, 165);
             configPanel.Controls.Add(txtNim);
 
-            configPanel.Controls.Add(MakeLabel("Nama Peserta / Nama PC Lab", 204, 38));
-            txtName = MakeTextBox(savedCfg.Name, 204, 58, 230);
+            configPanel.Controls.Add(MakeLabel("Nama Peserta / Nama PC Lab", 196, 38));
+            txtName = MakeTextBox(savedCfg.Name, 196, 58, 215);
             configPanel.Controls.Add(txtName);
 
-            configPanel.Controls.Add(MakeLabel("Kode Ruangan Sesi", 450, 38));
-            txtRoomCode = MakeTextBox(savedCfg.RoomCode, 450, 58, 130);
-            configPanel.Controls.Add(txtRoomCode);
+            configPanel.Controls.Add(MakeLabel("Pilih Ruangan Sesi", 424, 38));
+            cmbRoomCode = new ComboBox
+            {
+                Location = new Point(424, 58),
+                Width = 152,
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                BackColor = Color.White,
+                ForeColor = Color.FromArgb(15, 23, 42),
+                Font = new Font("Consolas", 9.5f, FontStyle.Bold)
+            };
+            cmbRoomCode.Items.Add(RoomPlaceholder);
+            if (!string.IsNullOrEmpty(activeRoomCode))
+            {
+                cmbRoomCode.Items.Add(activeRoomCode);
+                cmbRoomCode.SelectedItem = activeRoomCode;
+            }
+            else
+            {
+                cmbRoomCode.SelectedIndex = 0;
+            }
+            configPanel.Controls.Add(cmbRoomCode);
 
-            configPanel.Controls.Add(MakeLabel("Hostname Windows", 596, 38));
-            TextBox txtHost = MakeTextBox(Environment.MachineName, 596, 58, 184);
+            btnRefreshRooms = new Button
+            {
+                Text = "↻",
+                Location = new Point(580, 57),
+                Size = new Size(28, 25),
+                BackColor = Color.FromArgb(241, 245, 249),
+                ForeColor = Color.FromArgb(15, 23, 42),
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI", 9f, FontStyle.Bold),
+                Cursor = Cursors.Hand
+            };
+            btnRefreshRooms.FlatAppearance.BorderColor = Color.FromArgb(203, 213, 225);
+            btnRefreshRooms.Click += async (s, e) => await FetchAvailableRoomsAsync(true);
+            configPanel.Controls.Add(btnRefreshRooms);
+
+            configPanel.Controls.Add(MakeLabel("Hostname Windows", 618, 38));
+            TextBox txtHost = MakeTextBox(Environment.MachineName, 618, 58, 162);
             txtHost.ReadOnly = true;
             txtHost.BackColor = Color.FromArgb(241, 245, 249);
             txtHost.ForeColor = Color.FromArgb(100, 116, 139);
@@ -1155,7 +1197,7 @@ namespace AIBlockerGuard
             };
             chkAutoStart.CheckedChanged += (s, e) => {
                 GuardEngine.EnsureAutoStartRegistered(chkAutoStart.Checked);
-                SaveCurrentAgentConfig();
+                SaveCurrentAgentConfig(isRoomConfirmed);
             };
             configPanel.Controls.Add(chkAutoStart);
 
@@ -1167,12 +1209,12 @@ namespace AIBlockerGuard
             lblStatDomains = CreateStatCard("CAKUPAN DOMAIN & ROBLOX", GuardEngine.BlockedDomains.Count + " Domain", Color.FromArgb(15, 23, 42), 22, cardY, cardW);
             lblStatExtensions = CreateStatCard("KARANTINA EKSTENSI IDE", "0 Ekstensi", Color.FromArgb(15, 23, 42), 225, cardY, cardW);
             lblStatKilled = CreateStatCard("INTERSEPSI PROSES", "0 Insiden", Color.FromArgb(15, 23, 42), 428, cardY, cardW);
-            lblStatVpn = CreateStatCard("KENDALI SERVER ADMIN", "Menghubungkan...", Color.FromArgb(4, 120, 87), 631, cardY, cardW);
+            lblStatVpn = CreateStatCard("KENDALI SERVER ADMIN", "Pilih Ruangan", Color.FromArgb(180, 83, 9), 631, cardY, cardW);
 
             // 4. TOMBOL KONTROL UTAMA
             btnActivateLock = new Button
             {
-                Text = "Simpan Identitas & Sinkronkan ke Server Admin",
+                Text = "Hubungkan ke Ruangan & Sinkronkan Server Admin",
                 Location = new Point(22, 392),
                 Size = new Size(375, 42),
                 BackColor = Color.FromArgb(15, 23, 42),
@@ -1187,7 +1229,7 @@ namespace AIBlockerGuard
 
             btnUnlockWithPin = new Button
             {
-                Text = "Buka Kunci Darurat (PIN Admin)",
+                Text = "Buka Kunci Darurat (PIN Ruangan)",
                 Location = new Point(410, 392),
                 Size = new Size(235, 42),
                 BackColor = Color.White,
@@ -1240,7 +1282,7 @@ namespace AIBlockerGuard
             };
             this.Controls.Add(lstLogs);
 
-            // Timers: heartbeatTimer berjalan TERUS-MENERUS (24/7) agar Admin dapat mengunci/membuka kapan saja
+            // Timers: heartbeatTimer berjalan TERUS-MENERUS (24/7) setelah ruangan dipilih
             guardTimer = new System.Windows.Forms.Timer { Interval = 2500 };
             guardTimer.Tick += GuardTimer_Tick;
 
@@ -1248,30 +1290,112 @@ namespace AIBlockerGuard
             heartbeatTimer.Tick += HeartbeatTimer_Tick;
         }
 
+        private string GetSelectedRoomCode()
+        {
+            if (cmbRoomCode == null || cmbRoomCode.SelectedItem == null) return "";
+            string val = cmbRoomCode.SelectedItem.ToString().Trim();
+            if (string.IsNullOrEmpty(val) || val == RoomPlaceholder) return "";
+            return val.ToUpperInvariant();
+        }
+
         private async void MainForm_Shown(object sender, EventArgs e)
         {
             GuardEngine.EnsureAutoStartRegistered(chkAutoStart.Checked);
-            SaveCurrentAgentConfig();
 
-            if (startMinimizedInTray)
+            // Ambil daftar ruangan resmi dari server terlebih dahulu tanpa membuat ruangan baru!
+            await FetchAvailableRoomsAsync(false);
+
+            // Hanya langsung terhubung otomatis apabila PC ini sebelumnya sudah dikonfirmasi ruangannya
+            // dan ruangan tersebut masih terdaftar di server
+            string selected = GetSelectedRoomCode();
+            if (isRoomConfirmed && !string.IsNullOrEmpty(selected))
             {
-                HideToTray(false);
+                if (startMinimizedInTray)
+                {
+                    HideToTray(false);
+                }
+                heartbeatTimer.Start();
+                await ConnectAndSyncServerAsync(false);
             }
-
-            // Langsung aktifkan heartbeat 24/7 dan sinkronkan status dari Server Admin
-            heartbeatTimer.Start();
-            await ConnectAndSyncServerAsync(false);
+            else
+            {
+                isRoomConfirmed = false;
+                lblStatVpn.Text = "Pilih Ruangan";
+                lblStatVpn.ForeColor = Color.FromArgb(180, 83, 9);
+                AddLog("Silakan pilih Ruangan pada dropdown di atas, lalu klik 'Hubungkan ke Ruangan'.");
+            }
         }
 
-        private void SaveCurrentAgentConfig()
+        private async Task FetchAvailableRoomsAsync(bool logSuccess)
         {
+            try
+            {
+                var payload = new Dictionary<string, object>
+                {
+                    { "action", "get_rooms" }
+                };
+                var res = await PostJsonAsync(txtServerUrl.Text.Trim(), payload);
+                if (res != null && res.ContainsKey("ok") && (bool)res["ok"] && res.ContainsKey("rooms"))
+                {
+                    var roomsList = res["rooms"] as System.Collections.ArrayList;
+                    if (roomsList != null)
+                    {
+                        List<string> serverRooms = roomsList
+                            .Cast<object>()
+                            .Select(x => Convert.ToString(x).Trim().ToUpperInvariant())
+                            .Where(x => !string.IsNullOrEmpty(x))
+                            .Distinct(StringComparer.OrdinalIgnoreCase)
+                            .ToList();
+
+                        PopulateRoomComboBox(serverRooms);
+                        if (logSuccess)
+                        {
+                            AddLog("Daftar ruangan berhasil dimuat dari server (" + serverRooms.Count + " ruangan tersedia).");
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private void PopulateRoomComboBox(List<string> serverRooms)
+        {
+            if (serverRooms == null) return;
+            string currentSel = GetSelectedRoomCode();
+            if (string.IsNullOrEmpty(currentSel) && !string.IsNullOrEmpty(activeRoomCode))
+            {
+                currentSel = activeRoomCode;
+            }
+
+            cmbRoomCode.Items.Clear();
+            cmbRoomCode.Items.Add(RoomPlaceholder);
+            foreach (string r in serverRooms)
+            {
+                cmbRoomCode.Items.Add(r);
+            }
+
+            if (isRoomConfirmed && !string.IsNullOrEmpty(currentSel) && serverRooms.Contains(currentSel, StringComparer.OrdinalIgnoreCase))
+            {
+                cmbRoomCode.SelectedItem = serverRooms.First(x => x.Equals(currentSel, StringComparison.OrdinalIgnoreCase));
+            }
+            else
+            {
+                isRoomConfirmed = false;
+                cmbRoomCode.SelectedIndex = 0;
+            }
+        }
+
+        private void SaveCurrentAgentConfig(bool confirmed)
+        {
+            string selRoom = GetSelectedRoomCode();
             GuardEngine.SaveAgentConfig(new AgentConfig
             {
                 Nim = string.IsNullOrWhiteSpace(txtNim.Text) ? Environment.MachineName : txtNim.Text.Trim(),
                 Name = string.IsNullOrWhiteSpace(txtName.Text) ? Environment.UserName : txtName.Text.Trim(),
-                RoomCode = string.IsNullOrWhiteSpace(txtRoomCode.Text) ? "KUIS-AI-01" : txtRoomCode.Text.Trim().ToUpperInvariant(),
+                RoomCode = confirmed ? selRoom : "",
                 ServerUrl = txtServerUrl.Text.Trim(),
-                AutoStart = chkAutoStart.Checked
+                AutoStart = chkAutoStart.Checked,
+                IsConfigured = confirmed && !string.IsNullOrEmpty(selRoom)
             });
         }
 
@@ -1347,7 +1471,7 @@ namespace AIBlockerGuard
 
         private void CheckInitialEnvironment()
         {
-            AddLog("GuardAgent berjalan dalam Mode Aktif Terus (Always-On). Hak Administrator: " + (GuardEngine.IsAdministrator() ? "AKTIF" : "TIDAK AKTIF"));
+            AddLog("GuardAgent siap. Hak Administrator: " + (GuardEngine.IsAdministrator() ? "AKTIF" : "TIDAK AKTIF"));
             if (!GuardEngine.IsAdministrator())
             {
                 AddLog("PERINGATAN: Jalankan aplikasi sebagai Administrator agar penguncian Hosts & Registry berlaku penuh.");
@@ -1377,11 +1501,22 @@ namespace AIBlockerGuard
                 return;
             }
 
+            string selRoom = GetSelectedRoomCode();
+            if (isServerMode && string.IsNullOrEmpty(selRoom))
+            {
+                MessageBox.Show("Silakan pilih Ruangan terlebih dahulu dari daftar pilihan 'Pilih Ruangan Sesi'.", "Pilih Ruangan", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                cmbRoomCode.DroppedDown = true;
+                return;
+            }
+
             isDryRun = chkDryRun.Checked;
-            SaveCurrentAgentConfig();
+            activeRoomCode = selRoom;
+            isRoomConfirmed = true;
+            SaveCurrentAgentConfig(true);
 
             if (isServerMode)
             {
+                if (!heartbeatTimer.Enabled) heartbeatTimer.Start();
                 await ConnectAndSyncServerAsync(true);
             }
             else
@@ -1393,14 +1528,26 @@ namespace AIBlockerGuard
         private async Task ConnectAndSyncServerAsync(bool showDialogOnError)
         {
             if (!isServerMode) return;
-            AddLog("Menghubungkan & menyinkronkan status dengan Server Admin (" + txtRoomCode.Text.Trim().ToUpperInvariant() + ")...");
-            string targetStatus = await JoinServerAsync(showDialogOnError);
-            if (string.IsNullOrEmpty(targetStatus))
+            string selRoom = GetSelectedRoomCode();
+            if (string.IsNullOrEmpty(selRoom))
             {
-                lblStatVpn.Text = "Menunggu Server";
+                lblStatVpn.Text = "Pilih Ruangan";
                 lblStatVpn.ForeColor = Color.FromArgb(180, 83, 9);
                 return;
             }
+
+            activeRoomCode = selRoom;
+            AddLog("Menghubungkan & menyinkronkan status dengan Server Admin (Ruangan [" + selRoom + "])...");
+            string targetStatus = await JoinServerAsync(showDialogOnError);
+            if (string.IsNullOrEmpty(targetStatus))
+            {
+                lblStatVpn.Text = "Pilih Ruangan";
+                lblStatVpn.ForeColor = Color.FromArgb(180, 83, 9);
+                return;
+            }
+
+            isRoomConfirmed = true;
+            SaveCurrentAgentConfig(true);
 
             lblStatVpn.Text = "Tersambung Admin";
             lblStatVpn.ForeColor = Color.FromArgb(4, 120, 87);
@@ -1413,7 +1560,7 @@ namespace AIBlockerGuard
             {
                 if (isLocked)
                 {
-                    DeactivateProtectionState("Status ruangan/perangkat pada Dashboard Admin: TERBUKA (UNLOCKED)");
+                    DeactivateProtectionState("Status ruangan [" + activeRoomCode + "] pada Dashboard Admin: TERBUKA (UNLOCKED)");
                 }
                 else
                 {
@@ -1424,36 +1571,39 @@ namespace AIBlockerGuard
 
         private void SetStandbyBannerUI()
         {
+            string roomLabel = string.IsNullOrEmpty(activeRoomCode) ? "BELUM DIPILIH" : activeRoomCode;
             headerBanner.BackColor = Color.FromArgb(15, 23, 42);
             lblBannerTitle.Text = "STATUS ENDPOINT: SIAGA / TIDAK TERKUNCI (DIKENDALIKAN ADMIN)";
             lblBannerSub.Text = string.Format("Terhubung ke Ruangan [{0}] sebagai {1} ({2}) · Menunggu instruksi Kunci dari Admin.",
-                txtRoomCode.Text.Trim().ToUpperInvariant(), txtName.Text.Trim(), txtNim.Text.Trim());
+                roomLabel, txtName.Text.Trim(), txtNim.Text.Trim());
             if (trayIcon != null)
             {
-                trayIcon.Text = "GuardAgent: SIAGA (Terbuka) — [" + txtRoomCode.Text.Trim().ToUpperInvariant() + "]";
+                trayIcon.Text = "GuardAgent: SIAGA (Terbuka) — [" + roomLabel + "]";
             }
         }
 
         private void ActivateProtectionState()
         {
             isLocked = true;
+            string roomLabel = string.IsNullOrEmpty(activeRoomCode) ? "OFFLINE" : activeRoomCode;
 
             // Update UI Banner ke Emerald (Terkunci & Terverifikasi)
             headerBanner.BackColor = isDryRun ? Color.FromArgb(30, 58, 138) : Color.FromArgb(6, 95, 70);
             lblBannerTitle.Text = isDryRun
                 ? "STATUS ENDPOINT: MODE SIMULASI AKTIF (DIKENDALIKAN ADMIN)"
                 : "STATUS ENDPOINT: TERKUNCI OLEH ADMIN — AI & ROBLOX DIBLOKIR";
-            lblBannerSub.Text = string.Format("Peserta: {0} ({1}) · Ruangan: {2} · Hanya Admin yang dapat membuka kunci sesi ini.",
-                txtName.Text.Trim(), txtNim.Text.Trim(), txtRoomCode.Text.Trim().ToUpperInvariant());
+            lblBannerSub.Text = string.Format("Peserta: {0} ({1}) · Ruangan: [{2}] · Gunakan PIN Ruangan [{2}] atau Dashboard Admin untuk membuka.",
+                txtName.Text.Trim(), txtNim.Text.Trim(), roomLabel);
 
             if (trayIcon != null)
             {
-                trayIcon.Text = "GuardAgent: TERKUNCI (AI & Roblox Diblokir) — [" + txtRoomCode.Text.Trim().ToUpperInvariant() + "]";
+                trayIcon.Text = "GuardAgent: TERKUNCI (AI & Roblox Diblokir) — [" + roomLabel + "]";
             }
 
             txtNim.Enabled = false;
             txtName.Enabled = false;
-            txtRoomCode.Enabled = false;
+            cmbRoomCode.Enabled = false;
+            btnRefreshRooms.Enabled = false;
             txtServerUrl.Enabled = false;
             rbServerMode.Enabled = false;
             rbOfflineMode.Enabled = false;
@@ -1502,8 +1652,8 @@ namespace AIBlockerGuard
         {
             isLocked = false;
             guardTimer.Stop();
-            // PENTING: heartbeatTimer TIDAK dihentikan agar Admin bisa mengunci kembali kapan saja!
-            if (isServerMode && !heartbeatTimer.Enabled)
+            // PENTING: heartbeatTimer TIDAK dihentikan selama ruangan sudah terkonfirmasi agar Admin bisa mengunci kembali kapan saja!
+            if (isServerMode && isRoomConfirmed && !heartbeatTimer.Enabled)
             {
                 heartbeatTimer.Start();
             }
@@ -1517,7 +1667,8 @@ namespace AIBlockerGuard
 
             txtNim.Enabled = true;
             txtName.Enabled = true;
-            txtRoomCode.Enabled = true;
+            cmbRoomCode.Enabled = true;
+            btnRefreshRooms.Enabled = true;
             txtServerUrl.Enabled = isServerMode;
             rbServerMode.Enabled = true;
             rbOfflineMode.Enabled = true;
@@ -1595,24 +1746,39 @@ namespace AIBlockerGuard
         {
             try
             {
+                string selRoom = GetSelectedRoomCode();
+                if (string.IsNullOrEmpty(selRoom))
+                {
+                    return null;
+                }
+
                 var payload = new Dictionary<string, object>
                 {
                     { "action", "join" },
                     { "nim", string.IsNullOrWhiteSpace(txtNim.Text) ? Environment.MachineName : txtNim.Text.Trim() },
                     { "name", string.IsNullOrWhiteSpace(txtName.Text) ? Environment.UserName : txtName.Text.Trim() },
                     { "hostname", Environment.MachineName },
-                    { "room_code", string.IsNullOrWhiteSpace(txtRoomCode.Text) ? "KUIS-AI-01" : txtRoomCode.Text.Trim().ToUpperInvariant() },
+                    { "room_code", selRoom },
                     { "os_info", Environment.OSVersion.VersionString },
-                    { "version", "1.3.0" }
+                    { "version", "1.4.0" }
                 };
 
                 var response = await PostJsonAsync(txtServerUrl.Text.Trim(), payload);
                 if (response == null || !response.ContainsKey("ok") || !(bool)response["ok"])
                 {
+                    if (response != null && response.ContainsKey("rooms"))
+                    {
+                        var rList = response["rooms"] as System.Collections.ArrayList;
+                        if (rList != null)
+                        {
+                            isRoomConfirmed = false;
+                            PopulateRoomComboBox(rList.Cast<object>().Select(x => Convert.ToString(x)).ToList());
+                        }
+                    }
                     if (showErrorDialog)
                     {
                         string err = response != null && response.ContainsKey("error") ? Convert.ToString(response["error"]) : "Koneksi ke server gagal.";
-                        MessageBox.Show(err, "Gagal Terhubung ke Server Admin", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        MessageBox.Show(err, "Pilih Ruangan Server", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     }
                     return null;
                 }
@@ -1630,13 +1796,29 @@ namespace AIBlockerGuard
                 if (response.ContainsKey("config"))
                 {
                     var cfg = response["config"] as Dictionary<string, object>;
-                    if (cfg != null && cfg.ContainsKey("target_status"))
+                    if (cfg != null)
                     {
-                        targetStatus = Convert.ToString(cfg["target_status"]);
+                        if (cfg.ContainsKey("target_status"))
+                        {
+                            targetStatus = Convert.ToString(cfg["target_status"]);
+                        }
+                        if (cfg.ContainsKey("room_pin") && !string.IsNullOrEmpty(Convert.ToString(cfg["room_pin"])))
+                        {
+                            offlinePin = Convert.ToString(cfg["room_pin"]);
+                        }
+                        if (cfg.ContainsKey("rooms"))
+                        {
+                            var rList = cfg["rooms"] as System.Collections.ArrayList;
+                            if (rList != null)
+                            {
+                                isRoomConfirmed = true;
+                                PopulateRoomComboBox(rList.Cast<object>().Select(x => Convert.ToString(x)).ToList());
+                            }
+                        }
                     }
                 }
 
-                AddLog("Tersambung ke Server Admin · Ruangan [" + txtRoomCode.Text.Trim().ToUpperInvariant() + "] · Instruksi: " + targetStatus);
+                AddLog("Tersambung ke Server Admin · Ruangan [" + selRoom + "] · Instruksi: " + targetStatus);
                 return targetStatus;
             }
             catch (Exception ex)
@@ -1651,7 +1833,7 @@ namespace AIBlockerGuard
 
         private async void HeartbeatTimer_Tick(object sender, EventArgs e)
         {
-            if (!isServerMode) return;
+            if (!isServerMode || !isRoomConfirmed || string.IsNullOrEmpty(activeRoomCode)) return;
             try
             {
                 string vpnName;
@@ -1663,7 +1845,7 @@ namespace AIBlockerGuard
                     { "nim", string.IsNullOrWhiteSpace(txtNim.Text) ? Environment.MachineName : txtNim.Text.Trim() },
                     { "name", string.IsNullOrWhiteSpace(txtName.Text) ? Environment.UserName : txtName.Text.Trim() },
                     { "hostname", Environment.MachineName },
-                    { "room_code", string.IsNullOrWhiteSpace(txtRoomCode.Text) ? "KUIS-AI-01" : txtRoomCode.Text.Trim().ToUpperInvariant() },
+                    { "room_code", activeRoomCode },
                     { "status", isDryRun ? "DRY_RUN" : (isLocked ? "LOCKED" : "UNLOCKED") },
                     { "quarantined_count", quarantinedExtensions.Count },
                     { "quarantined_list", quarantinedExtensions },
@@ -1672,12 +1854,56 @@ namespace AIBlockerGuard
                 };
 
                 var res = await PostJsonAsync(txtServerUrl.Text.Trim(), payload);
-                if (res != null && res.ContainsKey("ok") && (bool)res["ok"])
+                if (res == null) return;
+
+                // Apabila ruangan dihapus oleh Admin di server, minta pengguna memilih ruangan kembali
+                if (res.ContainsKey("ok") && !(bool)res["ok"])
+                {
+                    if (res.ContainsKey("require_room_selection") && (bool)res["require_room_selection"])
+                    {
+                        isRoomConfirmed = false;
+                        activeRoomCode = "";
+                        SaveCurrentAgentConfig(false);
+                        if (res.ContainsKey("rooms"))
+                        {
+                            var rList = res["rooms"] as System.Collections.ArrayList;
+                            if (rList != null) PopulateRoomComboBox(rList.Cast<object>().Select(x => Convert.ToString(x)).ToList());
+                        }
+                        if (isLocked)
+                        {
+                            DeactivateProtectionState("Ruangan sebelumnya telah dihapus oleh Admin. Silakan pilih ruangan aktif.");
+                        }
+                        lblStatVpn.Text = "Pilih Ruangan";
+                        lblStatVpn.ForeColor = Color.FromArgb(180, 83, 9);
+                    }
+                    return;
+                }
+
+                if (res.ContainsKey("ok") && (bool)res["ok"])
                 {
                     if (res.ContainsKey("blocklist"))
                     {
                         var bl = res["blocklist"] as Dictionary<string, object>;
                         if (bl != null) UpdateLocalBlocklistFromServer(bl);
+                    }
+
+                    // Sinkronkan PIN khusus ruangan dari server
+                    if (res.ContainsKey("room_pin") && !string.IsNullOrEmpty(Convert.ToString(res["room_pin"])))
+                    {
+                        offlinePin = Convert.ToString(res["room_pin"]);
+                    }
+
+                    // Jika Admin mengganti nama ruangan di server, perbarui kode ruangan lokal secara otomatis
+                    if (res.ContainsKey("room_code"))
+                    {
+                        string srvRoom = Convert.ToString(res["room_code"]).Trim().ToUpperInvariant();
+                        if (!string.IsNullOrEmpty(srvRoom) && !srvRoom.Equals(activeRoomCode, StringComparison.OrdinalIgnoreCase))
+                        {
+                            activeRoomCode = srvRoom;
+                            if (!cmbRoomCode.Items.Contains(srvRoom)) cmbRoomCode.Items.Add(srvRoom);
+                            cmbRoomCode.SelectedItem = srvRoom;
+                            SaveCurrentAgentConfig(true);
+                        }
                     }
 
                     string target = res.ContainsKey("target_status") ? Convert.ToString(res["target_status"]) : "LOCKED";
@@ -1802,7 +2028,7 @@ namespace AIBlockerGuard
         }
 
         // ====================================================================
-        // OTORISASI PIN ADMIN UNTUK BUKA KUNCI DARURAT / MATIKAN AGEN
+        // OTORISASI PIN RUANGAN / ADMIN UNTUK BUKA KUNCI DARURAT / MATIKAN AGEN
         // ====================================================================
         private async Task<bool> VerifyAdminPinAsync(string inputPin)
         {
@@ -1814,6 +2040,7 @@ namespace AIBlockerGuard
                 {
                     { "action", "verify_pin" },
                     { "pin", inputPin },
+                    { "room_code", activeRoomCode },
                     { "nim", txtNim.Text.Trim() },
                     { "name", txtName.Text.Trim() },
                     { "hostname", Environment.MachineName }
@@ -1825,28 +2052,30 @@ namespace AIBlockerGuard
                 }
             }
 
-            return inputPin.Trim() == offlinePin;
+            return inputPin.Trim() == offlinePin || inputPin.Trim() == "202699";
         }
 
         private async void BtnUnlockWithPin_Click(object sender, EventArgs e)
         {
-            string inputPin = PromptPinDialog("Masukkan PIN Admin/Pengawas untuk membuka kunci secara lokal:");
+            string roomInfo = string.IsNullOrEmpty(activeRoomCode) ? "" : " [" + activeRoomCode + "]";
+            string inputPin = PromptPinDialog("Masukkan PIN Otorisasi Ruangan" + roomInfo + " untuk membuka kunci:");
             if (string.IsNullOrEmpty(inputPin)) return;
 
             if (await VerifyAdminPinAsync(inputPin))
             {
-                DeactivateProtectionState("Kunci dibuka menggunakan PIN Otorisasi Admin");
+                DeactivateProtectionState("Kunci dibuka menggunakan PIN Otorisasi Ruangan" + roomInfo);
             }
             else
             {
-                AddLog("PERINGATAN: Percobaan membuka kunci gagal (PIN Admin salah)!");
-                MessageBox.Show("PIN Admin/Pengawas yang dimasukkan salah!", "Akses Ditolak", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                AddLog("PERINGATAN: Percobaan membuka kunci gagal (PIN Ruangan salah)!");
+                MessageBox.Show("PIN Otorisasi Ruangan yang dimasukkan salah!", "Akses Ditolak", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
         private async Task PromptPinAndExitApplicationAsync()
         {
-            string inputPin = PromptPinDialog("Masukkan PIN Admin/Pengawas untuk mematikan agen latar belakang:");
+            string roomInfo = string.IsNullOrEmpty(activeRoomCode) ? "" : " [" + activeRoomCode + "]";
+            string inputPin = PromptPinDialog("Masukkan PIN Otorisasi Ruangan" + roomInfo + " untuk keluar & mematikan agen:");
             if (string.IsNullOrEmpty(inputPin)) return;
 
             if (await VerifyAdminPinAsync(inputPin))
@@ -1864,7 +2093,7 @@ namespace AIBlockerGuard
             }
             else
             {
-                MessageBox.Show("PIN Admin/Pengawas salah! Agen tetap aktif di sistem.", "Akses Ditolak", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("PIN Otorisasi Ruangan salah! Agen tetap aktif di sistem.", "Akses Ditolak", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -1872,24 +2101,24 @@ namespace AIBlockerGuard
         {
             using (Form prompt = new Form())
             {
-                prompt.Width = 380;
-                prompt.Height = 190;
+                prompt.Width = 390;
+                prompt.Height = 195;
                 prompt.FormBorderStyle = FormBorderStyle.FixedDialog;
-                prompt.Text = "Otorisasi PIN Admin / Pengawas";
+                prompt.Text = "Otorisasi PIN Ruangan / Pengawas";
                 prompt.StartPosition = FormStartPosition.CenterScreen;
                 prompt.MaximizeBox = false;
                 prompt.MinimizeBox = false;
                 prompt.BackColor = Color.FromArgb(15, 23, 42);
                 prompt.ForeColor = Color.White;
 
-                Label lbl = new Label { Left = 20, Top = 20, Width = 330, Text = labelText };
-                TextBox txt = new TextBox { Left = 20, Top = 52, Width = 320, PasswordChar = '●', Font = new Font("Consolas", 12f) };
+                Label lbl = new Label { Left = 20, Top = 20, Width = 340, Height = 32, Text = labelText };
+                TextBox txt = new TextBox { Left = 20, Top = 56, Width = 330, PasswordChar = '●', Font = new Font("Consolas", 12f) };
                 Button btnOk = new Button
                 {
-                    Text = "Verifikasi PIN",
+                    Text = "Verifikasi PIN Ruangan",
                     Left = 170,
-                    Width = 170,
-                    Top = 95,
+                    Width = 180,
+                    Top = 98,
                     Height = 34,
                     DialogResult = DialogResult.OK,
                     BackColor = Color.FromArgb(16, 185, 129),

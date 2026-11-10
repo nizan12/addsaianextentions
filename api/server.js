@@ -22,6 +22,12 @@ function getDefaultSchema() {
                 'LAB-02': 'LOCKED',
                 'LAB-03': 'LOCKED'
             },
+            room_pins: {
+                'KUIS-AI-01': '202601',
+                'LAB-01': '202602',
+                'LAB-02': '202603',
+                'LAB-03': '202604'
+            },
             unlock_pin: '202699',
             global_status: 'LOCKED',
             block_doh: true,
@@ -181,11 +187,17 @@ function ensureRoomsConfig(data) {
     if (!data.config.room_statuses || typeof data.config.room_statuses !== 'object') {
         data.config.room_statuses = {};
     }
-    for (const r of data.config.rooms) {
+    if (!data.config.room_pins || typeof data.config.room_pins !== 'object') {
+        data.config.room_pins = {};
+    }
+    data.config.rooms.forEach((r, idx) => {
         if (!data.config.room_statuses[r]) {
             data.config.room_statuses[r] = data.config.global_status || 'LOCKED';
         }
-    }
+        if (!data.config.room_pins[r]) {
+            data.config.room_pins[r] = String(202601 + idx);
+        }
+    });
     const defaults = getDefaultSchema().blocklist;
     if (data.blocklist) {
         data.blocklist.domains = Array.from(new Set([...(data.blocklist.domains || []), ...defaults.domains]));
@@ -193,14 +205,20 @@ function ensureRoomsConfig(data) {
     }
 }
 
-function registerRoomIfNeeded(data, roomCode) {
+function registerRoomByAdmin(data, roomCode, customPin = '') {
     ensureRoomsConfig(data);
-    const norm = String(roomCode || data.config.room_code || 'KUIS-AI-01').trim().toUpperCase();
+    const norm = String(roomCode || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '-');
+    if (!norm) return '';
     if (!data.config.rooms.includes(norm)) {
         data.config.rooms.push(norm);
     }
     if (!data.config.room_statuses[norm]) {
         data.config.room_statuses[norm] = data.config.global_status || 'LOCKED';
+    }
+    if (customPin && String(customPin).trim()) {
+        data.config.room_pins[norm] = String(customPin).trim();
+    } else if (!data.config.room_pins[norm]) {
+        data.config.room_pins[norm] = String(202600 + data.config.rooms.length);
     }
     return norm;
 }
@@ -242,26 +260,43 @@ module.exports = async (req, res) => {
         ensureRoomsConfig(data);
 
         switch (action) {
+            case 'get_rooms': {
+                return res.status(200).json({
+                    ok: true,
+                    rooms: data.config.rooms,
+                    room_statuses: data.config.room_statuses,
+                    default_room: data.config.room_code || data.config.rooms[0] || 'KUIS-AI-01'
+                });
+            }
+
             case 'join':
             case 'handshake': {
                 const nim = String(body.nim || '').trim();
                 const name = String(body.name || '').trim();
                 const hostname = String(body.hostname || 'PC-CLIENT').trim();
-                const rawRoom = String(body.room_code || data.config.room_code || 'KUIS-AI-01').trim();
+                const rawRoom = String(body.room_code || '').trim().toUpperCase();
                 const osInfo = String(body.os_info || 'Windows').trim();
-                const version = String(body.version || '1.2.0').trim();
+                const version = String(body.version || '1.4.0').trim();
 
                 if (!nim || !name) {
-                    return res.status(400).json({ ok: false, error: 'NIM dan Nama Mahasiswa wajib diisi.' });
+                    return res.status(400).json({ ok: false, error: 'NIM dan Nama Mahasiswa wajib diisi.', rooms: data.config.rooms });
                 }
 
-                // Multi-Ruangan: daftarkan kode ruangan secara otomatis
-                const normalizedRoom = registerRoomIfNeeded(data, rawRoom);
+                // PENTING: Mahasiswa TIDAK BOLEH membuat ruangan sendiri! Harus memilih ruangan yang sudah dibuat Admin.
+                if (!rawRoom || !data.config.rooms.includes(rawRoom)) {
+                    return res.status(400).json({
+                        ok: false,
+                        error: `Kode Ruangan [${rawRoom || '-'}] tidak ditemukan. Silakan pilih Ruangan yang tersedia terlebih dahulu.`,
+                        rooms: data.config.rooms
+                    });
+                }
 
+                const normalizedRoom = rawRoom;
                 const studentId = nim.replace(/[^a-zA-Z0-9_-]/g, '_');
                 const existing = data.students[studentId] || null;
                 const roomDefaultState = data.config.room_statuses[normalizedRoom] || data.config.global_status || 'LOCKED';
-                const desiredState = existing?.target_status || roomDefaultState;
+                const desiredState = (existing && existing.room_code === normalizedRoom && existing.target_status) ? existing.target_status : roomDefaultState;
+                const roomPin = data.config.room_pins[normalizedRoom] || data.config.unlock_pin || '202699';
                 const nowSec = Math.floor(Date.now() / 1000);
 
                 data.students[studentId] = {
@@ -291,8 +326,10 @@ module.exports = async (req, res) => {
                 return res.status(200).json({
                     ok: true,
                     student_id: studentId,
+                    rooms: data.config.rooms,
                     config: {
                         room_code: normalizedRoom,
+                        room_pin: roomPin,
                         target_status: desiredState,
                         block_doh: data.config.block_doh,
                         block_vpn: data.config.block_vpn,
@@ -320,37 +357,52 @@ module.exports = async (req, res) => {
                 const studentId = nim.replace(/[^a-zA-Z0-9_-]/g, '_');
                 const globalTarget = data.config.global_status || 'LOCKED';
                 const nowSec = Math.floor(Date.now() / 1000);
+                const reqRoom = String(body.room_code || '').trim().toUpperCase();
 
                 if (!data.students[studentId]) {
-                    const defaultRoom = registerRoomIfNeeded(data, body.room_code || data.config.room_code || 'KUIS-AI-01');
+                    if (!reqRoom || !data.config.rooms.includes(reqRoom)) {
+                        return res.status(200).json({
+                            ok: false,
+                            require_room_selection: true,
+                            rooms: data.config.rooms,
+                            error: 'Silakan pilih ruangan yang aktif terlebih dahulu.'
+                        });
+                    }
                     data.students[studentId] = {
                         id: studentId,
                         nim,
                         name,
                         hostname,
-                        room_code: defaultRoom,
+                        room_code: reqRoom,
                         ip: clientIp,
                         os_info: 'Windows',
-                        version: '1.2.0',
-                        target_status: data.config.room_statuses[defaultRoom] || globalTarget,
+                        version: '1.4.0',
+                        target_status: data.config.room_statuses[reqRoom] || globalTarget,
                         joined_at: nowFormatted()
                     };
                 }
 
                 const st = data.students[studentId];
                 if (name) st.name = name;
-                if (body.room_code) {
-                    const reqRoom = registerRoomIfNeeded(data, body.room_code);
-                    if (st.room_code !== reqRoom) {
-                        st.room_code = reqRoom;
-                        st.target_status = data.config.room_statuses[reqRoom] || globalTarget;
-                    }
-                } else if (!st.room_code) {
-                    st.room_code = data.config.room_code || 'KUIS-AI-01';
-                }
-                registerRoomIfNeeded(data, st.room_code);
-                const prevVpn = Boolean(st.vpn_detected);
 
+                // Jika ruangan mahasiswa sudah dihapus oleh Admin, minta pilih ruangan lagi
+                if (!st.room_code || !data.config.rooms.includes(st.room_code)) {
+                    if (reqRoom && data.config.rooms.includes(reqRoom)) {
+                        st.room_code = reqRoom;
+                    } else {
+                        delete data.students[studentId];
+                        await writeData(data);
+                        return res.status(200).json({
+                            ok: false,
+                            require_room_selection: true,
+                            rooms: data.config.rooms,
+                            target_status: 'UNLOCKED',
+                            error: 'Ruangan sebelumnya telah dihapus oleh Admin. Silakan pilih ruangan kembali.'
+                        });
+                    }
+                }
+
+                const prevVpn = Boolean(st.vpn_detected);
                 st.status = currentStatus;
                 st.hostname = hostname;
                 st.ip = clientIp;
@@ -366,12 +418,15 @@ module.exports = async (req, res) => {
                 }
 
                 await writeData(data);
+                const roomPin = data.config.room_pins[st.room_code] || data.config.unlock_pin || '202699';
 
                 return res.status(200).json({
                     ok: true,
                     target_status: st.target_status || data.config.room_statuses[st.room_code] || globalTarget,
+                    rooms: data.config.rooms,
                     config: {
                         room_code: st.room_code,
+                        room_pin: roomPin,
                         block_doh: data.config.block_doh,
                         block_vpn: data.config.block_vpn,
                         quarantine_extensions: data.config.quarantine_extensions,
@@ -407,23 +462,24 @@ module.exports = async (req, res) => {
                 const nim = String(body.nim || '').trim();
                 const name = String(body.name || 'Mahasiswa').trim();
                 const hostname = String(body.hostname || 'PC').trim();
-                const validPin = String(data.config.unlock_pin || '202699');
+                const masterPin = String(data.config.unlock_pin || '202699');
 
                 const studentId = nim.replace(/[^a-zA-Z0-9_-]/g, '_');
-                const stRoom = data.students[studentId]?.room_code || data.config.room_code || 'KUIS-AI-01';
+                const stRoom = String(body.room_code || data.students[studentId]?.room_code || data.config.room_code || 'KUIS-AI-01').trim().toUpperCase();
+                const roomPin = String(data.config.room_pins?.[stRoom] || '');
 
-                if (pin && pin === validPin) {
+                if (pin && (pin === roomPin || pin === masterPin)) {
                     if (data.students[studentId]) {
                         data.students[studentId].target_status = 'UNLOCKED';
                         data.students[studentId].status = 'UNLOCKED';
                     }
-                    addLog(data, nim, name, hostname, 'PIN_UNLOCK', 'Kunci dibuka menggunakan PIN Dosen/Pengawas yang valid.', 'INFO', stRoom);
+                    addLog(data, nim, name, hostname, 'PIN_UNLOCK', `Kunci dibuka / otorisasi keluar menggunakan PIN Ruangan [${stRoom}] yang valid.`, 'INFO', stRoom);
                     await writeData(data);
                     return res.status(200).json({ ok: true, unlocked: true });
                 } else {
-                    addLog(data, nim, name, hostname, 'PIN_FAILED', `Percobaan membuka kunci gagal (PIN salah: ${pin}).`, 'WARNING', stRoom);
+                    addLog(data, nim, name, hostname, 'PIN_FAILED', `Percobaan PIN gagal di ruangan [${stRoom}] (PIN salah: ${pin}).`, 'WARNING', stRoom);
                     await writeData(data);
-                    return res.status(403).json({ ok: false, unlocked: false, error: 'PIN Pengawas salah!' });
+                    return res.status(403).json({ ok: false, unlocked: false, error: `PIN Otorisasi untuk ruangan [${stRoom}] salah!` });
                 }
             }
 
@@ -433,11 +489,18 @@ module.exports = async (req, res) => {
                 let onlineCount = 0;
                 let lockedCount = 0;
                 let violationCount = 0;
+                let dirty = false;
 
                 for (const id of Object.keys(data.students)) {
-                    const st = { ...data.students[id] };
-                    if (!st.room_code) st.room_code = data.config.room_code || 'KUIS-AI-01';
-                    registerRoomIfNeeded(data, st.room_code);
+                    const rawSt = data.students[id];
+                    const stRoom = String(rawSt.room_code || '').toUpperCase();
+                    // Jika ruangan sudah dihapus oleh Admin, bersihkan mahasiswa yatim agar tidak membuat ruangan muncul kembali
+                    if (!stRoom || !data.config.rooms.includes(stRoom)) {
+                        delete data.students[id];
+                        dirty = true;
+                        continue;
+                    }
+                    const st = { ...rawSt };
                     const isSim = Boolean(st.is_simulated);
                     const isOnline = isSim ? true : ((nowSec - (st.last_seen || 0)) <= 25);
                     st.is_online = isOnline;
@@ -446,6 +509,10 @@ module.exports = async (req, res) => {
                     if (st.status === 'LOCKED' || st.status === 'DRY_RUN') lockedCount++;
                     violationCount += parseInt(st.killed_processes_count || 0, 10);
                     students.push(st);
+                }
+
+                if (dirty) {
+                    await writeData(data);
                 }
 
                 students.sort((a, b) => {
@@ -492,10 +559,12 @@ module.exports = async (req, res) => {
                     const label = target === 'LOCKED' ? 'MENGUNCI (Aktifkan Blokir AI)' : 'MEMBUKA KUNCI (Pulihkan PC)';
                     addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'GLOBAL_COMMAND', `Pengawas memilih ${label} untuk SELURUH RUANGAN.`, 'INFO', 'ALL');
                 } else {
-                    registerRoomIfNeeded(data, targetRoom);
+                    if (!data.config.rooms.includes(targetRoom)) {
+                        return res.status(404).json({ ok: false, error: 'Ruangan tidak ditemukan.' });
+                    }
                     data.config.room_statuses[targetRoom] = target;
                     for (const id of Object.keys(data.students)) {
-                        const stRoom = String(data.students[id].room_code || data.config.room_code || 'KUIS-AI-01').toUpperCase();
+                        const stRoom = String(data.students[id].room_code || '').toUpperCase();
                         if (stRoom === targetRoom) {
                             data.students[id].target_status = target;
                             data.students[id].status = target;
@@ -511,48 +580,71 @@ module.exports = async (req, res) => {
 
             case 'add_room': {
                 const newRoom = String(body.room_code || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '-');
+                const customPin = String(body.room_pin || '').trim();
                 if (!newRoom) {
                     return res.status(400).json({ ok: false, error: 'Kode ruangan wajib diisi.' });
                 }
-                registerRoomIfNeeded(data, newRoom);
-                addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ROOM_ADDED', `Ruangan baru [${newRoom}] ditambahkan ke sistem.`, 'INFO', newRoom);
+                if (data.config.rooms.includes(newRoom)) {
+                    return res.status(400).json({ ok: false, error: `Ruangan [${newRoom}] sudah ada.` });
+                }
+                registerRoomByAdmin(data, newRoom, customPin);
+                addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ROOM_ADDED', `Ruangan baru [${newRoom}] ditambahkan (PIN: ${data.config.room_pins[newRoom]}).`, 'INFO', newRoom);
                 await writeData(data);
-                return res.status(200).json({ ok: true, room_code: newRoom, rooms: data.config.rooms, room_statuses: data.config.room_statuses });
+                return res.status(200).json({
+                    ok: true,
+                    room_code: newRoom,
+                    room_pin: data.config.room_pins[newRoom],
+                    rooms: data.config.rooms,
+                    room_statuses: data.config.room_statuses,
+                    room_pins: data.config.room_pins
+                });
             }
 
             case 'rename_room': {
                 const oldRoom = String(body.old_room_code || '').trim().toUpperCase();
-                const newRoom = String(body.new_room_code || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '-');
+                const newRoom = String(body.new_room_code || oldRoom).trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '-');
+                const newPin = String(body.room_pin || '').trim();
                 if (!oldRoom || !newRoom) {
-                    return res.status(400).json({ ok: false, error: 'Kode ruangan lama dan baru wajib diisi.' });
+                    return res.status(400).json({ ok: false, error: 'Kode ruangan wajib diisi.' });
                 }
-                if (oldRoom === newRoom) {
-                    return res.status(200).json({ ok: true, room_code: newRoom, rooms: data.config.rooms, room_statuses: data.config.room_statuses });
+                if (!data.config.rooms.includes(oldRoom)) {
+                    return res.status(404).json({ ok: false, error: `Ruangan [${oldRoom}] tidak ditemukan.` });
                 }
+
                 const oldStatus = data.config.room_statuses[oldRoom] || data.config.global_status || 'LOCKED';
-                const idx = data.config.rooms.indexOf(oldRoom);
-                if (idx !== -1) {
+                const resolvedPin = newPin || data.config.room_pins[oldRoom] || '202601';
+
+                if (oldRoom !== newRoom) {
+                    const idx = data.config.rooms.indexOf(oldRoom);
                     if (data.config.rooms.includes(newRoom)) {
                         data.config.rooms.splice(idx, 1);
                     } else {
                         data.config.rooms[idx] = newRoom;
                     }
-                } else if (!data.config.rooms.includes(newRoom)) {
-                    data.config.rooms.push(newRoom);
-                }
-                data.config.room_statuses[newRoom] = oldStatus;
-                delete data.config.room_statuses[oldRoom];
-                if (data.config.room_code === oldRoom) {
-                    data.config.room_code = newRoom;
-                }
-                for (const id of Object.keys(data.students)) {
-                    if (String(data.students[id].room_code || '').toUpperCase() === oldRoom) {
-                        data.students[id].room_code = newRoom;
+                    data.config.room_statuses[newRoom] = oldStatus;
+                    delete data.config.room_statuses[oldRoom];
+                    delete data.config.room_pins[oldRoom];
+                    if (data.config.room_code === oldRoom) {
+                        data.config.room_code = newRoom;
+                    }
+                    for (const id of Object.keys(data.students)) {
+                        if (String(data.students[id].room_code || '').toUpperCase() === oldRoom) {
+                            data.students[id].room_code = newRoom;
+                        }
                     }
                 }
-                addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ROOM_RENAMED', `Kode ruangan [${oldRoom}] diubah menjadi [${newRoom}].`, 'INFO', newRoom);
+
+                data.config.room_pins[newRoom] = resolvedPin;
+                addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ROOM_UPDATED', `Ruangan [${oldRoom}] diperbarui menjadi [${newRoom}] (PIN: ${resolvedPin}).`, 'INFO', newRoom);
                 await writeData(data);
-                return res.status(200).json({ ok: true, room_code: newRoom, rooms: data.config.rooms, room_statuses: data.config.room_statuses });
+                return res.status(200).json({
+                    ok: true,
+                    room_code: newRoom,
+                    room_pin: resolvedPin,
+                    rooms: data.config.rooms,
+                    room_statuses: data.config.room_statuses,
+                    room_pins: data.config.room_pins
+                });
             }
 
             case 'delete_room': {
@@ -562,12 +654,24 @@ module.exports = async (req, res) => {
                 }
                 data.config.rooms = data.config.rooms.filter(r => r !== delRoom);
                 delete data.config.room_statuses[delRoom];
+                delete data.config.room_pins[delRoom];
                 if (data.config.room_code === delRoom) {
                     data.config.room_code = data.config.rooms[0];
                 }
-                addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ROOM_REMOVED', `Ruangan [${delRoom}] dihapus dari daftar ruangan.`, 'INFO');
+                // Hapus mahasiswa yang terikat pada ruangan yang dihapus agar tidak membuat ruangan muncul kembali
+                for (const id of Object.keys(data.students)) {
+                    if (String(data.students[id].room_code || '').toUpperCase() === delRoom) {
+                        delete data.students[id];
+                    }
+                }
+                addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ROOM_REMOVED', `Ruangan [${delRoom}] beserta sesi di dalamnya telah dihapus.`, 'INFO');
                 await writeData(data);
-                return res.status(200).json({ ok: true, rooms: data.config.rooms, room_statuses: data.config.room_statuses });
+                return res.status(200).json({
+                    ok: true,
+                    rooms: data.config.rooms,
+                    room_statuses: data.config.room_statuses,
+                    room_pins: data.config.room_pins
+                });
             }
 
             case 'set_student_command': {
@@ -596,8 +700,8 @@ module.exports = async (req, res) => {
 
             case 'update_config': {
                 if (body.room_code) {
-                    const norm = registerRoomIfNeeded(data, body.room_code);
-                    data.config.room_code = norm;
+                    const norm = registerRoomByAdmin(data, body.room_code);
+                    if (norm) data.config.room_code = norm;
                 }
                 if (Array.isArray(body.rooms) && body.rooms.length > 0) {
                     data.config.rooms = Array.from(new Set(body.rooms.map(r => String(r).trim().toUpperCase()).filter(Boolean)));
@@ -631,8 +735,8 @@ module.exports = async (req, res) => {
 
             case 'simulate_student': {
                 const reqRoom = String(body.room_code || '').trim().toUpperCase();
-                const assignedRoom = (reqRoom && reqRoom !== 'ALL')
-                    ? registerRoomIfNeeded(data, reqRoom)
+                const assignedRoom = (reqRoom && reqRoom !== 'ALL' && data.config.rooms.includes(reqRoom))
+                    ? reqRoom
                     : (data.config.rooms[Math.floor(Math.random() * data.config.rooms.length)] || 'KUIS-AI-01');
 
                 const samples = [
