@@ -1,0 +1,37 @@
+@echo off
+title AI-Blocker Guard — Pemulihan Sistem Darurat
+echo ====================================================================
+echo   AI-BLOCKER GUARD - PEMULIHAN SISTEM DARURAT (EMERGENCY RESTORE)
+echo ====================================================================
+echo.
+
+net session >nul 2>&1
+if %errorLevel% neq 0 (
+    echo [!] PERINGATAN: Klik kanan pada file ini dan pilih "Run as administrator"!
+    pause
+    exit /b 1
+)
+
+if exist "%~dp0AIBlockerGuard.exe" (
+    echo [*] Menjalankan pemulihan otomatis lewat AIBlockerGuard.exe --restore ...
+    "%~dp0AIBlockerGuard.exe" --restore
+)
+
+if exist "C:\Program Files\AIBlockerGuard\AIBlockerGuard.exe" (
+    echo [*] Menjalankan pemulihan otomatis lewat Program Files ...
+    "C:\Program Files\AIBlockerGuard\AIBlockerGuard.exe" --restore
+)
+
+echo [*] Membersihkan kebijakan Registry Browser DNS-over-HTTPS (DoH)...
+reg delete "HKLM\SOFTWARE\Policies\Google\Chrome" /v DnsOverHttpsMode /f >nul 2>&1
+reg delete "HKLM\SOFTWARE\Policies\Google\Chrome" /v GenAiDefaultSettings /f >nul 2>&1
+reg delete "HKLM\SOFTWARE\Policies\Microsoft\Edge" /v DnsOverHttpsMode /f >nul 2>&1
+reg delete "HKLM\SOFTWARE\Policies\Microsoft\Edge" /v HubsSidebarEnabled /f >nul 2>&1
+reg delete "HKLM\SOFTWARE\Policies\BraveSoftware\Brave" /v DnsOverHttpsMode /f >nul 2>&1
+
+echo [*] Melakukan Flush DNS Windows...
+ipconfig /flushdns >nul
+
+echo.
+echo [✓] Selesai! Sistem PC telah dipulihkan ke kondisi normal.
+pause
