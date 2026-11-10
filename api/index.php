@@ -369,6 +369,46 @@ try {
             respond($result);
             break;
 
+        case 'rename_room':
+            $oldRoom = strtoupper(trim($jsonInput['old_room_code'] ?? ''));
+            $newRoom = strtoupper(preg_replace('/[^a-zA-Z0-9_-]/', '-', trim($jsonInput['new_room_code'] ?? '')));
+            if ($oldRoom === '' || $newRoom === '') {
+                respond(['ok' => false, 'error' => 'Kode ruangan lama dan baru wajib diisi.'], 400);
+            }
+            $result = Storage::update(function (&$data) use ($oldRoom, $newRoom) {
+                Storage::ensureRoomsConfig($data);
+                if ($oldRoom === $newRoom) {
+                    return ['ok' => true, 'room_code' => $newRoom, 'rooms' => $data['config']['rooms'], 'room_statuses' => $data['config']['room_statuses']];
+                }
+                $oldStatus = $data['config']['room_statuses'][$oldRoom] ?? ($data['config']['global_status'] ?? 'LOCKED');
+                $idx = array_search($oldRoom, $data['config']['rooms'], true);
+                if ($idx !== false) {
+                    if (in_array($newRoom, $data['config']['rooms'], true)) {
+                        array_splice($data['config']['rooms'], $idx, 1);
+                    } else {
+                        $data['config']['rooms'][$idx] = $newRoom;
+                    }
+                } elseif (!in_array($newRoom, $data['config']['rooms'], true)) {
+                    $data['config']['rooms'][] = $newRoom;
+                }
+                $data['config']['rooms'] = array_values(array_unique($data['config']['rooms']));
+                $data['config']['room_statuses'][$newRoom] = $oldStatus;
+                unset($data['config']['room_statuses'][$oldRoom]);
+                if (($data['config']['room_code'] ?? '') === $oldRoom) {
+                    $data['config']['room_code'] = $newRoom;
+                }
+                foreach ($data['students'] as &$st) {
+                    if (strtoupper($st['room_code'] ?? '') === $oldRoom) {
+                        $st['room_code'] = $newRoom;
+                    }
+                }
+                unset($st);
+                Storage::addLog($data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ROOM_RENAMED', "Kode ruangan [{$oldRoom}] diubah menjadi [{$newRoom}].", 'INFO', $newRoom);
+                return ['ok' => true, 'room_code' => $newRoom, 'rooms' => $data['config']['rooms'], 'room_statuses' => $data['config']['room_statuses']];
+            });
+            respond($result, $result['ok'] ? 200 : 400);
+            break;
+
         case 'delete_room':
             $delRoom = strtoupper(trim($jsonInput['room_code'] ?? ''));
             $result = Storage::update(function (&$data) use ($delRoom) {

@@ -484,6 +484,41 @@ module.exports = async (req, res) => {
                 return res.status(200).json({ ok: true, room_code: newRoom, rooms: data.config.rooms, room_statuses: data.config.room_statuses });
             }
 
+            case 'rename_room': {
+                const oldRoom = String(body.old_room_code || '').trim().toUpperCase();
+                const newRoom = String(body.new_room_code || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '-');
+                if (!oldRoom || !newRoom) {
+                    return res.status(400).json({ ok: false, error: 'Kode ruangan lama dan baru wajib diisi.' });
+                }
+                if (oldRoom === newRoom) {
+                    return res.status(200).json({ ok: true, room_code: newRoom, rooms: data.config.rooms, room_statuses: data.config.room_statuses });
+                }
+                const oldStatus = data.config.room_statuses[oldRoom] || data.config.global_status || 'LOCKED';
+                const idx = data.config.rooms.indexOf(oldRoom);
+                if (idx !== -1) {
+                    if (data.config.rooms.includes(newRoom)) {
+                        data.config.rooms.splice(idx, 1);
+                    } else {
+                        data.config.rooms[idx] = newRoom;
+                    }
+                } else if (!data.config.rooms.includes(newRoom)) {
+                    data.config.rooms.push(newRoom);
+                }
+                data.config.room_statuses[newRoom] = oldStatus;
+                delete data.config.room_statuses[oldRoom];
+                if (data.config.room_code === oldRoom) {
+                    data.config.room_code = newRoom;
+                }
+                for (const id of Object.keys(data.students)) {
+                    if (String(data.students[id].room_code || '').toUpperCase() === oldRoom) {
+                        data.students[id].room_code = newRoom;
+                    }
+                }
+                addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ROOM_RENAMED', `Kode ruangan [${oldRoom}] diubah menjadi [${newRoom}].`, 'INFO', newRoom);
+                await writeData(data);
+                return res.status(200).json({ ok: true, room_code: newRoom, rooms: data.config.rooms, room_statuses: data.config.room_statuses });
+            }
+
             case 'delete_room': {
                 const delRoom = String(body.room_code || '').trim().toUpperCase();
                 if (!delRoom || data.config.rooms.length <= 1) {

@@ -152,14 +152,22 @@
         <!-- Top Institutional Action Bar (Exact 64px / h-16 shrink-0) -->
         <header class="h-16 shrink-0 bg-white border-b border-slate-200 px-6 flex items-center justify-between gap-4 z-20">
             <div class="flex items-center gap-3 min-w-0">
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-1.5">
                     <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 hidden sm:inline">Ruangan:</span>
                     <select id="headerRoomSelect" onchange="onSelectRoom(this.value)" class="rounded-lg border border-slate-300 bg-slate-50 hover:bg-white px-3 py-1.5 text-xs font-mono font-semibold text-slate-900 focus:outline-none focus:border-slate-500 transition">
                         <option value="ALL">Semua Ruangan</option>
                     </select>
                     <button onclick="promptNewRoom()" class="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 transition flex items-center gap-1" title="Tambah Kode Ruangan Baru">
                         <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
-                        <span class="hidden md:inline">Ruangan</span>
+                        <span class="hidden md:inline">Tambah</span>
+                    </button>
+                    <button onclick="promptEditSelectedRoom()" id="btnHeaderEditRoom" class="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 transition flex items-center gap-1" title="Ubah Nama / Edit Ruangan">
+                        <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125"/></svg>
+                        <span class="hidden md:inline">Edit</span>
+                    </button>
+                    <button onclick="switchTab('settings')" class="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 transition flex items-center gap-1" title="Buka Menu Manajemen Multi-Ruangan & PIN">
+                        <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75"/></svg>
+                        <span class="hidden lg:inline">Kelola</span>
                     </button>
                 </div>
 
@@ -953,6 +961,7 @@
                         </div>
                         <div class="flex items-center gap-1.5">
                             <button onclick="onSelectRoom('${escapeHtml(r)}'); switchTab('monitor');" class="px-2.5 py-1 rounded border border-slate-200 hover:bg-slate-100 text-slate-700 font-medium">Pantau</button>
+                            <button onclick="renameRoomPrompt('${escapeHtml(r)}')" class="px-2.5 py-1 rounded border border-slate-200 hover:bg-slate-100 text-slate-700 font-medium">Edit</button>
                             <button onclick="setRoomStatusDirect('${escapeHtml(r)}', 'LOCKED')" class="px-2.5 py-1 rounded border ${status === 'LOCKED' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 hover:bg-slate-100 text-slate-700'} font-medium">Kunci</button>
                             <button onclick="setRoomStatusDirect('${escapeHtml(r)}', 'UNLOCKED')" class="px-2.5 py-1 rounded border ${status === 'UNLOCKED' ? 'border-amber-600 bg-amber-600 text-white' : 'border-slate-200 hover:bg-slate-100 text-slate-700'} font-medium">Buka</button>
                             ${cachedRooms.length > 1 ? `<button onclick="deleteRoom('${escapeHtml(r)}')" class="px-2 py-1 rounded text-slate-400 hover:text-rose-600" title="Hapus ruangan">✕</button>` : ''}
@@ -1050,6 +1059,33 @@
             const code = prompt('Masukkan Kode Ruangan baru (contoh: LAB-04, RUANG-A):');
             if (!code || !code.trim()) return;
             await createRoom(code.trim());
+        }
+
+        async function promptEditSelectedRoom() {
+            if (selectedRoom === 'ALL') {
+                switchTab('settings');
+                showToast('Pilih ruangan tertentu di dropdown atas, atau klik tombol Edit pada daftar ruangan di bawah ini.');
+                return;
+            }
+            await renameRoomPrompt(selectedRoom);
+        }
+
+        async function renameRoomPrompt(oldRoom) {
+            const newCode = prompt(`Ubah nama Kode Ruangan [${oldRoom}] menjadi:`, oldRoom);
+            if (!newCode || !newCode.trim() || newCode.trim().toUpperCase() === oldRoom) return;
+            const res = await fetch('api/index.php?action=rename_room', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({old_room_code: oldRoom, new_room_code: newCode.trim()})
+            });
+            const data = await res.json();
+            if (data.ok) {
+                if (selectedRoom === oldRoom) selectedRoom = data.room_code;
+                showToast(`Kode ruangan [${oldRoom}] diubah menjadi [${data.room_code}]`);
+                fetchDashboard();
+            } else {
+                showToast(data.error || 'Gagal mengubah kode ruangan', true);
+            }
         }
 
         async function addRoomFromInput() {
