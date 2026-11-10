@@ -313,7 +313,7 @@
                         <div class="flex flex-wrap items-center gap-2">
                             <div class="relative">
                                 <svg class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>
-                                <input type="text" id="searchStudent" oninput="renderCurrentStudents()" placeholder="Cari NIM, nama, ruangan, atau hostname..." class="pl-9 pr-3 py-1.5 rounded-lg border border-slate-200 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-slate-400 w-64">
+                                <input type="search" id="searchStudent" name="guard_student_search_filter" autocomplete="off" spellcheck="false" oninput="renderCurrentStudents()" placeholder="Cari NIM, nama, ruangan, atau hostname..." class="pl-9 pr-3 py-1.5 rounded-lg border border-slate-200 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-slate-400 w-64">
                             </div>
 
                             <div class="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 text-xs">
@@ -903,12 +903,21 @@
             }
         }
 
+        const knownStudentsCache = new Map(); // id -> { student, seenAtMs }
+        const explicitlyRemovedStudentIds = new Set();
+        const explicitlyDeletedRooms = new Set();
+
         window.completeAdminAuth = function(email) {
             sessionStorage.setItem('guard_admin_auth', email);
             const gate = document.getElementById('authGateOverlay');
             if (gate) gate.classList.add('hidden');
             const emailEl = document.getElementById('sidebarAdminEmail');
             if (emailEl) emailEl.textContent = email;
+            const searchInp = document.getElementById('searchStudent');
+            if (searchInp && (searchInp.value.includes('@') || searchInp.value.toLowerCase() === String(email || '').toLowerCase())) {
+                searchInp.value = '';
+                renderCurrentStudents();
+            }
         };
 
         async function handleAdminLogin(e) {
@@ -1329,12 +1338,14 @@
                 document.getElementById('statProcs').textContent = data.stats.processes_count;
                 document.getElementById('statExts').textContent = data.stats.extensions_count;
 
-                currentRoomCode = data.config.room_code || 'KUIS-AI-01';
+                currentRoomCode = data.config.room_code || 'LAB-706';
                 currentUnlockPin = data.config.unlock_pin || '202699';
                 cachedGlobalStatus = data.config.global_status || 'LOCKED';
-                cachedRooms = Array.isArray(data.config.rooms) && data.config.rooms.length ? data.config.rooms : [currentRoomCode, 'LAB-01', 'LAB-02', 'LAB-03'];
-                cachedRoomStatuses = data.config.room_statuses || {};
-                cachedRoomPins = data.config.room_pins || {};
+                const serverRooms = Array.isArray(data.config.rooms) && data.config.rooms.length ? data.config.rooms : ['LAB-702', 'LAB-704', 'LAB-706'];
+                cachedRooms = Array.from(new Set([...cachedRooms, ...serverRooms])).filter(r => !explicitlyDeletedRooms.has(r));
+                if (!cachedRooms.length) cachedRooms = serverRooms;
+                cachedRoomStatuses = { ...cachedRoomStatuses, ...(data.config.room_statuses || {}) };
+                cachedRoomPins = { ...cachedRoomPins, ...(data.config.room_pins || {}) };
 
                 updateSidebarPinUI();
                 const timePart = (data.server_time || '').split(' ')[1] || '--:--:--';
@@ -1352,7 +1363,73 @@
                     blocklistLoaded = true;
                 }
 
-                cachedStudents = data.students || [];
+                // Anti-Flicker & Multi-Container Sync Engine:
+                // Simpan setiap peserta yang aktif ke knownStudentsCache agar jika Vercel membagi request ke container baru (cold start),
+                // baris peserta tidak pernah berkedip hilang dan container baru otomatis di-rehydrate.
+                const nowMs = Date.now();
+                const incomingStudents = Array.isArray(data.students) ? data.students : [];
+                const incomingIds = new Set();
+
+                incomingStudents.forEach(st => {
+                    if (!st || !st.id) return;
+                    const stRoom = String(st.room_code || '').toUpperCase();
+                    if (explicitlyRemovedStudentIds.has(st.id) || explicitlyDeletedRooms.has(stRoom)) return;
+                    incomingIds.add(st.id);
+                    knownStudentsCache.set(st.id, {
+                        student: { ...st },
+                        seenAtMs: nowMs - ((st.seconds_ago || 0) * 1000)
+                    });
+                });
+
+                const mergedStudents = [...incomingStudents.filter(st => st && !explicitlyRemovedStudentIds.has(st.id) && !explicitlyDeletedRooms.has(String(st.room_code || '').toUpperCase()))];
+                const missingActiveForRehydrate = [];
+
+                for (const [id, entry] of knownStudentsCache.entries()) {
+                    const ageSec = Math.floor((nowMs - entry.seenAtMs) / 1000);
+                    const stRoom = String(entry.student.room_code || '').toUpperCase();
+                    if (ageSec > 90 || explicitlyRemovedStudentIds.has(id) || explicitlyDeletedRooms.has(stRoom)) {
+                        knownStudentsCache.delete(id);
+                        continue;
+                    }
+                    if (!incomingIds.has(id)) {
+                        const preserved = {
+                            ...entry.student,
+                            seconds_ago: ageSec,
+                            is_online: ageSec <= 40
+                        };
+                        mergedStudents.push(preserved);
+                        if (ageSec <= 45) {
+                            missingActiveForRehydrate.push(preserved);
+                        }
+                    }
+                }
+
+                // Jika container Vercel yang merespons belum memiliki data peserta aktif ini, sinkronkan secara instan di background
+                if (missingActiveForRehydrate.length > 0) {
+                    fetch('api/index.php?action=rehydrate_state', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            config: {
+                                room_code: currentRoomCode,
+                                rooms: cachedRooms,
+                                deleted_rooms: Array.from(explicitlyDeletedRooms),
+                                room_statuses: cachedRoomStatuses,
+                                room_pins: cachedRoomPins,
+                                unlock_pin: currentUnlockPin,
+                                global_status: cachedGlobalStatus
+                            },
+                            students: missingActiveForRehydrate
+                        })
+                    }).catch(() => {});
+                }
+
+                mergedStudents.sort((a, b) => {
+                    if (a.is_online !== b.is_online) return a.is_online ? -1 : 1;
+                    return String(a.nim).localeCompare(String(b.nim));
+                });
+
+                cachedStudents = mergedStudents;
                 cachedLogs = data.logs || [];
 
                 updateRoomSelectorOptions();
@@ -1367,9 +1444,15 @@
         }
 
         function getFilteredStudents() {
-            const q = (document.getElementById('searchStudent')?.value || '').trim().toLowerCase();
+            const searchEl = document.getElementById('searchStudent');
+            let q = (searchEl?.value || '').trim().toLowerCase();
+            // Abaikan dan bersihkan otomatis jika browser password manager mengisi email login (mis. admin@guard.edu) ke kolom pencarian
+            if (q && q.includes('@')) {
+                searchEl.value = '';
+                q = '';
+            }
             return cachedStudents.filter(st => {
-                const stRoom = (st.room_code || currentRoomCode || 'KUIS-AI-01').toUpperCase();
+                const stRoom = (st.room_code || currentRoomCode || 'LAB-706').toUpperCase();
                 if (selectedRoom !== 'ALL' && stRoom !== selectedRoom) return false;
                 if (currentFilter === 'ONLINE' && !st.is_online) return false;
                 if (currentFilter === 'UNLOCKED' && st.status === 'LOCKED') return false;
@@ -1712,6 +1795,8 @@
         }
 
         async function createRoom(room_code, room_pin = '') {
+            const norm = String(room_code || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '-');
+            explicitlyDeletedRooms.delete(norm);
             const res = await fetch('api/index.php?action=add_room', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -1719,6 +1804,7 @@
             });
             const data = await res.json();
             if (data.ok) {
+                explicitlyDeletedRooms.delete(data.room_code);
                 if (Array.isArray(data.rooms)) cachedRooms = data.rooms;
                 if (data.room_statuses) cachedRoomStatuses = data.room_statuses;
                 if (data.room_pins) cachedRoomPins = data.room_pins;
@@ -1731,6 +1817,7 @@
         }
 
         async function deleteRoom(room_code) {
+            const norm = String(room_code || '').trim().toUpperCase();
             const res = await fetch('api/index.php?action=delete_room', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -1738,10 +1825,16 @@
             });
             const data = await res.json();
             if (data.ok) {
+                explicitlyDeletedRooms.add(norm);
+                for (const [id, entry] of knownStudentsCache.entries()) {
+                    if (String(entry.student.room_code || '').toUpperCase() === norm) {
+                        knownStudentsCache.delete(id);
+                    }
+                }
                 if (Array.isArray(data.rooms)) cachedRooms = data.rooms;
                 if (data.room_statuses) cachedRoomStatuses = data.room_statuses;
                 if (data.room_pins) cachedRoomPins = data.room_pins;
-                cachedStudents = cachedStudents.filter(st => (st.room_code || '').toUpperCase() !== room_code.toUpperCase());
+                cachedStudents = cachedStudents.filter(st => (st.room_code || '').toUpperCase() !== norm);
                 if (selectedRoom === room_code) selectedRoom = 'ALL';
                 showToast(`Ruangan [${room_code}] berhasil dihapus`);
                 fetchDashboard();
@@ -1751,6 +1844,15 @@
         }
 
         async function sendStudentCmd(student_id, command) {
+            if (command === 'REMOVE') {
+                explicitlyRemovedStudentIds.add(student_id);
+                knownStudentsCache.delete(student_id);
+                setTimeout(() => explicitlyRemovedStudentIds.delete(student_id), 25000);
+            } else if (knownStudentsCache.has(student_id)) {
+                const entry = knownStudentsCache.get(student_id);
+                entry.student.status = command;
+                entry.student.target_status = command;
+            }
             const res = await fetch('api/index.php?action=set_student_command', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
