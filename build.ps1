@@ -18,7 +18,7 @@ $clientExe = Join-Path $distDir "AIBlockerGuard.exe"
 $setupExe = Join-Path $distDir "AIBlockerSetup.exe"
 
 Write-Host "[1/2] Mengompilasi Aplikasi Client PC Mahasiswa: AIBlockerGuard.exe ..." -ForegroundColor Cyan
-& $csc /target:winexe /out:$clientExe /win32manifest:$manifest /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Web.Extensions.dll /optimize+ $clientSrc
+& $csc /target:winexe /out:$clientExe /win32manifest:$manifest /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Management.dll /r:System.Windows.Forms.dll /r:System.Web.Extensions.dll /r:System.ServiceProcess.dll /optimize+ $clientSrc
 if ($LASTEXITCODE -ne 0) {
     throw "Kompilasi AIBlockerGuard.exe gagal!"
 }
@@ -26,7 +26,7 @@ Write-Host "      Berhasil dibuat: $clientExe ($((Get-Item $clientExe).Length) b
 
 Write-Host "[2/2] Mengompilasi Installer Setup: AIBlockerSetup.exe (Memuat payload AIBlockerGuard.exe) ..." -ForegroundColor Cyan
 $resArg = "/resource:$clientExe,AIBlockerGuard.exe"
-& $csc /target:winexe /out:$setupExe /win32manifest:$manifest /r:System.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll $resArg /optimize+ $installerSrc
+& $csc /target:winexe /out:$setupExe /win32manifest:$manifest /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.ServiceProcess.dll $resArg /optimize+ $installerSrc
 if ($LASTEXITCODE -ne 0) {
     throw "Kompilasi AIBlockerSetup.exe gagal!"
 }
