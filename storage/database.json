@@ -13,7 +13,8 @@
         "quarantine_extensions": true,
         "kill_processes": true,
         "blocklist_customized": false,
-        "updated_at": "2026-11-10T07:38:59+00:00"
+        "updated_at": "2026-11-10T07:38:59+00:00",
+        "room_blocklists": []
     },
     "blocklist": {
         "domains": [

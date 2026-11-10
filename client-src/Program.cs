@@ -11,6 +11,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Management;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
 using Microsoft.Win32;
@@ -272,9 +273,30 @@ namespace AIBlockerGuard
         {
             try
             {
+                if (BlockedDomains == null || BlockedDomains.Count == 0) return true;
                 if (!File.Exists(HostsPath)) return false;
                 string content = File.ReadAllText(HostsPath, Encoding.UTF8);
-                return content.Contains(HostsStartMarker) && content.Contains(HostsEndMarker);
+                int startIdx = content.IndexOf(HostsStartMarker, StringComparison.Ordinal);
+                int endIdx = content.IndexOf(HostsEndMarker, StringComparison.Ordinal);
+                if (startIdx < 0 || endIdx < 0 || endIdx <= startIdx) return false;
+
+                string blockSection = content.Substring(startIdx, endIdx - startIdx);
+                int expectedCount = BlockedDomains
+                    .Select(d => (d ?? "").Trim().ToLowerInvariant())
+                    .Where(d => !string.IsNullOrEmpty(d) && !d.Contains(" "))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Count();
+
+                int actualZeroCount = 0;
+                string[] lines = blockSection.Split(new char[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (string line in lines)
+                {
+                    if (line.TrimStart().StartsWith("0.0.0.0 ", StringComparison.Ordinal))
+                    {
+                        actualZeroCount++;
+                    }
+                }
+                return actualZeroCount == expectedCount;
             }
             catch
             {
@@ -325,6 +347,40 @@ namespace AIBlockerGuard
                 using (Process p = Process.Start(psi))
                 {
                     if (p != null) p.WaitForExit(3000);
+                }
+            }
+            catch { }
+
+            ResetBrowserNetworkSockets();
+        }
+
+        public static void ResetBrowserNetworkSockets()
+        {
+            // Browser modern (Chrome, Edge, Brave, Opera, Vivaldi, Firefox) mempertahankan koneksi HTTP/2 & QUIC (UDP 443)
+            // serta cache DNS internal di dalam sub-proses "network.mojom.NetworkService" (atau "--type=socket" di Firefox).
+            // Menghentikan sub-proses jaringan ini (tanpa menutup tab/jendela browser) memaksa browser me-reset soket
+            // secara instan (< 0.5 detik) dan membaca ulang file hosts Windows!
+            try
+            {
+                string wmiQuery = "SELECT ProcessId, Name, CommandLine FROM Win32_Process WHERE " +
+                    "(Name='chrome.exe' OR Name='msedge.exe' OR Name='brave.exe' OR Name='opera.exe' OR Name='vivaldi.exe' OR Name='firefox.exe') " +
+                    "AND (CommandLine LIKE '%network.mojom.NetworkService%' OR CommandLine LIKE '%--type=socket%')";
+
+                using (ManagementObjectSearcher searcher = new ManagementObjectSearcher(wmiQuery))
+                using (ManagementObjectCollection results = searcher.Get())
+                {
+                    foreach (ManagementObject obj in results)
+                    {
+                        try
+                        {
+                            int pid = Convert.ToInt32(obj["ProcessId"]);
+                            using (Process p = Process.GetProcessById(pid))
+                            {
+                                p.Kill();
+                            }
+                        }
+                        catch { }
+                    }
                 }
             }
             catch { }

@@ -181,9 +181,12 @@ function packCloudPayload(data) {
         custom_blocklist: data.config?.blocklist_customized ? data.blocklist : null
     };
     let encoded = zlib.deflateRawSync(Buffer.from(JSON.stringify(compact))).toString('base64url');
-    if (encoded.length > 1950) {
-        // Jika daftar domain kustom sangat panjang, simpan daftar domain tanpa proses/ekstensi bawaan
+    if (encoded.length > 1900) {
         compact.logs = (data.logs || []).slice(0, 5);
+        encoded = zlib.deflateRawSync(Buffer.from(JSON.stringify(compact))).toString('base64url');
+    }
+    if (encoded.length > 1950) {
+        compact.logs = [];
         encoded = zlib.deflateRawSync(Buffer.from(JSON.stringify(compact))).toString('base64url');
     }
     return FB_STORE_PREFIX + encoded;
