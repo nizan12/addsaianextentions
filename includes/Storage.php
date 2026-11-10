@@ -22,7 +22,13 @@ class Storage {
         return [
             'config' => [
                 'room_code' => 'KUIS-AI-01',
-                'room_name' => 'Ujian Pemrograman & Algoritma (Tanpa AI)',
+                'rooms' => ['KUIS-AI-01', 'LAB-01', 'LAB-02', 'LAB-03'],
+                'room_statuses' => [
+                    'KUIS-AI-01' => 'LOCKED',
+                    'LAB-01' => 'LOCKED',
+                    'LAB-02' => 'LOCKED',
+                    'LAB-03' => 'LOCKED'
+                ],
                 'unlock_pin' => '202699',
                 'admin_password' => 'admin123',
                 'global_status' => 'LOCKED', // LOCKED | UNLOCKED
@@ -164,7 +170,34 @@ class Storage {
         return $result;
     }
 
-    public static function addLog(&$data, $nim, $name, $hostname, $type, $message, $severity = 'INFO') {
+    public static function ensureRoomsConfig(&$data) {
+        if (empty($data['config']['rooms']) || !is_array($data['config']['rooms'])) {
+            $defRoom = $data['config']['room_code'] ?? 'KUIS-AI-01';
+            $data['config']['rooms'] = array_values(array_unique([$defRoom, 'LAB-01', 'LAB-02', 'LAB-03']));
+        }
+        if (empty($data['config']['room_statuses']) || !is_array($data['config']['room_statuses'])) {
+            $data['config']['room_statuses'] = [];
+        }
+        foreach ($data['config']['rooms'] as $r) {
+            if (!isset($data['config']['room_statuses'][$r])) {
+                $data['config']['room_statuses'][$r] = $data['config']['global_status'] ?? 'LOCKED';
+            }
+        }
+    }
+
+    public static function registerRoomIfNeeded(&$data, $roomCode) {
+        self::ensureRoomsConfig($data);
+        $norm = strtoupper(trim($roomCode ?: ($data['config']['room_code'] ?? 'KUIS-AI-01')));
+        if (!in_array($norm, $data['config']['rooms'], true)) {
+            $data['config']['rooms'][] = $norm;
+        }
+        if (!isset($data['config']['room_statuses'][$norm])) {
+            $data['config']['room_statuses'][$norm] = $data['config']['global_status'] ?? 'LOCKED';
+        }
+        return $norm;
+    }
+
+    public static function addLog(&$data, $nim, $name, $hostname, $type, $message, $severity = 'INFO', $roomCode = '') {
         if (!isset($data['logs']) || !is_array($data['logs'])) {
             $data['logs'] = [];
         }
@@ -174,6 +207,7 @@ class Storage {
             'nim' => $nim,
             'name' => $name,
             'hostname' => $hostname,
+            'room_code' => $roomCode,
             'type' => $type,
             'message' => $message,
             'severity' => $severity // INFO | WARNING | DANGER

@@ -15,7 +15,13 @@ function getDefaultSchema() {
     return {
         config: {
             room_code: 'KUIS-AI-01',
-            room_name: 'Ujian Pemrograman & Algoritma (Tanpa AI)',
+            rooms: ['KUIS-AI-01', 'LAB-01', 'LAB-02', 'LAB-03'],
+            room_statuses: {
+                'KUIS-AI-01': 'LOCKED',
+                'LAB-01': 'LOCKED',
+                'LAB-02': 'LOCKED',
+                'LAB-03': 'LOCKED'
+            },
             unlock_pin: '202699',
             global_status: 'LOCKED',
             block_doh: true,
@@ -146,7 +152,34 @@ function nowFormatted() {
     return d.toISOString().replace('T', ' ').substring(0, 19);
 }
 
-function addLog(data, nim, name, hostname, type, message, severity = 'INFO') {
+function ensureRoomsConfig(data) {
+    if (!Array.isArray(data.config.rooms) || data.config.rooms.length === 0) {
+        const defRoom = data.config.room_code || 'KUIS-AI-01';
+        data.config.rooms = Array.from(new Set([defRoom, 'LAB-01', 'LAB-02', 'LAB-03']));
+    }
+    if (!data.config.room_statuses || typeof data.config.room_statuses !== 'object') {
+        data.config.room_statuses = {};
+    }
+    for (const r of data.config.rooms) {
+        if (!data.config.room_statuses[r]) {
+            data.config.room_statuses[r] = data.config.global_status || 'LOCKED';
+        }
+    }
+}
+
+function registerRoomIfNeeded(data, roomCode) {
+    ensureRoomsConfig(data);
+    const norm = String(roomCode || data.config.room_code || 'KUIS-AI-01').trim().toUpperCase();
+    if (!data.config.rooms.includes(norm)) {
+        data.config.rooms.push(norm);
+    }
+    if (!data.config.room_statuses[norm]) {
+        data.config.room_statuses[norm] = data.config.global_status || 'LOCKED';
+    }
+    return norm;
+}
+
+function addLog(data, nim, name, hostname, type, message, severity = 'INFO', roomCode = '') {
     if (!Array.isArray(data.logs)) data.logs = [];
     data.logs.unshift({
         id: 'log_' + crypto.randomBytes(4).toString('hex'),
@@ -154,6 +187,7 @@ function addLog(data, nim, name, hostname, type, message, severity = 'INFO') {
         nim,
         name,
         hostname,
+        room_code: roomCode || '',
         type,
         message,
         severity
@@ -179,6 +213,7 @@ module.exports = async (req, res) => {
     try {
         const data = await readData();
         if (!data.students || Array.isArray(data.students)) data.students = {};
+        ensureRoomsConfig(data);
 
         switch (action) {
             case 'join':
@@ -186,7 +221,7 @@ module.exports = async (req, res) => {
                 const nim = String(body.nim || '').trim();
                 const name = String(body.name || '').trim();
                 const hostname = String(body.hostname || 'PC-CLIENT').trim();
-                const roomCode = String(body.room_code || '').trim();
+                const rawRoom = String(body.room_code || data.config.room_code || 'KUIS-AI-01').trim();
                 const osInfo = String(body.os_info || 'Windows').trim();
                 const version = String(body.version || '1.2.0').trim();
 
@@ -194,14 +229,13 @@ module.exports = async (req, res) => {
                     return res.status(400).json({ ok: false, error: 'NIM dan Nama Mahasiswa wajib diisi.' });
                 }
 
-                const expectedRoom = data.config.room_code || 'KUIS-AI-01';
-                if (roomCode && roomCode.toLowerCase() !== expectedRoom.toLowerCase()) {
-                    return res.status(403).json({ ok: false, error: `Kode Ruangan tidak sesuai. Gunakan kode: ${expectedRoom}` });
-                }
+                // Multi-Ruangan: daftarkan kode ruangan secara otomatis
+                const normalizedRoom = registerRoomIfNeeded(data, rawRoom);
 
                 const studentId = nim.replace(/[^a-zA-Z0-9_-]/g, '_');
                 const existing = data.students[studentId] || null;
-                const desiredState = existing?.target_status || data.config.global_status || 'LOCKED';
+                const roomDefaultState = data.config.room_statuses[normalizedRoom] || data.config.global_status || 'LOCKED';
+                const desiredState = existing?.target_status || roomDefaultState;
                 const nowSec = Math.floor(Date.now() / 1000);
 
                 data.students[studentId] = {
@@ -209,6 +243,7 @@ module.exports = async (req, res) => {
                     nim,
                     name,
                     hostname,
+                    room_code: normalizedRoom,
                     ip: clientIp,
                     os_info: osInfo,
                     version,
@@ -224,15 +259,14 @@ module.exports = async (req, res) => {
                     last_seen_str: nowFormatted()
                 };
 
-                addLog(data, nim, name, hostname, 'JOIN', `PC Mahasiswa terhubung ke ruangan (${osInfo}). Status target: ${desiredState}`, 'INFO');
+                addLog(data, nim, name, hostname, 'JOIN', `PC Mahasiswa terhubung ke ruangan [${normalizedRoom}] (${osInfo}). Status: ${desiredState}`, 'INFO', normalizedRoom);
                 await writeData(data);
 
                 return res.status(200).json({
                     ok: true,
                     student_id: studentId,
                     config: {
-                        room_code: data.config.room_code,
-                        room_name: data.config.room_name,
+                        room_code: normalizedRoom,
                         target_status: desiredState,
                         block_doh: data.config.block_doh,
                         block_vpn: data.config.block_vpn,
@@ -262,20 +296,24 @@ module.exports = async (req, res) => {
                 const nowSec = Math.floor(Date.now() / 1000);
 
                 if (!data.students[studentId]) {
+                    const defaultRoom = registerRoomIfNeeded(data, body.room_code || data.config.room_code || 'KUIS-AI-01');
                     data.students[studentId] = {
                         id: studentId,
                         nim,
                         name,
                         hostname,
+                        room_code: defaultRoom,
                         ip: clientIp,
                         os_info: 'Windows',
                         version: '1.2.0',
-                        target_status: globalTarget,
+                        target_status: data.config.room_statuses[defaultRoom] || globalTarget,
                         joined_at: nowFormatted()
                     };
                 }
 
                 const st = data.students[studentId];
+                if (!st.room_code) st.room_code = data.config.room_code || 'KUIS-AI-01';
+                registerRoomIfNeeded(data, st.room_code);
                 const prevVpn = Boolean(st.vpn_detected);
 
                 st.status = currentStatus;
@@ -289,17 +327,16 @@ module.exports = async (req, res) => {
                 st.last_seen_str = nowFormatted();
 
                 if (vpnDetected && !prevVpn) {
-                    addLog(data, nim, name, hostname, 'VPN_ALERT', 'Terdeteksi jaringan VPN / Tunnel aktif pada PC mahasiswa!', 'DANGER');
+                    addLog(data, nim, name, hostname, 'VPN_ALERT', `Terdeteksi jaringan VPN / Tunnel aktif pada PC mahasiswa di ruangan [${st.room_code}]!`, 'DANGER', st.room_code);
                 }
 
                 await writeData(data);
 
                 return res.status(200).json({
                     ok: true,
-                    target_status: st.target_status || globalTarget,
+                    target_status: st.target_status || data.config.room_statuses[st.room_code] || globalTarget,
                     config: {
-                        room_code: data.config.room_code,
-                        room_name: data.config.room_name,
+                        room_code: st.room_code,
                         block_doh: data.config.block_doh,
                         block_vpn: data.config.block_vpn,
                         quarantine_extensions: data.config.quarantine_extensions,
@@ -317,12 +354,14 @@ module.exports = async (req, res) => {
                 const severity = String(body.severity || 'DANGER').trim();
 
                 const studentId = nim.replace(/[^a-zA-Z0-9_-]/g, '_');
+                let stRoom = data.config.room_code || 'KUIS-AI-01';
                 if (data.students[studentId]) {
                     data.students[studentId].last_seen = Math.floor(Date.now() / 1000);
                     data.students[studentId].last_seen_str = nowFormatted();
                     data.students[studentId].killed_processes_count = (data.students[studentId].killed_processes_count || 0) + 1;
+                    stRoom = data.students[studentId].room_code || stRoom;
                 }
-                addLog(data, nim, name, hostname, type, message, severity);
+                addLog(data, nim, name, hostname, type, message, severity, stRoom);
                 await writeData(data);
                 return res.status(200).json({ ok: true });
             }
@@ -334,17 +373,19 @@ module.exports = async (req, res) => {
                 const hostname = String(body.hostname || 'PC').trim();
                 const validPin = String(data.config.unlock_pin || '202699');
 
+                const studentId = nim.replace(/[^a-zA-Z0-9_-]/g, '_');
+                const stRoom = data.students[studentId]?.room_code || data.config.room_code || 'KUIS-AI-01';
+
                 if (pin && pin === validPin) {
-                    const studentId = nim.replace(/[^a-zA-Z0-9_-]/g, '_');
                     if (data.students[studentId]) {
                         data.students[studentId].target_status = 'UNLOCKED';
                         data.students[studentId].status = 'UNLOCKED';
                     }
-                    addLog(data, nim, name, hostname, 'PIN_UNLOCK', 'Kunci dibuka menggunakan PIN Dosen/Pengawas yang valid.', 'INFO');
+                    addLog(data, nim, name, hostname, 'PIN_UNLOCK', 'Kunci dibuka menggunakan PIN Dosen/Pengawas yang valid.', 'INFO', stRoom);
                     await writeData(data);
                     return res.status(200).json({ ok: true, unlocked: true });
                 } else {
-                    addLog(data, nim, name, hostname, 'PIN_FAILED', `Percobaan membuka kunci gagal (PIN salah: ${pin}).`, 'WARNING');
+                    addLog(data, nim, name, hostname, 'PIN_FAILED', `Percobaan membuka kunci gagal (PIN salah: ${pin}).`, 'WARNING', stRoom);
                     await writeData(data);
                     return res.status(403).json({ ok: false, unlocked: false, error: 'PIN Pengawas salah!' });
                 }
@@ -359,6 +400,8 @@ module.exports = async (req, res) => {
 
                 for (const id of Object.keys(data.students)) {
                     const st = { ...data.students[id] };
+                    if (!st.room_code) st.room_code = data.config.room_code || 'KUIS-AI-01';
+                    registerRoomIfNeeded(data, st.room_code);
                     const isSim = Boolean(st.is_simulated);
                     const isOnline = isSim ? true : ((nowSec - (st.last_seen || 0)) <= 25);
                     st.is_online = isOnline;
@@ -395,19 +438,65 @@ module.exports = async (req, res) => {
 
             case 'set_global_status': {
                 const target = String(body.status || 'LOCKED').trim().toUpperCase();
+                const targetRoom = String(body.room_code || 'ALL').trim().toUpperCase();
                 if (!['LOCKED', 'UNLOCKED'].includes(target)) {
                     return res.status(400).json({ ok: false, error: 'Status tidak valid.' });
                 }
-                data.config.global_status = target;
+
                 data.config.updated_at = new Date().toISOString();
-                for (const id of Object.keys(data.students)) {
-                    data.students[id].target_status = target;
-                    data.students[id].status = target;
+                if (targetRoom === 'ALL' || !targetRoom) {
+                    data.config.global_status = target;
+                    for (const r of data.config.rooms) {
+                        data.config.room_statuses[r] = target;
+                    }
+                    for (const id of Object.keys(data.students)) {
+                        data.students[id].target_status = target;
+                        data.students[id].status = target;
+                    }
+                    const label = target === 'LOCKED' ? 'MENGUNCI (Aktifkan Blokir AI)' : 'MEMBUKA KUNCI (Pulihkan PC)';
+                    addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'GLOBAL_COMMAND', `Pengawas memilih ${label} untuk SELURUH RUANGAN.`, 'INFO', 'ALL');
+                } else {
+                    registerRoomIfNeeded(data, targetRoom);
+                    data.config.room_statuses[targetRoom] = target;
+                    for (const id of Object.keys(data.students)) {
+                        const stRoom = String(data.students[id].room_code || data.config.room_code || 'KUIS-AI-01').toUpperCase();
+                        if (stRoom === targetRoom) {
+                            data.students[id].target_status = target;
+                            data.students[id].status = target;
+                        }
+                    }
+                    const label = target === 'LOCKED' ? 'MENGUNCI (Aktifkan Blokir AI)' : 'MEMBUKA KUNCI (Pulihkan PC)';
+                    addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ROOM_COMMAND', `Pengawas memilih ${label} untuk ruangan [${targetRoom}].`, 'INFO', targetRoom);
                 }
-                const label = target === 'LOCKED' ? 'MENGUNCI (Aktifkan Blokir AI)' : 'MEMBUKA KUNCI (Pulihkan PC)';
-                addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'GLOBAL_COMMAND', `Pengawas memilih ${label} untuk seluruh mahasiswa.`, 'INFO');
+
                 await writeData(data);
-                return res.status(200).json({ ok: true, global_status: target });
+                return res.status(200).json({ ok: true, global_status: data.config.global_status, room_statuses: data.config.room_statuses });
+            }
+
+            case 'add_room': {
+                const newRoom = String(body.room_code || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '-');
+                if (!newRoom) {
+                    return res.status(400).json({ ok: false, error: 'Kode ruangan wajib diisi.' });
+                }
+                registerRoomIfNeeded(data, newRoom);
+                addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ROOM_ADDED', `Ruangan baru [${newRoom}] ditambahkan ke sistem.`, 'INFO', newRoom);
+                await writeData(data);
+                return res.status(200).json({ ok: true, room_code: newRoom, rooms: data.config.rooms, room_statuses: data.config.room_statuses });
+            }
+
+            case 'delete_room': {
+                const delRoom = String(body.room_code || '').trim().toUpperCase();
+                if (!delRoom || data.config.rooms.length <= 1) {
+                    return res.status(400).json({ ok: false, error: 'Minimal harus terdapat 1 ruangan aktif.' });
+                }
+                data.config.rooms = data.config.rooms.filter(r => r !== delRoom);
+                delete data.config.room_statuses[delRoom];
+                if (data.config.room_code === delRoom) {
+                    data.config.room_code = data.config.rooms[0];
+                }
+                addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ROOM_REMOVED', `Ruangan [${delRoom}] dihapus dari daftar ruangan.`, 'INFO');
+                await writeData(data);
+                return res.status(200).json({ ok: true, rooms: data.config.rooms, room_statuses: data.config.room_statuses });
             }
 
             case 'set_student_command': {
@@ -417,8 +506,9 @@ module.exports = async (req, res) => {
                     return res.status(404).json({ ok: false, error: 'Data mahasiswa tidak ditemukan.' });
                 }
                 const st = data.students[studentId];
+                const stRoom = st.room_code || data.config.room_code || 'KUIS-AI-01';
                 if (cmd === 'REMOVE') {
-                    addLog(data, st.nim, st.name, st.hostname, 'ADMIN_REMOVE', 'Data sesi mahasiswa dihapus dari daftar oleh pengawas.', 'INFO');
+                    addLog(data, st.nim, st.name, st.hostname, 'ADMIN_REMOVE', `Data sesi mahasiswa dihapus dari ruangan [${stRoom}] oleh pengawas.`, 'INFO', stRoom);
                     delete data.students[studentId];
                     await writeData(data);
                     return res.status(200).json({ ok: true });
@@ -426,7 +516,7 @@ module.exports = async (req, res) => {
                 if (['LOCKED', 'UNLOCKED'].includes(cmd)) {
                     st.target_status = cmd;
                     st.status = cmd;
-                    addLog(data, st.nim, st.name, st.hostname, 'REMOTE_CMD', `Pengawas mengubah status endpoint menjadi ${cmd}.`, 'INFO');
+                    addLog(data, st.nim, st.name, st.hostname, 'REMOTE_CMD', `Pengawas mengubah status endpoint menjadi ${cmd} di [${stRoom}].`, 'INFO', stRoom);
                     await writeData(data);
                     return res.status(200).json({ ok: true, target_status: cmd, status: cmd });
                 }
@@ -434,14 +524,20 @@ module.exports = async (req, res) => {
             }
 
             case 'update_config': {
-                if (body.room_code) data.config.room_code = String(body.room_code).trim();
-                if (body.room_name) data.config.room_name = String(body.room_name).trim();
+                if (body.room_code) {
+                    const norm = registerRoomIfNeeded(data, body.room_code);
+                    data.config.room_code = norm;
+                }
+                if (Array.isArray(body.rooms) && body.rooms.length > 0) {
+                    data.config.rooms = Array.from(new Set(body.rooms.map(r => String(r).trim().toUpperCase()).filter(Boolean)));
+                }
                 if (body.unlock_pin) data.config.unlock_pin = String(body.unlock_pin).trim();
                 data.config.block_doh = body.block_doh !== undefined ? Boolean(body.block_doh) : true;
                 data.config.block_vpn = body.block_vpn !== undefined ? Boolean(body.block_vpn) : true;
                 data.config.quarantine_extensions = body.quarantine_extensions !== undefined ? Boolean(body.quarantine_extensions) : true;
                 data.config.kill_processes = body.kill_processes !== undefined ? Boolean(body.kill_processes) : true;
                 data.config.updated_at = new Date().toISOString();
+                ensureRoomsConfig(data);
                 addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'CONFIG_UPDATE', 'Konfigurasi ruangan & kebijakan blokir diperbarui.', 'INFO');
                 await writeData(data);
                 return res.status(200).json({ ok: true, config: data.config });
@@ -463,14 +559,19 @@ module.exports = async (req, res) => {
             }
 
             case 'simulate_student': {
+                const reqRoom = String(body.room_code || '').trim().toUpperCase();
+                const assignedRoom = (reqRoom && reqRoom !== 'ALL')
+                    ? registerRoomIfNeeded(data, reqRoom)
+                    : (data.config.rooms[Math.floor(Math.random() * data.config.rooms.length)] || 'KUIS-AI-01');
+
                 const samples = [
-                    { nim: '240101001', name: 'Budi Santoso', host: 'LAPTOP-BUDI01', ext: ['github.copilot-1.250.0', 'github.copilot-chat-0.22.1', 'saoudrizwan.claude-dev-3.1.0'] },
-                    { nim: '240101002', name: 'Siti Aminah', host: 'PC-SITI-LAB2', ext: ['codeium.codeium-1.18.0', 'continue.continue-0.9.2'] },
-                    { nim: '240101003', name: 'Reza Rahadian', host: 'ROG-STRIX-REZA', ext: ['github.copilot-1.250.0', 'tabnine.tabnine-vscode-3.190.0'] }
+                    { nim: '240101001', name: 'Budi Santoso', host: 'LAPTOP-BUDI01', ext: ['vscode.builtin-copilot (chat.disableAIFeatures=true)', 'github.copilot-chat-0.22.1', 'saoudrizwan.claude-dev-3.1.0'] },
+                    { nim: '240101002', name: 'Siti Aminah', host: 'PC-SITI-LAB2', ext: ['vscode.builtin-copilot (chat.disableAIFeatures=true)', 'codeium.codeium-1.18.0'] },
+                    { nim: '240101003', name: 'Reza Rahadian', host: 'ROG-STRIX-REZA', ext: ['vscode.builtin-copilot (chat.disableAIFeatures=true)', 'tabnine.tabnine-vscode-3.190.0'] }
                 ];
                 const pick = samples[Math.floor(Math.random() * samples.length)];
                 const id = pick.nim;
-                const target = data.config.global_status || 'LOCKED';
+                const target = data.config.room_statuses[assignedRoom] || data.config.global_status || 'LOCKED';
                 const nowSec = Math.floor(Date.now() / 1000);
 
                 data.students[id] = {
@@ -478,6 +579,7 @@ module.exports = async (req, res) => {
                     nim: pick.nim,
                     name: pick.name,
                     hostname: pick.host,
+                    room_code: assignedRoom,
                     ip: '192.168.1.' + Math.floor(10 + Math.random() * 230),
                     os_info: 'Windows 11 Pro 64-bit',
                     version: '1.2.0',
@@ -494,10 +596,10 @@ module.exports = async (req, res) => {
                     last_seen_str: nowFormatted()
                 };
 
-                addLog(data, pick.nim, pick.name, pick.host, 'EXTENSION_QUARANTINE', `Mengkarantina ${pick.ext.length} ekstensi AI VS Code: ${pick.ext.join(', ')}`, 'WARNING');
-                addLog(data, pick.nim, pick.name, pick.host, 'PROCESS_KILLED', 'Menghentikan paksa proses AI terlarang: Cursor.exe & ollama.exe (Port 11434)', 'DANGER');
+                addLog(data, pick.nim, pick.name, pick.host, 'EXTENSION_QUARANTINE', `Mengkarantina ${pick.ext.length} ekstensi AI VS Code di [${assignedRoom}]: ${pick.ext.join(', ')}`, 'WARNING', assignedRoom);
+                addLog(data, pick.nim, pick.name, pick.host, 'PROCESS_KILLED', `Menghentikan paksa proses AI terlarang di [${assignedRoom}]: Cursor.exe & ollama.exe (Port 11434)`, 'DANGER', assignedRoom);
                 await writeData(data);
-                return res.status(200).json({ ok: true, simulated: pick });
+                return res.status(200).json({ ok: true, simulated: pick, room_code: assignedRoom });
             }
 
             case 'clear_logs': {
@@ -510,7 +612,7 @@ module.exports = async (req, res) => {
                 return res.status(200).json({
                     ok: true,
                     service: 'GuardConsole Cloud API (Vercel)',
-                    version: '1.2.0'
+                    version: '1.3.0'
                 });
         }
     } catch (err) {

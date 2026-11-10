@@ -175,33 +175,19 @@
             5001
         ]
     },
-    "students": {
-        "240101001": {
-            "id": "240101001",
+    "students": [],
+    "logs": [
+        {
+            "id": "log_6af2a98c2037a",
+            "timestamp": "2026-11-10 05:20:12",
             "nim": "240101001",
             "name": "user",
             "hostname": "DESKTOP-8243D9U",
-            "ip": "::1",
-            "os_info": "Microsoft Windows NT 10.0.26300.0",
-            "version": "1.0.0",
-            "status": "UNLOCKED",
-            "target_status": "UNLOCKED",
-            "quarantined_count": 4,
-            "quarantined_list": [
-                "continue.continue-2.0.0-win32-x64",
-                "kilocode.kilo-code-7.5.15-win32-x64",
-                "saoudrizwan.claude-dev-4.1.25",
-                "saoudrizwan.claude-dev-4.1.26"
-            ],
-            "blocked_domains_count": 100,
-            "killed_processes_count": 18,
-            "vpn_detected": false,
-            "joined_at": "2026-11-10 04:42:24",
-            "last_seen": 1794285920,
-            "last_seen_str": "2026-11-10 04:45:20"
-        }
-    },
-    "logs": [
+            "room_code": "KUIS-AI-01",
+            "type": "ADMIN_REMOVE",
+            "message": "Data sesi mahasiswa dihapus dari ruangan [KUIS-AI-01] oleh pengawas.",
+            "severity": "INFO"
+        },
         {
             "id": "log_6af2a162dc42e",
             "timestamp": "2026-11-10 04:45:22",
