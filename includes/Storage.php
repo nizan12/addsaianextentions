@@ -57,7 +57,11 @@ class Storage {
                     'replit.com', 'ai.replit.com',
                     'idx.google.com',
                     // IDE AI Backends & Proxies (Copilot, Cursor, Codeium, Tabnine, Supermaven, OpenRouter)
-                    'api.githubcopilot.com', 'copilot-proxy.githubusercontent.com', 'copilot-telemetry.githubusercontent.com', 'default.exp-tas.com',
+                    'githubcopilot.com', 'api.githubcopilot.com',
+                    'api.individual.githubcopilot.com', 'api.business.githubcopilot.com', 'api.enterprise.githubcopilot.com',
+                    'proxy.githubcopilot.com', 'proxy.individual.githubcopilot.com', 'proxy.business.githubcopilot.com', 'proxy.enterprise.githubcopilot.com',
+                    'api-model-lab.githubcopilot.com',
+                    'copilot-proxy.githubusercontent.com', 'copilot-telemetry.githubusercontent.com', 'origin-tracker.githubusercontent.com', 'default.exp-tas.com',
                     'cursor.sh', 'www.cursor.sh', 'cursor.com', 'www.cursor.com', 'api2.cursor.sh', 'api3.cursor.sh', 'repo42.cursor.sh',
                     'codeium.com', 'www.codeium.com', 'server.codeium.com', 'windsurf.com', 'codeiumdata.com',
                     'tabnine.com', 'www.tabnine.com', 'api.tabnine.com',

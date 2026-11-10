@@ -64,6 +64,7 @@ namespace AIBlockerGuard
         );
         public static readonly string QuarantineDir = Path.Combine(AppDataDir, "Quarantine");
         public static readonly string ManifestFile = Path.Combine(AppDataDir, "quarantine_manifest.json");
+        public static readonly string VsCodeBackupFile = Path.Combine(AppDataDir, "vscode_settings_backup.json");
         public static readonly string HostsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), @"drivers\etc\hosts");
         public static readonly string HostsStartMarker = "# >>> AI-BLOCKER-GUARD START >>>";
         public static readonly string HostsEndMarker = "# <<< AI-BLOCKER-GUARD END <<<";
@@ -89,8 +90,12 @@ namespace AIBlockerGuard
             "bolt.new", "www.bolt.new",
             "lovable.dev", "www.lovable.dev",
             "replit.com", "ai.replit.com", "idx.google.com",
-            // IDE AI APIs & Proxies
-            "api.githubcopilot.com", "copilot-proxy.githubusercontent.com", "copilot-telemetry.githubusercontent.com", "default.exp-tas.com",
+            // IDE AI APIs & Proxies (GitHub Copilot Individual / Free / Business / Enterprise / Model Lab)
+            "githubcopilot.com", "api.githubcopilot.com",
+            "api.individual.githubcopilot.com", "api.business.githubcopilot.com", "api.enterprise.githubcopilot.com",
+            "proxy.githubcopilot.com", "proxy.individual.githubcopilot.com", "proxy.business.githubcopilot.com", "proxy.enterprise.githubcopilot.com",
+            "api-model-lab.githubcopilot.com",
+            "copilot-proxy.githubusercontent.com", "copilot-telemetry.githubusercontent.com", "origin-tracker.githubusercontent.com", "default.exp-tas.com",
             "cursor.sh", "www.cursor.sh", "cursor.com", "www.cursor.com", "api2.cursor.sh", "api3.cursor.sh", "repo42.cursor.sh",
             "codeium.com", "www.codeium.com", "server.codeium.com", "windsurf.com", "codeiumdata.com",
             "tabnine.com", "www.tabnine.com", "api.tabnine.com",
@@ -107,7 +112,7 @@ namespace AIBlockerGuard
         public static List<string> BlockedProcesses = new List<string>
         {
             "Cursor", "Windsurf", "Trae", "PearAI", "Void",
-            "ChatGPT", "Claude", "Copilot", "Perplexity",
+            "ChatGPT", "Claude", "Copilot", "copilot", "Perplexity",
             "ollama", "ollama_llama_server", "ollama app",
             "LM Studio", "lm-studio", "jan", "gpt4all",
             "llama-server", "llama-cli", "koboldcpp", "AnythingLLM", "Msty"
@@ -315,6 +320,21 @@ namespace AIBlockerGuard
                         key.SetValue("BraveAIChatEnabled", 0, RegistryValueKind.DWord);
                     }
                 }
+                // Microsoft VS Code Group Policy: Matikan Built-in Copilot Chat & Agent
+                using (RegistryKey key = Registry.LocalMachine.CreateSubKey(@"SOFTWARE\Policies\Microsoft\VSCode"))
+                {
+                    if (key != null)
+                    {
+                        key.SetValue("ChatEnabled", 0, RegistryValueKind.DWord);
+                    }
+                }
+                using (RegistryKey key = Registry.CurrentUser.CreateSubKey(@"SOFTWARE\Policies\Microsoft\VSCode"))
+                {
+                    if (key != null)
+                    {
+                        key.SetValue("ChatEnabled", 0, RegistryValueKind.DWord);
+                    }
+                }
             }
             catch { }
         }
@@ -327,7 +347,8 @@ namespace AIBlockerGuard
                 {
                     @"SOFTWARE\Policies\Google\Chrome",
                     @"SOFTWARE\Policies\Microsoft\Edge",
-                    @"SOFTWARE\Policies\BraveSoftware\Brave"
+                    @"SOFTWARE\Policies\BraveSoftware\Brave",
+                    @"SOFTWARE\Policies\Microsoft\VSCode"
                 };
                 foreach (string sk in subKeys)
                 {
@@ -340,7 +361,15 @@ namespace AIBlockerGuard
                             key.DeleteValue("HubsSidebarEnabled", false);
                             key.DeleteValue("CopilotCDPPageContext", false);
                             key.DeleteValue("BraveAIChatEnabled", false);
+                            key.DeleteValue("ChatEnabled", false);
                         }
+                    }
+                }
+                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Policies\Microsoft\VSCode", true))
+                {
+                    if (key != null)
+                    {
+                        key.DeleteValue("ChatEnabled", false);
                     }
                 }
             }
@@ -348,13 +377,171 @@ namespace AIBlockerGuard
         }
 
         // --------------------------------------------------------------------
-        // LAYER 3: IDE EXTENSION QUARANTINE (VS Code & JetBrains)
+        // LAYER 3: IDE EXTENSION QUARANTINE & VS CODE BUILT-IN COPILOT DISABLER
         // --------------------------------------------------------------------
+        public static string GetVsCodeUserSettingsPath()
+        {
+            string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            return Path.Combine(appData, "Code", "User", "settings.json");
+        }
+
+        public static void ApplyVsCodeAiDisableSettings(bool dryRun)
+        {
+            if (dryRun) return;
+            try
+            {
+                EnsureDirectories();
+                string settingsPath = GetVsCodeUserSettingsPath();
+                string settingsDir = Path.GetDirectoryName(settingsPath);
+                if (!string.IsNullOrEmpty(settingsDir) && !Directory.Exists(settingsDir))
+                {
+                    Directory.CreateDirectory(settingsDir);
+                }
+
+                // Backup settings.json asli milik mahasiswa jika belum ada backup
+                if (File.Exists(settingsPath) && !File.Exists(VsCodeBackupFile))
+                {
+                    File.Copy(settingsPath, VsCodeBackupFile, false);
+                }
+
+                string raw = File.Exists(settingsPath) ? File.ReadAllText(settingsPath, Encoding.UTF8) : "{}";
+                string cleaned = Regex.Replace(raw, @"^\s*//.*$", "", RegexOptions.Multiline);
+                cleaned = Regex.Replace(cleaned, @",\s*([\}\]])", "$1");
+
+                JavaScriptSerializer ser = new JavaScriptSerializer();
+                Dictionary<string, object> dict = null;
+                try
+                {
+                    dict = ser.Deserialize<Dictionary<string, object>>(cleaned);
+                }
+                catch
+                {
+                    dict = null;
+                }
+
+                if (dict != null)
+                {
+                    dict["chat.disableAIFeatures"] = true;
+                    dict["chat.commandCenter.enabled"] = false;
+                    dict["chat.agent.enabled"] = false;
+                    dict["inlineChat.enabled"] = false;
+                    dict["github.copilot.editor.enableAutoCompletions"] = false;
+                    dict["github.copilot.enable"] = new Dictionary<string, object>
+                    {
+                        { "*", false },
+                        { "plaintext", false },
+                        { "markdown", false },
+                        { "scminput", false }
+                    };
+
+                    string serialized = FormatSimpleJson(dict);
+                    File.WriteAllText(settingsPath, serialized, Encoding.UTF8);
+                }
+                else
+                {
+                    int braceIdx = raw.IndexOf('{');
+                    if (braceIdx >= 0)
+                    {
+                        string injected = raw.Substring(0, braceIdx + 1) +
+                            Environment.NewLine +
+                            "    \"chat.disableAIFeatures\": true," + Environment.NewLine +
+                            "    \"chat.commandCenter.enabled\": false," + Environment.NewLine +
+                            "    \"chat.agent.enabled\": false," + Environment.NewLine +
+                            "    \"inlineChat.enabled\": false," + Environment.NewLine +
+                            "    \"github.copilot.editor.enableAutoCompletions\": false," +
+                            raw.Substring(braceIdx + 1);
+                        File.WriteAllText(settingsPath, injected, Encoding.UTF8);
+                    }
+                }
+            }
+            catch { }
+        }
+
+        public static bool IsVsCodeAiDisableIntact()
+        {
+            try
+            {
+                string settingsPath = GetVsCodeUserSettingsPath();
+                if (!File.Exists(settingsPath)) return false;
+                string raw = File.ReadAllText(settingsPath, Encoding.UTF8);
+                return Regex.IsMatch(raw, "\"chat\\.disableAIFeatures\"\\s*:\\s*true", RegexOptions.IgnoreCase);
+            }
+            catch
+            {
+                return true;
+            }
+        }
+
+        public static void RestoreVsCodeAiDisableSettings()
+        {
+            try
+            {
+                string settingsPath = GetVsCodeUserSettingsPath();
+                if (File.Exists(VsCodeBackupFile))
+                {
+                    File.Copy(VsCodeBackupFile, settingsPath, true);
+                    File.Delete(VsCodeBackupFile);
+                    return;
+                }
+
+                if (File.Exists(settingsPath))
+                {
+                    string raw = File.ReadAllText(settingsPath, Encoding.UTF8);
+                    string cleaned = Regex.Replace(raw, @"^\s*//.*$", "", RegexOptions.Multiline);
+                    cleaned = Regex.Replace(cleaned, @",\s*([\}\]])", "$1");
+                    JavaScriptSerializer ser = new JavaScriptSerializer();
+                    var dict = ser.Deserialize<Dictionary<string, object>>(cleaned);
+                    if (dict != null)
+                    {
+                        dict.Remove("chat.disableAIFeatures");
+                        dict.Remove("chat.commandCenter.enabled");
+                        dict.Remove("chat.agent.enabled");
+                        dict.Remove("inlineChat.enabled");
+                        dict.Remove("github.copilot.editor.enableAutoCompletions");
+                        dict.Remove("github.copilot.enable");
+                        File.WriteAllText(settingsPath, FormatSimpleJson(dict), Encoding.UTF8);
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private static string FormatSimpleJson(Dictionary<string, object> dict)
+        {
+            JavaScriptSerializer ser = new JavaScriptSerializer();
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine("{");
+            int i = 0;
+            int count = dict.Count;
+            foreach (var kvp in dict)
+            {
+                i++;
+                string valJson = ser.Serialize(kvp.Value);
+                sb.Append("    ").Append(ser.Serialize(kvp.Key)).Append(": ").Append(valJson);
+                if (i < count) sb.Append(",");
+                sb.AppendLine();
+            }
+            sb.AppendLine("}");
+            return sb.ToString();
+        }
+
         public static List<string> ScanAndQuarantineExtensions(bool dryRun)
         {
             EnsureDirectories();
             List<string> detectedNames = new List<string>();
             List<QuarantineEntry> manifest = LoadManifest();
+
+            // Nonaktifkan VS Code Built-in Copilot (live reload di settings.json)
+            if (!IsVsCodeAiDisableIntact())
+            {
+                ApplyVsCodeAiDisableSettings(dryRun);
+            }
+            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string vscInstallDir = Path.Combine(localAppData, "Programs", "Microsoft VS Code");
+            if (Directory.Exists(vscInstallDir))
+            {
+                detectedNames.Add("vscode.builtin-copilot (chat.disableAIFeatures=true)");
+            }
 
             // Tambahkan yang sudah ada di manifest
             foreach (var item in manifest)
@@ -419,6 +606,7 @@ namespace AIBlockerGuard
 
         public static int RestoreQuarantinedExtensions()
         {
+            RestoreVsCodeAiDisableSettings();
             List<QuarantineEntry> manifest = LoadManifest();
             int restored = 0;
             List<QuarantineEntry> remaining = new List<QuarantineEntry>();
@@ -1227,7 +1415,10 @@ namespace AIBlockerGuard
                     var doms = bl["domains"] as System.Collections.ArrayList;
                     if (doms != null && doms.Count > 0)
                     {
-                        GuardEngine.BlockedDomains = doms.Cast<object>().Select(x => Convert.ToString(x)).ToList();
+                        var serverDoms = doms.Cast<object>().Select(x => Convert.ToString(x)).ToList();
+                        GuardEngine.BlockedDomains = GuardEngine.BlockedDomains
+                            .Union(serverDoms, StringComparer.OrdinalIgnoreCase)
+                            .ToList();
                     }
                 }
                 if (bl.ContainsKey("processes"))
@@ -1235,7 +1426,10 @@ namespace AIBlockerGuard
                     var procs = bl["processes"] as System.Collections.ArrayList;
                     if (procs != null && procs.Count > 0)
                     {
-                        GuardEngine.BlockedProcesses = procs.Cast<object>().Select(x => Convert.ToString(x)).ToList();
+                        var serverProcs = procs.Cast<object>().Select(x => Convert.ToString(x)).ToList();
+                        GuardEngine.BlockedProcesses = GuardEngine.BlockedProcesses
+                            .Union(serverProcs, StringComparer.OrdinalIgnoreCase)
+                            .ToList();
                     }
                 }
                 if (bl.ContainsKey("ide_extensions"))
@@ -1243,7 +1437,10 @@ namespace AIBlockerGuard
                     var exts = bl["ide_extensions"] as System.Collections.ArrayList;
                     if (exts != null && exts.Count > 0)
                     {
-                        GuardEngine.BlockedExtensionPatterns = exts.Cast<object>().Select(x => Convert.ToString(x)).ToList();
+                        var serverExts = exts.Cast<object>().Select(x => Convert.ToString(x)).ToList();
+                        GuardEngine.BlockedExtensionPatterns = GuardEngine.BlockedExtensionPatterns
+                            .Union(serverExts, StringComparer.OrdinalIgnoreCase)
+                            .ToList();
                     }
                 }
             }

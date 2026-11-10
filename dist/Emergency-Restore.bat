@@ -22,12 +22,20 @@ if exist "C:\Program Files\AIBlockerGuard\AIBlockerGuard.exe" (
     "C:\Program Files\AIBlockerGuard\AIBlockerGuard.exe" --restore
 )
 
-echo [*] Membersihkan kebijakan Registry Browser DNS-over-HTTPS (DoH)...
+echo [*] Membersihkan kebijakan Registry Browser DNS-over-HTTPS (DoH) & VS Code...
 reg delete "HKLM\SOFTWARE\Policies\Google\Chrome" /v DnsOverHttpsMode /f >nul 2>&1
 reg delete "HKLM\SOFTWARE\Policies\Google\Chrome" /v GenAiDefaultSettings /f >nul 2>&1
 reg delete "HKLM\SOFTWARE\Policies\Microsoft\Edge" /v DnsOverHttpsMode /f >nul 2>&1
 reg delete "HKLM\SOFTWARE\Policies\Microsoft\Edge" /v HubsSidebarEnabled /f >nul 2>&1
 reg delete "HKLM\SOFTWARE\Policies\BraveSoftware\Brave" /v DnsOverHttpsMode /f >nul 2>&1
+reg delete "HKLM\SOFTWARE\Policies\Microsoft\VSCode" /v ChatEnabled /f >nul 2>&1
+reg delete "HKCU\SOFTWARE\Policies\Microsoft\VSCode" /v ChatEnabled /f >nul 2>&1
+
+if exist "C:\ProgramData\AIBlockerGuard\vscode_settings_backup.json" (
+    echo [*] Memulihkan settings.json VS Code asli...
+    copy /Y "C:\ProgramData\AIBlockerGuard\vscode_settings_backup.json" "%APPDATA%\Code\User\settings.json" >nul 2>&1
+    del /F /Q "C:\ProgramData\AIBlockerGuard\vscode_settings_backup.json" >nul 2>&1
+)
 
 echo [*] Melakukan Flush DNS Windows...
 ipconfig /flushdns >nul
