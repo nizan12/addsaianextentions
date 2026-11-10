@@ -286,7 +286,7 @@ async function writeToFirebase(data) {
     }
 }
 
-async function readData() {
+async function readData(forceCloud = false) {
     const now = Date.now();
 
     // 1. Jika Upstash Redis / Vercel KV dikonfigurasi
@@ -311,8 +311,8 @@ async function readData() {
         } catch (e) {}
     }
 
-    // 3. Sinkronkan dari Firebase Cloud Store setiap 2 detik atau saat cold-start agar semua container Vercel memiliki state yang sama!
-    if (!memoryStore || (now - lastCloudReadMs) >= 2000) {
+    // 3. Sinkronkan dari Firebase Cloud Store agar semua container Vercel memiliki state yang sama!
+    if (forceCloud || !memoryStore || (now - lastCloudReadMs) >= 1000) {
         lastCloudReadMs = now;
         const fbData = await readFromFirebase();
         if (fbData && fbData.config) {
@@ -324,15 +324,28 @@ async function readData() {
                 const localTime = Date.parse(memoryStore.config?.updated_at || 0) || 0;
                 if (fbTime >= localTime) {
                     memoryStore.config = fbData.config;
-                    if (fbData.config.blocklist_customized && fbData.blocklist) {
+                    if (fbData.blocklist) {
                         memoryStore.blocklist = fbData.blocklist;
                     }
                 }
                 const mergedStudents = { ...(fbData.students || {}) };
                 for (const [id, localSt] of Object.entries(memoryStore.students || {})) {
                     const cloudSt = mergedStudents[id];
-                    if (!cloudSt || (localSt.last_seen || 0) >= (cloudSt.last_seen || 0)) {
+                    if (!cloudSt) {
                         mergedStudents[id] = localSt;
+                    } else {
+                        const newerTelemetry = (localSt.last_seen || 0) >= (cloudSt.last_seen || 0) ? localSt : cloudSt;
+                        const localCmdTs = localSt.cmd_updated_at || 0;
+                        const cloudCmdTs = cloudSt.cmd_updated_at || 0;
+                        const newerCmd = cloudCmdTs >= localCmdTs ? cloudSt : localSt;
+                        const resolvedTarget = newerCmd.target_status || newerTelemetry.target_status || 'LOCKED';
+                        const isRecentCmd = (now - Math.max(localCmdTs, cloudCmdTs)) < 9000;
+                        mergedStudents[id] = {
+                            ...newerTelemetry,
+                            target_status: resolvedTarget,
+                            status: isRecentCmd ? resolvedTarget : newerTelemetry.status,
+                            cmd_updated_at: Math.max(localCmdTs, cloudCmdTs)
+                        };
                     }
                 }
                 memoryStore.students = mergedStudents;
@@ -491,7 +504,8 @@ module.exports = async (req, res) => {
     const clientIp = ((req.headers && req.headers['x-forwarded-for']) || req.socket?.remoteAddress || '127.0.0.1').split(',')[0].trim();
 
     try {
-        const data = await readData();
+        const isMutating = action !== 'dashboard_state' && action !== 'state' && action !== 'get_rooms';
+        const data = await readData(isMutating);
         if (!data.students || Array.isArray(data.students)) data.students = {};
         ensureRoomsConfig(data);
 
@@ -538,7 +552,7 @@ module.exports = async (req, res) => {
                     ok: true,
                     rooms: data.config.rooms,
                     room_statuses: data.config.room_statuses,
-                    default_room: data.config.room_code || data.config.rooms[0] || 'LAB-706'
+                    default_room: data.config.room_code || data.config.rooms[0] || ''
                 });
             }
 
@@ -583,8 +597,9 @@ module.exports = async (req, res) => {
                     ip: clientIp,
                     os_info: osInfo,
                     version,
-                    status: existing?.status === 'UNLOCKED' ? 'UNLOCKED' : desiredState,
+                    status: desiredState,
                     target_status: desiredState,
+                    cmd_updated_at: existing?.cmd_updated_at || Date.now(),
                     quarantined_count: existing?.quarantined_count || 0,
                     quarantined_list: existing?.quarantined_list || [],
                     blocked_domains_count: (effectiveBl.domains || []).length,
@@ -660,6 +675,7 @@ module.exports = async (req, res) => {
                         os_info: 'Windows',
                         version: '1.5.0',
                         target_status: data.config.room_statuses[reqRoom] || globalTarget,
+                        cmd_updated_at: Date.now(),
                         joined_at: nowFormatted()
                     };
                 }
@@ -668,9 +684,12 @@ module.exports = async (req, res) => {
                 if (name) st.name = name;
                 st.room_code = reqRoom;
                 const effectiveBl = getEffectiveBlocklist(data, st.room_code);
+                const resolvedTarget = st.target_status || data.config.room_statuses[st.room_code] || globalTarget;
+                const isRecentCmd = (Date.now() - (st.cmd_updated_at || 0)) < 9000;
 
                 const prevVpn = Boolean(st.vpn_detected);
-                st.status = currentStatus;
+                st.target_status = resolvedTarget;
+                st.status = isRecentCmd ? resolvedTarget : currentStatus;
                 st.hostname = hostname;
                 st.ip = clientIp;
                 st.quarantined_count = quarantinedCount;
@@ -692,7 +711,7 @@ module.exports = async (req, res) => {
                     ok: true,
                     room_code: st.room_code,
                     room_pin: roomPin,
-                    target_status: st.target_status || data.config.room_statuses[st.room_code] || globalTarget,
+                    target_status: resolvedTarget,
                     rooms: data.config.rooms,
                     config: {
                         room_code: st.room_code,
@@ -739,9 +758,12 @@ module.exports = async (req, res) => {
                 const roomPin = String(data.config.room_pins?.[stRoom] || '');
 
                 if (pin && (pin === roomPin || pin === masterPin)) {
+                    const cmdTs = Date.now();
+                    data.config.updated_at = new Date(cmdTs).toISOString();
                     if (data.students[studentId]) {
                         data.students[studentId].target_status = 'UNLOCKED';
                         data.students[studentId].status = 'UNLOCKED';
+                        data.students[studentId].cmd_updated_at = cmdTs;
                     }
                     addLog(data, nim, name, hostname, 'PIN_UNLOCK', `Kunci dibuka / otorisasi keluar menggunakan PIN Ruangan [${stRoom}] yang valid.`, 'INFO', stRoom);
                     await writeData(data);
@@ -815,7 +837,8 @@ module.exports = async (req, res) => {
                     return res.status(400).json({ ok: false, error: 'Status tidak valid.' });
                 }
 
-                data.config.updated_at = new Date().toISOString();
+                const cmdTs = Date.now();
+                data.config.updated_at = new Date(cmdTs).toISOString();
                 if (targetRoom === 'ALL' || !targetRoom) {
                     data.config.global_status = target;
                     for (const r of data.config.rooms) {
@@ -824,6 +847,7 @@ module.exports = async (req, res) => {
                     for (const id of Object.keys(data.students)) {
                         data.students[id].target_status = target;
                         data.students[id].status = target;
+                        data.students[id].cmd_updated_at = cmdTs;
                     }
                     const label = target === 'LOCKED' ? 'MENGUNCI (Aktifkan Blokir AI)' : 'MEMBUKA KUNCI (Pulihkan PC)';
                     addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'GLOBAL_COMMAND', `Pengawas memilih ${label} untuk SELURUH RUANGAN.`, 'INFO', 'ALL');
@@ -837,6 +861,7 @@ module.exports = async (req, res) => {
                         if (stRoom === targetRoom) {
                             data.students[id].target_status = target;
                             data.students[id].status = target;
+                            data.students[id].cmd_updated_at = cmdTs;
                         }
                     }
                     const label = target === 'LOCKED' ? 'MENGUNCI (Aktifkan Blokir AI)' : 'MEMBUKA KUNCI (Pulihkan PC)';
@@ -967,14 +992,18 @@ module.exports = async (req, res) => {
                 const st = data.students[studentId];
                 const stRoom = st.room_code || data.config.room_code || '-';
                 if (cmd === 'REMOVE') {
+                    data.config.updated_at = new Date().toISOString();
                     addLog(data, st.nim, st.name, st.hostname, 'ADMIN_REMOVE', `Data sesi mahasiswa dihapus dari ruangan [${stRoom}] oleh pengawas.`, 'INFO', stRoom);
                     delete data.students[studentId];
                     await writeData(data);
                     return res.status(200).json({ ok: true });
                 }
                 if (['LOCKED', 'UNLOCKED'].includes(cmd)) {
+                    const cmdTs = Date.now();
+                    data.config.updated_at = new Date(cmdTs).toISOString();
                     st.target_status = cmd;
                     st.status = cmd;
+                    st.cmd_updated_at = cmdTs;
                     addLog(data, st.nim, st.name, st.hostname, 'REMOTE_CMD', `Pengawas mengubah status endpoint menjadi ${cmd} di [${stRoom}].`, 'INFO', stRoom);
                     await writeData(data);
                     return res.status(200).json({ ok: true, target_status: cmd, status: cmd });

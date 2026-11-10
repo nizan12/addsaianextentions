@@ -1827,6 +1827,16 @@
             });
             const data = await res.json();
             if (data.ok) {
+                Object.keys(knownStudentsCache).forEach(id => {
+                    const entry = knownStudentsCache[id];
+                    if (entry && entry.student) {
+                        const rCode = (entry.student.room_code || '').toUpperCase();
+                        if (!selectedRoom || selectedRoom === 'ALL' || rCode === selectedRoom.toUpperCase()) {
+                            entry.student.status = status;
+                            entry.student.target_status = status;
+                        }
+                    }
+                });
                 const scopeText = selectedRoom === 'ALL' ? 'Seluruh ruangan' : `Ruangan [${selectedRoom}]`;
                 showToast(status === 'LOCKED' ? `${scopeText} dikunci (Proteksi AI Aktif)` : `${scopeText} dibuka dan dipulihkan`);
                 fetchDashboard();
@@ -1841,6 +1851,16 @@
             });
             const data = await res.json();
             if (data.ok) {
+                Object.keys(knownStudentsCache).forEach(id => {
+                    const entry = knownStudentsCache[id];
+                    if (entry && entry.student) {
+                        const rCode = (entry.student.room_code || '').toUpperCase();
+                        if (rCode === (roomCode || '').toUpperCase()) {
+                            entry.student.status = status;
+                            entry.student.target_status = status;
+                        }
+                    }
+                });
                 showToast(`Ruangan [${roomCode}] diubah menjadi ${status}`);
                 fetchDashboard();
             }

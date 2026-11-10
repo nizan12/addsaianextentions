@@ -331,55 +331,86 @@ namespace AIBlockerGuard
         }
 
         // --------------------------------------------------------------------
-        // LAYER 2: BROWSER DNS-OVER-HTTPS (DoH) & BUILT-IN AI POLICY
+        // LAYER 2: BROWSER DNS-OVER-HTTPS (DoH), URLBLOCKLIST & BUILT-IN AI POLICY
         // --------------------------------------------------------------------
         public static void ApplyBrowserPolicies(bool dryRun)
         {
             if (dryRun) return;
             try
             {
-                // Chrome: Matikan DoH & Built-in Gemini AI
-                using (RegistryKey key = Registry.LocalMachine.CreateSubKey(@"SOFTWARE\Policies\Google\Chrome"))
+                string[] browserPaths = new string[]
                 {
-                    if (key != null)
-                    {
-                        key.SetValue("DnsOverHttpsMode", "off", RegistryValueKind.String);
-                        key.SetValue("GenAiDefaultSettings", 2, RegistryValueKind.DWord);
-                    }
-                }
-                // Microsoft Edge: Matikan DoH & Copilot Sidebar
-                using (RegistryKey key = Registry.LocalMachine.CreateSubKey(@"SOFTWARE\Policies\Microsoft\Edge"))
+                    @"SOFTWARE\Policies\Google\Chrome",
+                    @"SOFTWARE\Policies\Microsoft\Edge",
+                    @"SOFTWARE\Policies\BraveSoftware\Brave"
+                };
+
+                RegistryKey[] roots = new RegistryKey[] { Registry.LocalMachine, Registry.CurrentUser };
+                foreach (RegistryKey root in roots)
                 {
-                    if (key != null)
+                    foreach (string bPath in browserPaths)
                     {
-                        key.SetValue("DnsOverHttpsMode", "off", RegistryValueKind.String);
-                        key.SetValue("HubsSidebarEnabled", 0, RegistryValueKind.DWord);
-                        key.SetValue("CopilotCDPPageContext", 0, RegistryValueKind.DWord);
+                        try
+                        {
+                            using (RegistryKey key = root.CreateSubKey(bPath))
+                            {
+                                if (key != null)
+                                {
+                                    key.SetValue("DnsOverHttpsMode", "off", RegistryValueKind.String);
+                                    key.SetValue("BuiltInDnsClientEnabled", 0, RegistryValueKind.DWord);
+                                    key.SetValue("QuicAllowed", 0, RegistryValueKind.DWord);
+
+                                    if (bPath.EndsWith("Chrome"))
+                                    {
+                                        key.SetValue("GenAiDefaultSettings", 2, RegistryValueKind.DWord);
+                                    }
+                                    else if (bPath.EndsWith("Edge"))
+                                    {
+                                        key.SetValue("HubsSidebarEnabled", 0, RegistryValueKind.DWord);
+                                        key.SetValue("CopilotCDPPageContext", 0, RegistryValueKind.DWord);
+                                    }
+                                    else if (bPath.EndsWith("Brave"))
+                                    {
+                                        key.SetValue("BraveAIChatEnabled", 0, RegistryValueKind.DWord);
+                                    }
+
+                                    // Rebuild URLBlocklist so Chromium immediately blocks even already-open tabs
+                                    key.DeleteSubKeyTree("URLBlocklist", false);
+                                    if (BlockedDomains != null && BlockedDomains.Count > 0)
+                                    {
+                                        using (RegistryKey ubKey = key.CreateSubKey("URLBlocklist"))
+                                        {
+                                            if (ubKey != null)
+                                            {
+                                                int idx = 1;
+                                                foreach (string rawDomain in BlockedDomains)
+                                                {
+                                                    string d = (rawDomain ?? "").Trim().ToLowerInvariant();
+                                                    if (string.IsNullOrEmpty(d) || d.Contains(" ")) continue;
+                                                    ubKey.SetValue(idx.ToString(), d, RegistryValueKind.String);
+                                                    idx++;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        catch { }
                     }
-                }
-                // Brave Browser: Matikan DoH & Leo AI
-                using (RegistryKey key = Registry.LocalMachine.CreateSubKey(@"SOFTWARE\Policies\BraveSoftware\Brave"))
-                {
-                    if (key != null)
+
+                    // Microsoft VS Code Group Policy: Matikan Built-in Copilot Chat & Agent
+                    try
                     {
-                        key.SetValue("DnsOverHttpsMode", "off", RegistryValueKind.String);
-                        key.SetValue("BraveAIChatEnabled", 0, RegistryValueKind.DWord);
+                        using (RegistryKey key = root.CreateSubKey(@"SOFTWARE\Policies\Microsoft\VSCode"))
+                        {
+                            if (key != null)
+                            {
+                                key.SetValue("ChatEnabled", 0, RegistryValueKind.DWord);
+                            }
+                        }
                     }
-                }
-                // Microsoft VS Code Group Policy: Matikan Built-in Copilot Chat & Agent
-                using (RegistryKey key = Registry.LocalMachine.CreateSubKey(@"SOFTWARE\Policies\Microsoft\VSCode"))
-                {
-                    if (key != null)
-                    {
-                        key.SetValue("ChatEnabled", 0, RegistryValueKind.DWord);
-                    }
-                }
-                using (RegistryKey key = Registry.CurrentUser.CreateSubKey(@"SOFTWARE\Policies\Microsoft\VSCode"))
-                {
-                    if (key != null)
-                    {
-                        key.SetValue("ChatEnabled", 0, RegistryValueKind.DWord);
-                    }
+                    catch { }
                 }
             }
             catch { }
@@ -396,26 +427,30 @@ namespace AIBlockerGuard
                     @"SOFTWARE\Policies\BraveSoftware\Brave",
                     @"SOFTWARE\Policies\Microsoft\VSCode"
                 };
-                foreach (string sk in subKeys)
+                RegistryKey[] roots = new RegistryKey[] { Registry.LocalMachine, Registry.CurrentUser };
+                foreach (RegistryKey root in roots)
                 {
-                    using (RegistryKey key = Registry.LocalMachine.OpenSubKey(sk, true))
+                    foreach (string sk in subKeys)
                     {
-                        if (key != null)
+                        try
                         {
-                            key.DeleteValue("DnsOverHttpsMode", false);
-                            key.DeleteValue("GenAiDefaultSettings", false);
-                            key.DeleteValue("HubsSidebarEnabled", false);
-                            key.DeleteValue("CopilotCDPPageContext", false);
-                            key.DeleteValue("BraveAIChatEnabled", false);
-                            key.DeleteValue("ChatEnabled", false);
+                            using (RegistryKey key = root.OpenSubKey(sk, true))
+                            {
+                                if (key != null)
+                                {
+                                    key.DeleteValue("DnsOverHttpsMode", false);
+                                    key.DeleteValue("BuiltInDnsClientEnabled", false);
+                                    key.DeleteValue("QuicAllowed", false);
+                                    key.DeleteValue("GenAiDefaultSettings", false);
+                                    key.DeleteValue("HubsSidebarEnabled", false);
+                                    key.DeleteValue("CopilotCDPPageContext", false);
+                                    key.DeleteValue("BraveAIChatEnabled", false);
+                                    key.DeleteValue("ChatEnabled", false);
+                                    key.DeleteSubKeyTree("URLBlocklist", false);
+                                }
+                            }
                         }
-                    }
-                }
-                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Policies\Microsoft\VSCode", true))
-                {
-                    if (key != null)
-                    {
-                        key.DeleteValue("ChatEnabled", false);
+                        catch { }
                     }
                 }
             }
@@ -1955,11 +1990,13 @@ namespace AIBlockerGuard
                             {
                                 string msg;
                                 GuardEngine.ApplyHostsBlock(false, out msg);
+                                GuardEngine.ApplyBrowserPolicies(false);
                                 AddLog("Kebijakan domain diperbarui dari Admin (" + GuardEngine.BlockedDomains.Count + " domain diblokir).");
                             }
                             else
                             {
                                 GuardEngine.RemoveHostsBlock();
+                                GuardEngine.ApplyBrowserPolicies(false);
                                 AddLog("Kebijakan domain diperbarui dari Admin (0 domain diblokir).");
                             }
                         }
