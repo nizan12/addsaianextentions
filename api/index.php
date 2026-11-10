@@ -35,6 +35,43 @@ function respond($data, $code = 200) {
 
 try {
     switch ($action) {
+        case 'admin_login':
+            $data = Storage::read();
+            $email = strtolower(trim($jsonInput['email'] ?? ''));
+            $password = trim($jsonInput['password'] ?? '');
+            $validEmail = strtolower(trim($data['config']['admin_email'] ?? 'admin@guard.edu'));
+            $validPass = (string)($data['config']['admin_password'] ?? 'admin123');
+            $masterPin = (string)($data['config']['unlock_pin'] ?? '202699');
+
+            if (in_array($email, [$validEmail, 'admin', 'pengawas@guard.edu'], true) &&
+                ($password === $validPass || $password === $masterPin)) {
+                respond([
+                    'ok' => true,
+                    'user' => [
+                        'email' => strpos($email, '@') !== false ? $email : $validEmail,
+                        'name' => 'Dosen / Pengawas Ujian',
+                        'role' => 'ADMIN'
+                    ]
+                ]);
+            }
+            respond(['ok' => false, 'error' => 'Email atau Kata Sandi / PIN Pengawas tidak sesuai.'], 401);
+            break;
+
+        case 'sync_from_firebase':
+            $result = Storage::update(function (&$data) use ($jsonInput) {
+                if (isset($jsonInput['config']) && is_array($jsonInput['config'])) {
+                    $data['config'] = array_merge($data['config'] ?? [], $jsonInput['config']);
+                }
+                if (isset($jsonInput['blocklist']) && is_array($jsonInput['blocklist'])) {
+                    $data['blocklist'] = array_merge($data['blocklist'] ?? [], $jsonInput['blocklist']);
+                    $data['config']['blocklist_customized'] = true;
+                }
+                Storage::ensureRoomsConfig($data);
+                return ['ok' => true];
+            });
+            respond($result);
+            break;
+
         // ====================================================================
         // ENDPOINT UNTUK APLIKASI DESKTOP MAHASISWA (CLIENT)
         // ====================================================================
@@ -318,18 +355,17 @@ try {
 
                 foreach (($data['students'] ?? []) as $id => $st) {
                     $stRoom = strtoupper(trim($st['room_code'] ?? ''));
-                    if ($stRoom === '' || !in_array($stRoom, $data['config']['rooms'], true)) {
+                    if ($stRoom === '' || !in_array($stRoom, $data['config']['rooms'], true) || !empty($st['is_simulated'])) {
                         unset($data['students'][$id]);
                         continue;
                     }
-                    $isSimulated = !empty($st['is_simulated']);
-                    $isOnline = $isSimulated ? true : (($now - ($st['last_seen'] ?? 0)) <= 25);
+                    $isOnline = (($now - ($st['last_seen'] ?? 0)) <= 25);
                     $st['is_online'] = $isOnline;
-                    $st['seconds_ago'] = $isSimulated ? 1 : max(0, $now - ($st['last_seen'] ?? $now));
+                    $st['seconds_ago'] = max(0, $now - ($st['last_seen'] ?? $now));
                     if ($isOnline) {
                         $onlineCount++;
                     }
-                    if (($st['status'] ?? '') === 'LOCKED' || ($st['status'] ?? '') === 'DRY_RUN') {
+                    if (($st['status'] ?? '') === 'LOCKED') {
                         $lockedCount++;
                     }
                     $violationCount += (int)($st['killed_processes_count'] ?? 0);
@@ -384,9 +420,6 @@ try {
                     foreach ($data['students'] as $id => &$st) {
                         $st['target_status'] = $target;
                         $st['status'] = $target;
-                        if (!empty($st['is_simulated'])) {
-                            $st['last_seen'] = time();
-                        }
                     }
                     $label = $target === 'LOCKED' ? 'MENGUNCI (Aktifkan Blokir AI)' : 'MEMBUKA KUNCI (Pulihkan PC)';
                     Storage::addLog($data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'GLOBAL_COMMAND', "Pengawas memilih {$label} untuk SELURUH RUANGAN.", 'INFO', 'ALL');
@@ -400,9 +433,6 @@ try {
                         if ($stRoom === $targetRoom) {
                             $st['target_status'] = $target;
                             $st['status'] = $target;
-                            if (!empty($st['is_simulated'])) {
-                                $st['last_seen'] = time();
-                            }
                         }
                     }
                     $label = $target === 'LOCKED' ? 'MENGUNCI (Aktifkan Blokir AI)' : 'MEMBUKA KUNCI (Pulihkan PC)';
@@ -543,9 +573,6 @@ try {
                 if (in_array($cmd, ['LOCKED', 'UNLOCKED'], true)) {
                     $st['target_status'] = $cmd;
                     $st['status'] = $cmd;
-                    if (!empty($st['is_simulated'])) {
-                        $st['last_seen'] = time();
-                    }
                     Storage::addLog($data, $st['nim'], $st['name'], $st['hostname'], 'REMOTE_CMD', "Pengawas mengubah status endpoint menjadi {$cmd} di [{$stRoom}].", 'INFO', $stRoom);
                     return ['ok' => true, 'target_status' => $cmd, 'status' => $cmd];
                 }
@@ -564,6 +591,12 @@ try {
                 if (!empty($jsonInput['unlock_pin'])) {
                     $data['config']['unlock_pin'] = trim($jsonInput['unlock_pin']);
                 }
+                if (!empty($jsonInput['admin_email'])) {
+                    $data['config']['admin_email'] = trim($jsonInput['admin_email']);
+                }
+                if (!empty($jsonInput['admin_password'])) {
+                    $data['config']['admin_password'] = trim($jsonInput['admin_password']);
+                }
                 $data['config']['block_doh'] = isset($jsonInput['block_doh']) ? (bool)$jsonInput['block_doh'] : true;
                 $data['config']['block_vpn'] = isset($jsonInput['block_vpn']) ? (bool)$jsonInput['block_vpn'] : true;
                 $data['config']['quarantine_extensions'] = isset($jsonInput['quarantine_extensions']) ? (bool)$jsonInput['quarantine_extensions'] : true;
@@ -578,8 +611,9 @@ try {
 
         case 'update_blocklist':
             $result = Storage::update(function (&$data) use ($jsonInput) {
+                $data['config']['blocklist_customized'] = true;
                 if (isset($jsonInput['domains']) && is_array($jsonInput['domains'])) {
-                    $data['blocklist']['domains'] = array_values(array_unique(array_filter(array_map('trim', $jsonInput['domains']))));
+                    $data['blocklist']['domains'] = array_values(array_unique(array_filter(array_map('strtolower', array_map('trim', $jsonInput['domains'])))));
                 }
                 if (isset($jsonInput['processes']) && is_array($jsonInput['processes'])) {
                     $data['blocklist']['processes'] = array_values(array_unique(array_filter(array_map('trim', $jsonInput['processes']))));
@@ -589,54 +623,6 @@ try {
                 }
                 Storage::addLog($data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'BLOCKLIST_UPDATE', 'Daftar domain/proses/ekstensi AI yang diblokir telah diperbarui.', 'INFO');
                 return ['ok' => true, 'blocklist' => $data['blocklist']];
-            });
-            respond($result);
-            break;
-
-        case 'simulate_student':
-            // Fitur simulasi untuk demonstrasi langsung di dashboard
-            $reqRoom = strtoupper(trim($jsonInput['room_code'] ?? ''));
-            $result = Storage::update(function (&$data) use ($reqRoom) {
-                Storage::ensureRoomsConfig($data);
-                $assignedRoom = ($reqRoom !== '' && $reqRoom !== 'ALL')
-                    ? Storage::registerRoomIfNeeded($data, $reqRoom)
-                    : ($data['config']['rooms'][array_rand($data['config']['rooms'])] ?? 'KUIS-AI-01');
-
-                $samples = [
-                    ['nim' => '240101001', 'name' => 'Budi Santoso', 'host' => 'LAPTOP-BUDI01', 'ext' => ['vscode.builtin-copilot (chat.disableAIFeatures=true)', 'github.copilot-chat-0.22.1', 'saoudrizwan.claude-dev-3.1.0']],
-                    ['nim' => '240101002', 'name' => 'Siti Aminah', 'host' => 'PC-SITI-LAB2', 'ext' => ['vscode.builtin-copilot (chat.disableAIFeatures=true)', 'codeium.codeium-1.18.0']],
-                    ['nim' => '240101003', 'name' => 'Reza Rahadian', 'host' => 'ROG-STRIX-REZA', 'ext' => ['vscode.builtin-copilot (chat.disableAIFeatures=true)', 'tabnine.tabnine-vscode-3.190.0']]
-                ];
-                $pick = $samples[array_rand($samples)];
-                $id = $pick['nim'];
-                $target = $data['config']['room_statuses'][$assignedRoom] ?? ($data['config']['global_status'] ?? 'LOCKED');
-
-                $data['students'][$id] = [
-                    'id' => $id,
-                    'nim' => $pick['nim'],
-                    'name' => $pick['name'],
-                    'hostname' => $pick['host'],
-                    'room_code' => $assignedRoom,
-                    'ip' => '192.168.1.' . rand(10, 240),
-                    'os_info' => 'Windows 11 Pro 64-bit',
-                    'version' => '1.2.0',
-                    'status' => $target,
-                    'target_status' => $target,
-                    'is_simulated' => true,
-                    'quarantined_count' => count($pick['ext']),
-                    'quarantined_list' => $pick['ext'],
-                    'blocked_domains_count' => count($data['blocklist']['domains']),
-                    'killed_processes_count' => 1,
-                    'vpn_detected' => false,
-                    'joined_at' => date('Y-m-d H:i:s'),
-                    'last_seen' => time(),
-                    'last_seen_str' => date('Y-m-d H:i:s')
-                ];
-
-                Storage::addLog($data, $pick['nim'], $pick['name'], $pick['host'], 'EXTENSION_QUARANTINE', 'Mengkarantina ' . count($pick['ext']) . ' ekstensi AI VS Code di [' . $assignedRoom . ']: ' . implode(', ', $pick['ext']), 'WARNING', $assignedRoom);
-                Storage::addLog($data, $pick['nim'], $pick['name'], $pick['host'], 'PROCESS_KILLED', 'Menghentikan paksa proses AI terlarang di [' . $assignedRoom . ']: Cursor.exe & ollama.exe (Port 11434)', 'DANGER', $assignedRoom);
-
-                return ['ok' => true, 'simulated' => $pick, 'room_code' => $assignedRoom];
             });
             respond($result);
             break;

@@ -36,12 +36,14 @@ class Storage {
                     'LAB-03' => '202604'
                 ],
                 'unlock_pin' => '202699',
+                'admin_email' => 'admin@guard.edu',
                 'admin_password' => 'admin123',
                 'global_status' => 'LOCKED', // LOCKED | UNLOCKED
                 'block_doh' => true,
                 'block_vpn' => true,
                 'quarantine_extensions' => true,
                 'kill_processes' => true,
+                'blocklist_customized' => false,
                 'updated_at' => date('c')
             ],
             'blocklist' => [
@@ -221,7 +223,9 @@ class Storage {
             }
         }
         $defaults = self::getDefaultSchema()['blocklist'];
-        if (isset($data['blocklist'])) {
+        if (!isset($data['blocklist']) || !is_array($data['blocklist'])) {
+            $data['blocklist'] = $defaults;
+        } elseif (empty($data['config']['blocklist_customized'])) {
             $data['blocklist']['domains'] = array_values(array_unique(array_merge($data['blocklist']['domains'] ?? [], $defaults['domains'])));
             $data['blocklist']['processes'] = array_values(array_unique(array_merge($data['blocklist']['processes'] ?? [], $defaults['processes'])));
         }

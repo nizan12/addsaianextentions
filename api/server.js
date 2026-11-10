@@ -1,15 +1,19 @@
 /**
- * GuardConsole — Vercel Serverless API (Node.js)
+ * GuardConsole — Vercel Serverless API (Node.js) + Firebase Sync Engine
  * Kompatibel penuh dengan aplikasi Desktop GuardAgent (.exe) dan Web Dashboard.
- * Mendukung penyimpanan otomatis di /tmp/database.json (Serverless Warm State)
- * serta mendukung penuh Vercel KV / Upstash Redis (jika KV_REST_API_URL diset).
+ * Mendukung sinkronisasi otomatis ke Firebase Firestore / Realtime Database (blockai-ba569),
+ * Vercel KV, serta fallback penyimpanan lokal /tmp/aiblocker_database.json.
  */
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 
-const TMP_DB_PATH = '/tmp/aiblocker_database.json';
+const TMP_DB_PATH = path.join(os.tmpdir(), 'aiblocker_database.json');
+const FIREBASE_PROJECT_ID = 'blockai-ba569';
+const FIRESTORE_DOC_URL = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/guard_system/main_state`;
+const RTDB_URL = process.env.FIREBASE_DB_URL || `https://${FIREBASE_PROJECT_ID}-default-rtdb.firebaseio.com/guard_system.json`;
 
 function getDefaultSchema() {
     return {
@@ -29,11 +33,14 @@ function getDefaultSchema() {
                 'LAB-03': '202604'
             },
             unlock_pin: '202699',
+            admin_email: 'admin@guard.edu',
+            admin_password: 'admin123',
             global_status: 'LOCKED',
             block_doh: true,
             block_vpn: true,
             quarantine_extensions: true,
             kill_processes: true,
+            blocklist_customized: false,
             updated_at: new Date().toISOString()
         },
         blocklist: {
@@ -118,8 +125,60 @@ function getDefaultSchema() {
 
 let memoryStore = null;
 
+async function readFromFirebase() {
+    // 1. Coba Cloud Firestore REST API (blockai-ba569)
+    try {
+        const res = await fetch(FIRESTORE_DOC_URL, { method: 'GET' });
+        if (res.ok) {
+            const doc = await res.json();
+            const rawPayload = doc?.fields?.payload?.stringValue;
+            if (rawPayload) {
+                return JSON.parse(rawPayload);
+            }
+        }
+    } catch (e) {}
+
+    // 2. Coba Firebase Realtime Database REST API
+    try {
+        const res = await fetch(RTDB_URL, { method: 'GET' });
+        if (res.ok) {
+            const data = await res.json();
+            if (data && typeof data === 'object' && data.config) {
+                return data;
+            }
+        }
+    } catch (e) {}
+
+    return null;
+}
+
+async function writeToFirebase(data) {
+    // 1. Simpan ke Cloud Firestore REST API
+    try {
+        await fetch(FIRESTORE_DOC_URL, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                fields: {
+                    payload: { stringValue: JSON.stringify(data) },
+                    updatedAt: { stringValue: new Date().toISOString() }
+                }
+            })
+        });
+    } catch (e) {}
+
+    // 2. Simpan ke Firebase Realtime Database REST API (jika aktif)
+    try {
+        await fetch(RTDB_URL, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+    } catch (e) {}
+}
+
 async function readData() {
-    // 1. Jika Upstash Redis / Vercel KV dikonfigurasi via Environment Variable
+    // 1. Jika Upstash Redis / Vercel KV dikonfigurasi
     if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
         try {
             const resp = await fetch(`${process.env.KV_REST_API_URL}/get/aiblocker_db`, {
@@ -129,12 +188,10 @@ async function readData() {
             if (json && json.result) {
                 return typeof json.result === 'string' ? JSON.parse(json.result) : json.result;
             }
-        } catch (e) {
-            console.error('KV Read Error:', e);
-        }
+        } catch (e) {}
     }
 
-    // 2. Fallback ke /tmp/aiblocker_database.json & Memory
+    // 2. Cek file lokal /tmp/aiblocker_database.json (Warm Lambda)
     try {
         if (fs.existsSync(TMP_DB_PATH)) {
             const raw = fs.readFileSync(TMP_DB_PATH, 'utf8');
@@ -142,6 +199,16 @@ async function readData() {
             return memoryStore;
         }
     } catch (e) {}
+
+    // 3. Jika cold start, ambil dari Firebase (Firestore / RTDB)
+    const fbData = await readFromFirebase();
+    if (fbData && fbData.config) {
+        memoryStore = fbData;
+        try {
+            fs.writeFileSync(TMP_DB_PATH, JSON.stringify(memoryStore, null, 2), 'utf8');
+        } catch (e) {}
+        return memoryStore;
+    }
 
     if (!memoryStore) {
         memoryStore = getDefaultSchema();
@@ -158,6 +225,9 @@ async function writeData(data) {
         fs.writeFileSync(TMP_DB_PATH, JSON.stringify(data, null, 2), 'utf8');
     } catch (e) {}
 
+    // Sinkronkan ke Firebase secara non-blocking / cepat
+    await writeToFirebase(data);
+
     if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
         try {
             await fetch(`${process.env.KV_REST_API_URL}/set/aiblocker_db`, {
@@ -168,9 +238,7 @@ async function writeData(data) {
                 },
                 body: JSON.stringify(JSON.stringify(data))
             });
-        } catch (e) {
-            console.error('KV Write Error:', e);
-        }
+        } catch (e) {}
     }
 }
 
@@ -198,10 +266,15 @@ function ensureRoomsConfig(data) {
             data.config.room_pins[r] = String(202601 + idx);
         }
     });
-    const defaults = getDefaultSchema().blocklist;
-    if (data.blocklist) {
+
+    // PENTING: Jangan paksa merge daftar domain default apabila Admin sudah mengatur/menonaktifkan domain secara fleksibel!
+    if (!data.blocklist || typeof data.blocklist !== 'object') {
+        data.blocklist = getDefaultSchema().blocklist;
+    } else if (!data.config.blocklist_customized) {
+        const defaults = getDefaultSchema().blocklist;
         data.blocklist.domains = Array.from(new Set([...(data.blocklist.domains || []), ...defaults.domains]));
         data.blocklist.processes = Array.from(new Set([...(data.blocklist.processes || []), ...defaults.processes]));
+        data.blocklist.ide_extensions = Array.from(new Set([...(data.blocklist.ide_extensions || []), ...defaults.ide_extensions]));
     }
 }
 
@@ -251,8 +324,8 @@ module.exports = async (req, res) => {
     }
 
     const body = typeof req.body === 'string' ? (() => { try { return JSON.parse(req.body); } catch { return {}; } })() : (req.body || {});
-    const action = req.query.action || body.action || '';
-    const clientIp = (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '127.0.0.1').split(',')[0].trim();
+    const action = (req.query && req.query.action) || body.action || '';
+    const clientIp = ((req.headers && req.headers['x-forwarded-for']) || req.socket?.remoteAddress || '127.0.0.1').split(',')[0].trim();
 
     try {
         const data = await readData();
@@ -260,6 +333,41 @@ module.exports = async (req, res) => {
         ensureRoomsConfig(data);
 
         switch (action) {
+            case 'admin_login': {
+                const email = String(body.email || '').trim().toLowerCase();
+                const password = String(body.password || '').trim();
+                const validEmail = String(data.config.admin_email || 'admin@guard.edu').toLowerCase();
+                const validPass = String(data.config.admin_password || 'admin123');
+                const masterPin = String(data.config.unlock_pin || '202699');
+
+                if ((email === validEmail || email === 'admin' || email === 'pengawas@guard.edu') &&
+                    (password === validPass || password === masterPin)) {
+                    return res.status(200).json({
+                        ok: true,
+                        user: {
+                            email: email.includes('@') ? email : validEmail,
+                            name: 'Dosen / Pengawas Ujian',
+                            role: 'ADMIN'
+                        }
+                    });
+                }
+                return res.status(401).json({ ok: false, error: 'Email atau Kata Sandi / PIN Pengawas tidak sesuai.' });
+            }
+
+            case 'sync_from_firebase': {
+                // Menerima sinkronisasi state dari Firebase client SDK jika diupdate langsung dari browser
+                if (body.config && typeof body.config === 'object') {
+                    data.config = { ...data.config, ...body.config };
+                }
+                if (body.blocklist && typeof body.blocklist === 'object') {
+                    data.blocklist = { ...data.blocklist, ...body.blocklist };
+                    data.config.blocklist_customized = true;
+                }
+                ensureRoomsConfig(data);
+                await writeData(data);
+                return res.status(200).json({ ok: true });
+            }
+
             case 'get_rooms': {
                 return res.status(200).json({
                     ok: true,
@@ -276,13 +384,12 @@ module.exports = async (req, res) => {
                 const hostname = String(body.hostname || 'PC-CLIENT').trim();
                 const rawRoom = String(body.room_code || '').trim().toUpperCase();
                 const osInfo = String(body.os_info || 'Windows').trim();
-                const version = String(body.version || '1.4.0').trim();
+                const version = String(body.version || '1.5.0').trim();
 
                 if (!nim || !name) {
                     return res.status(400).json({ ok: false, error: 'NIM dan Nama Mahasiswa wajib diisi.', rooms: data.config.rooms });
                 }
 
-                // PENTING: Mahasiswa TIDAK BOLEH membuat ruangan sendiri! Harus memilih ruangan yang sudah dibuat Admin.
                 if (!rawRoom || !data.config.rooms.includes(rawRoom)) {
                     return res.status(400).json({
                         ok: false,
@@ -308,7 +415,7 @@ module.exports = async (req, res) => {
                     ip: clientIp,
                     os_info: osInfo,
                     version,
-                    status: existing?.status || desiredState,
+                    status: existing?.status === 'UNLOCKED' ? 'UNLOCKED' : desiredState,
                     target_status: desiredState,
                     quarantined_count: existing?.quarantined_count || 0,
                     quarantined_list: existing?.quarantined_list || [],
@@ -344,7 +451,7 @@ module.exports = async (req, res) => {
                 const nim = String(body.nim || '').trim();
                 const name = String(body.name || 'Mahasiswa').trim();
                 const hostname = String(body.hostname || 'PC').trim();
-                const currentStatus = String(body.status || 'LOCKED').trim();
+                const currentStatus = String(body.status || 'LOCKED').trim() === 'UNLOCKED' ? 'UNLOCKED' : 'LOCKED';
                 const quarantinedCount = parseInt(body.quarantined_count || 0, 10);
                 const quarantinedList = Array.isArray(body.quarantined_list) ? body.quarantined_list : [];
                 const killedCount = parseInt(body.killed_processes_count || 0, 10);
@@ -376,7 +483,7 @@ module.exports = async (req, res) => {
                         room_code: reqRoom,
                         ip: clientIp,
                         os_info: 'Windows',
-                        version: '1.4.0',
+                        version: '1.5.0',
                         target_status: data.config.room_statuses[reqRoom] || globalTarget,
                         joined_at: nowFormatted()
                     };
@@ -385,7 +492,6 @@ module.exports = async (req, res) => {
                 const st = data.students[studentId];
                 if (name) st.name = name;
 
-                // Jika ruangan mahasiswa sudah dihapus oleh Admin, minta pilih ruangan lagi
                 if (!st.room_code || !data.config.rooms.includes(st.room_code)) {
                     if (reqRoom && data.config.rooms.includes(reqRoom)) {
                         st.room_code = reqRoom;
@@ -483,6 +589,7 @@ module.exports = async (req, res) => {
                 }
             }
 
+            case 'state':
             case 'dashboard_state': {
                 const nowSec = Math.floor(Date.now() / 1000);
                 const students = [];
@@ -494,19 +601,17 @@ module.exports = async (req, res) => {
                 for (const id of Object.keys(data.students)) {
                     const rawSt = data.students[id];
                     const stRoom = String(rawSt.room_code || '').toUpperCase();
-                    // Jika ruangan sudah dihapus oleh Admin, bersihkan mahasiswa yatim agar tidak membuat ruangan muncul kembali
-                    if (!stRoom || !data.config.rooms.includes(stRoom)) {
+                    if (!stRoom || !data.config.rooms.includes(stRoom) || rawSt.is_simulated) {
                         delete data.students[id];
                         dirty = true;
                         continue;
                     }
                     const st = { ...rawSt };
-                    const isSim = Boolean(st.is_simulated);
-                    const isOnline = isSim ? true : ((nowSec - (st.last_seen || 0)) <= 25);
+                    const isOnline = (nowSec - (st.last_seen || 0)) <= 25;
                     st.is_online = isOnline;
-                    st.seconds_ago = isSim ? 1 : Math.max(0, nowSec - (st.last_seen || nowSec));
+                    st.seconds_ago = Math.max(0, nowSec - (st.last_seen || nowSec));
                     if (isOnline) onlineCount++;
-                    if (st.status === 'LOCKED' || st.status === 'DRY_RUN') lockedCount++;
+                    if (st.status === 'LOCKED') lockedCount++;
                     violationCount += parseInt(st.killed_processes_count || 0, 10);
                     students.push(st);
                 }
@@ -658,7 +763,6 @@ module.exports = async (req, res) => {
                 if (data.config.room_code === delRoom) {
                     data.config.room_code = data.config.rooms[0];
                 }
-                // Hapus mahasiswa yang terikat pada ruangan yang dihapus agar tidak membuat ruangan muncul kembali
                 for (const id of Object.keys(data.students)) {
                     if (String(data.students[id].room_code || '').toUpperCase() === delRoom) {
                         delete data.students[id];
@@ -698,6 +802,7 @@ module.exports = async (req, res) => {
                 return res.status(400).json({ ok: false, error: 'Perintah tidak dikenali.' });
             }
 
+            case 'save_config':
             case 'update_config': {
                 if (body.room_code) {
                     const norm = registerRoomByAdmin(data, body.room_code);
@@ -707,6 +812,8 @@ module.exports = async (req, res) => {
                     data.config.rooms = Array.from(new Set(body.rooms.map(r => String(r).trim().toUpperCase()).filter(Boolean)));
                 }
                 if (body.unlock_pin) data.config.unlock_pin = String(body.unlock_pin).trim();
+                if (body.admin_email) data.config.admin_email = String(body.admin_email).trim();
+                if (body.admin_password) data.config.admin_password = String(body.admin_password).trim();
                 data.config.block_doh = body.block_doh !== undefined ? Boolean(body.block_doh) : true;
                 data.config.block_vpn = body.block_vpn !== undefined ? Boolean(body.block_vpn) : true;
                 data.config.quarantine_extensions = body.quarantine_extensions !== undefined ? Boolean(body.quarantine_extensions) : true;
@@ -718,9 +825,11 @@ module.exports = async (req, res) => {
                 return res.status(200).json({ ok: true, config: data.config });
             }
 
+            case 'save_blocklist':
             case 'update_blocklist': {
+                data.config.blocklist_customized = true;
                 if (Array.isArray(body.domains)) {
-                    data.blocklist.domains = [...new Set(body.domains.map(s => String(s).trim()).filter(Boolean))];
+                    data.blocklist.domains = [...new Set(body.domains.map(s => String(s).trim().toLowerCase()).filter(Boolean))];
                 }
                 if (Array.isArray(body.processes)) {
                     data.blocklist.processes = [...new Set(body.processes.map(s => String(s).trim()).filter(Boolean))];
@@ -728,53 +837,9 @@ module.exports = async (req, res) => {
                 if (Array.isArray(body.ide_extensions)) {
                     data.blocklist.ide_extensions = [...new Set(body.ide_extensions.map(s => String(s).trim()).filter(Boolean))];
                 }
-                addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'BLOCKLIST_UPDATE', 'Daftar domain/proses/ekstensi AI yang diblokir telah diperbarui.', 'INFO');
+                addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'BLOCKLIST_UPDATE', `Daftar blokir diperbarui (${data.blocklist.domains.length} domain, ${data.blocklist.processes.length} proses).`, 'INFO');
                 await writeData(data);
                 return res.status(200).json({ ok: true, blocklist: data.blocklist });
-            }
-
-            case 'simulate_student': {
-                const reqRoom = String(body.room_code || '').trim().toUpperCase();
-                const assignedRoom = (reqRoom && reqRoom !== 'ALL' && data.config.rooms.includes(reqRoom))
-                    ? reqRoom
-                    : (data.config.rooms[Math.floor(Math.random() * data.config.rooms.length)] || 'KUIS-AI-01');
-
-                const samples = [
-                    { nim: '240101001', name: 'Budi Santoso', host: 'LAPTOP-BUDI01', ext: ['vscode.builtin-copilot (chat.disableAIFeatures=true)', 'github.copilot-chat-0.22.1', 'saoudrizwan.claude-dev-3.1.0'] },
-                    { nim: '240101002', name: 'Siti Aminah', host: 'PC-SITI-LAB2', ext: ['vscode.builtin-copilot (chat.disableAIFeatures=true)', 'codeium.codeium-1.18.0'] },
-                    { nim: '240101003', name: 'Reza Rahadian', host: 'ROG-STRIX-REZA', ext: ['vscode.builtin-copilot (chat.disableAIFeatures=true)', 'tabnine.tabnine-vscode-3.190.0'] }
-                ];
-                const pick = samples[Math.floor(Math.random() * samples.length)];
-                const id = pick.nim;
-                const target = data.config.room_statuses[assignedRoom] || data.config.global_status || 'LOCKED';
-                const nowSec = Math.floor(Date.now() / 1000);
-
-                data.students[id] = {
-                    id,
-                    nim: pick.nim,
-                    name: pick.name,
-                    hostname: pick.host,
-                    room_code: assignedRoom,
-                    ip: '192.168.1.' + Math.floor(10 + Math.random() * 230),
-                    os_info: 'Windows 11 Pro 64-bit',
-                    version: '1.2.0',
-                    status: target,
-                    target_status: target,
-                    is_simulated: true,
-                    quarantined_count: pick.ext.length,
-                    quarantined_list: pick.ext,
-                    blocked_domains_count: (data.blocklist.domains || []).length,
-                    killed_processes_count: 1,
-                    vpn_detected: false,
-                    joined_at: nowFormatted(),
-                    last_seen: nowSec,
-                    last_seen_str: nowFormatted()
-                };
-
-                addLog(data, pick.nim, pick.name, pick.host, 'EXTENSION_QUARANTINE', `Mengkarantina ${pick.ext.length} ekstensi AI VS Code di [${assignedRoom}]: ${pick.ext.join(', ')}`, 'WARNING', assignedRoom);
-                addLog(data, pick.nim, pick.name, pick.host, 'PROCESS_KILLED', `Menghentikan paksa proses AI terlarang di [${assignedRoom}]: Cursor.exe & ollama.exe (Port 11434)`, 'DANGER', assignedRoom);
-                await writeData(data);
-                return res.status(200).json({ ok: true, simulated: pick, room_code: assignedRoom });
             }
 
             case 'clear_logs': {
@@ -786,8 +851,8 @@ module.exports = async (req, res) => {
             default:
                 return res.status(200).json({
                     ok: true,
-                    service: 'GuardConsole Cloud API (Vercel)',
-                    version: '1.3.0'
+                    service: 'GuardConsole Cloud API (Vercel + Firebase)',
+                    version: '1.5.0'
                 });
         }
     } catch (err) {

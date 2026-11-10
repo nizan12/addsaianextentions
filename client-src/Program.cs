@@ -909,7 +909,6 @@ namespace AIBlockerGuard
 
         // State
         private bool isLocked = false;
-        private bool isDryRun = false;
         private bool isServerMode = true;
         private bool isRoomConfirmed = false;
         private bool startMinimizedInTray = false;
@@ -939,7 +938,6 @@ namespace AIBlockerGuard
         private Button btnRefreshRooms;
         private RadioButton rbServerMode;
         private RadioButton rbOfflineMode;
-        private CheckBox chkDryRun;
         private CheckBox chkAutoStart;
 
         private Button btnActivateLock;
@@ -1173,18 +1171,8 @@ namespace AIBlockerGuard
             configPanel.Controls.Add(rbOfflineMode);
 
             configPanel.Controls.Add(MakeLabel("Endpoint Server:", 18, 128));
-            txtServerUrl = MakeTextBox(savedCfg.ServerUrl, 125, 125, 405);
+            txtServerUrl = MakeTextBox(savedCfg.ServerUrl, 125, 125, 655);
             configPanel.Controls.Add(txtServerUrl);
-
-            chkDryRun = new CheckBox
-            {
-                Text = "Mode Simulasi",
-                Location = new Point(545, 127),
-                AutoSize = true,
-                ForeColor = Color.FromArgb(71, 85, 105),
-                Font = new Font("Segoe UI", 8.5f, FontStyle.Regular)
-            };
-            configPanel.Controls.Add(chkDryRun);
 
             chkAutoStart = new CheckBox
             {
@@ -1509,7 +1497,6 @@ namespace AIBlockerGuard
                 return;
             }
 
-            isDryRun = chkDryRun.Checked;
             activeRoomCode = selRoom;
             isRoomConfirmed = true;
             SaveCurrentAgentConfig(true);
@@ -1588,10 +1575,8 @@ namespace AIBlockerGuard
             string roomLabel = string.IsNullOrEmpty(activeRoomCode) ? "OFFLINE" : activeRoomCode;
 
             // Update UI Banner ke Emerald (Terkunci & Terverifikasi)
-            headerBanner.BackColor = isDryRun ? Color.FromArgb(30, 58, 138) : Color.FromArgb(6, 95, 70);
-            lblBannerTitle.Text = isDryRun
-                ? "STATUS ENDPOINT: MODE SIMULASI AKTIF (DIKENDALIKAN ADMIN)"
-                : "STATUS ENDPOINT: TERKUNCI OLEH ADMIN — AI & ROBLOX DIBLOKIR";
+            headerBanner.BackColor = Color.FromArgb(6, 95, 70);
+            lblBannerTitle.Text = "STATUS ENDPOINT: TERKUNCI OLEH ADMIN — AI & ROBLOX DIBLOKIR";
             lblBannerSub.Text = string.Format("Peserta: {0} ({1}) · Ruangan: [{2}] · Gunakan PIN Ruangan [{2}] atau Dashboard Admin untuk membuka.",
                 txtName.Text.Trim(), txtNim.Text.Trim(), roomLabel);
 
@@ -1607,29 +1592,34 @@ namespace AIBlockerGuard
             txtServerUrl.Enabled = false;
             rbServerMode.Enabled = false;
             rbOfflineMode.Enabled = false;
-            chkDryRun.Enabled = false;
             chkAutoStart.Enabled = false;
             btnActivateLock.Enabled = false;
             btnUnlockWithPin.Enabled = true;
 
             // Layer 1: Hosts & DNS
             string hostsMsg;
-            GuardEngine.ApplyHostsBlock(isDryRun, out hostsMsg);
-            AddLog(hostsMsg);
+            if (GuardEngine.BlockedDomains.Count > 0)
+            {
+                GuardEngine.ApplyHostsBlock(false, out hostsMsg);
+                AddLog(hostsMsg);
+            }
+            else
+            {
+                GuardEngine.RemoveHostsBlock();
+                AddLog("Layer 1: Tidak ada domain dalam daftar blokir saat ini.");
+            }
             lblStatDomains.Text = GuardEngine.BlockedDomains.Count + " Domain";
 
             // Layer 2: Browser DoH & Built-in AI Policy
-            GuardEngine.ApplyBrowserPolicies(isDryRun);
-            AddLog(isDryRun
-                ? "[SIMULASI] Kebijakan penonaktifan DNS-over-HTTPS (DoH) Chrome/Edge/Brave disiapkan."
-                : "Layer 2 Aktif: Kebijakan DNS-over-HTTPS (DoH) & AI Browser dinonaktifkan.");
+            GuardEngine.ApplyBrowserPolicies(false);
+            AddLog("Layer 2 Aktif: Kebijakan DNS-over-HTTPS (DoH) & AI Browser dinonaktifkan.");
 
             // Layer 3: Karantina Ekstensi VS Code + Built-in Copilot
-            quarantinedExtensions = GuardEngine.ScanAndQuarantineExtensions(isDryRun);
+            quarantinedExtensions = GuardEngine.ScanAndQuarantineExtensions(false);
             lblStatExtensions.Text = quarantinedExtensions.Count + " Modul";
             if (quarantinedExtensions.Count > 0)
             {
-                string extMsg = (isDryRun ? "[SIMULASI] Terdeteksi " : "Layer 3 Aktif: Mengunci ") +
+                string extMsg = "Layer 3 Aktif: Mengunci " +
                     quarantinedExtensions.Count + " modul AI IDE: " + string.Join(", ", quarantinedExtensions);
                 AddLog(extMsg);
                 if (isServerMode)
@@ -1672,7 +1662,6 @@ namespace AIBlockerGuard
             txtServerUrl.Enabled = isServerMode;
             rbServerMode.Enabled = true;
             rbOfflineMode.Enabled = true;
-            chkDryRun.Enabled = true;
             chkAutoStart.Enabled = true;
             btnActivateLock.Enabled = true;
             btnUnlockWithPin.Enabled = false;
@@ -1693,8 +1682,8 @@ namespace AIBlockerGuard
 
         private void RunGuardCycle()
         {
-            // 1. Cek integritas file hosts
-            if (!isDryRun && !GuardEngine.IsHostsBlockIntact())
+            // 1. Cek integritas file hosts (hanya jika ada domain yang diblokir)
+            if (GuardEngine.BlockedDomains.Count > 0 && !GuardEngine.IsHostsBlockIntact())
             {
                 string msg;
                 GuardEngine.ApplyHostsBlock(false, out msg);
@@ -1704,20 +1693,19 @@ namespace AIBlockerGuard
             }
 
             // 2. Cek & matikan proses AI IDE / Local LLM / Roblox
-            List<string> killed = GuardEngine.ScanAndKillAiProcesses(isDryRun);
+            List<string> killed = GuardEngine.ScanAndKillAiProcesses(false);
             if (killed.Count > 0)
             {
                 killedCounter += killed.Count;
                 lblStatKilled.Text = killedCounter + " Insiden";
                 lblStatKilled.ForeColor = Color.FromArgb(185, 28, 28);
-                string actionWord = isDryRun ? "[SIMULASI] Terdeteksi proses terlarang: " : "Menghentikan proses terlarang (AI/Roblox): ";
-                string fullMsg = actionWord + string.Join(", ", killed);
+                string fullMsg = "Menghentikan proses terlarang (AI/Roblox): " + string.Join(", ", killed);
                 AddLog("INTERSEPSI: " + fullMsg);
                 if (isServerMode) { var u2 = SendViolationAsync("PROCESS_KILLED", fullMsg, "DANGER"); }
             }
 
             // 3. Cek ekstensi baru yang mungkin diinstal saat ujian
-            List<string> newlyQuarantined = GuardEngine.ScanAndQuarantineExtensions(isDryRun);
+            List<string> newlyQuarantined = GuardEngine.ScanAndQuarantineExtensions(false);
             if (newlyQuarantined.Count != quarantinedExtensions.Count)
             {
                 quarantinedExtensions = newlyQuarantined;
@@ -1846,7 +1834,7 @@ namespace AIBlockerGuard
                     { "name", string.IsNullOrWhiteSpace(txtName.Text) ? Environment.UserName : txtName.Text.Trim() },
                     { "hostname", Environment.MachineName },
                     { "room_code", activeRoomCode },
-                    { "status", isDryRun ? "DRY_RUN" : (isLocked ? "LOCKED" : "UNLOCKED") },
+                    { "status", isLocked ? "LOCKED" : "UNLOCKED" },
                     { "quarantined_count", quarantinedExtensions.Count },
                     { "quarantined_list", quarantinedExtensions },
                     { "killed_processes_count", killedCounter },
@@ -1948,33 +1936,56 @@ namespace AIBlockerGuard
                 if (bl.ContainsKey("domains"))
                 {
                     var doms = bl["domains"] as System.Collections.ArrayList;
-                    if (doms != null && doms.Count > 0)
+                    if (doms != null)
                     {
-                        var serverDoms = doms.Cast<object>().Select(x => Convert.ToString(x)).ToList();
-                        GuardEngine.BlockedDomains = GuardEngine.BlockedDomains
-                            .Union(serverDoms, StringComparer.OrdinalIgnoreCase)
+                        var serverDoms = doms.Cast<object>()
+                            .Select(x => Convert.ToString(x).Trim().ToLowerInvariant())
+                            .Where(x => !string.IsNullOrEmpty(x))
+                            .Distinct(StringComparer.OrdinalIgnoreCase)
                             .ToList();
+
+                        bool changed = serverDoms.Count != GuardEngine.BlockedDomains.Count ||
+                            !serverDoms.All(d => GuardEngine.BlockedDomains.Contains(d, StringComparer.OrdinalIgnoreCase));
+
+                        GuardEngine.BlockedDomains = serverDoms;
+
+                        if (changed && isLocked)
+                        {
+                            if (GuardEngine.BlockedDomains.Count > 0)
+                            {
+                                string msg;
+                                GuardEngine.ApplyHostsBlock(false, out msg);
+                                AddLog("Kebijakan domain diperbarui dari Admin (" + GuardEngine.BlockedDomains.Count + " domain diblokir).");
+                            }
+                            else
+                            {
+                                GuardEngine.RemoveHostsBlock();
+                                AddLog("Kebijakan domain diperbarui dari Admin (0 domain diblokir).");
+                            }
+                        }
                     }
                 }
                 if (bl.ContainsKey("processes"))
                 {
                     var procs = bl["processes"] as System.Collections.ArrayList;
-                    if (procs != null && procs.Count > 0)
+                    if (procs != null)
                     {
-                        var serverProcs = procs.Cast<object>().Select(x => Convert.ToString(x)).ToList();
-                        GuardEngine.BlockedProcesses = GuardEngine.BlockedProcesses
-                            .Union(serverProcs, StringComparer.OrdinalIgnoreCase)
+                        GuardEngine.BlockedProcesses = procs.Cast<object>()
+                            .Select(x => Convert.ToString(x).Trim())
+                            .Where(x => !string.IsNullOrEmpty(x))
+                            .Distinct(StringComparer.OrdinalIgnoreCase)
                             .ToList();
                     }
                 }
                 if (bl.ContainsKey("ide_extensions"))
                 {
                     var exts = bl["ide_extensions"] as System.Collections.ArrayList;
-                    if (exts != null && exts.Count > 0)
+                    if (exts != null)
                     {
-                        var serverExts = exts.Cast<object>().Select(x => Convert.ToString(x)).ToList();
-                        GuardEngine.BlockedExtensionPatterns = GuardEngine.BlockedExtensionPatterns
-                            .Union(serverExts, StringComparer.OrdinalIgnoreCase)
+                        GuardEngine.BlockedExtensionPatterns = exts.Cast<object>()
+                            .Select(x => Convert.ToString(x).Trim())
+                            .Where(x => !string.IsNullOrEmpty(x))
+                            .Distinct(StringComparer.OrdinalIgnoreCase)
                             .ToList();
                     }
                 }

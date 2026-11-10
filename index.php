@@ -22,7 +22,7 @@
     </script>
     <style>
         body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            font-family: 'Inter', '-apple-system', BlinkMacSystemFont, sans-serif;
             background-color: #F8FAFC;
             color: #0F172A;
             -webkit-font-smoothing: antialiased;
@@ -42,6 +42,53 @@
 </head>
 <body class="h-screen overflow-hidden flex bg-[#F8FAFC] text-slate-900">
 
+    <!-- ======================================================================= -->
+    <!-- GERBANG OTENTIKASI PENGAWAS / ADMIN (FIREBASE AUTH + ADMIN CREDENTIALS) -->
+    <!-- ======================================================================= -->
+    <div id="authGateOverlay" class="fixed inset-0 z-50 bg-[#0F172A] flex items-center justify-center p-4">
+        <div class="w-full max-w-md bg-white rounded-2xl border border-slate-200 shadow-2xl overflow-hidden">
+            <div class="p-6 bg-slate-900 text-white border-b border-slate-800 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 rounded-lg bg-emerald-600 text-white flex items-center justify-center">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 3l7 4v5c0 5-3.5 8.5-7 9-3.5-.5-7-4-7-9V7l7-4z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h1 class="text-sm font-semibold tracking-tight">GuardConsole Admin</h1>
+                        <p class="text-[11px] text-slate-400">Otentikasi Konsol Pengawas & Firebase Cloud</p>
+                    </div>
+                </div>
+                <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-emerald-400 border border-slate-700">blockai-ba569</span>
+            </div>
+
+            <form onsubmit="handleAdminLogin(event)" class="p-6 space-y-4">
+                <div id="loginErrorBox" class="hidden p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700 font-medium"></div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1.5">Email Pengawas / ID Admin</label>
+                    <input type="text" id="loginEmail" required value="admin@guard.edu" placeholder="admin@guard.edu" class="w-full rounded-lg bg-slate-50 border border-slate-300 px-3.5 py-2.5 text-xs font-mono text-slate-900 focus:bg-white focus:border-slate-900 focus:outline-none">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1.5">Kata Sandi / PIN Master Pengawas</label>
+                    <input type="password" id="loginPassword" required placeholder="Masukkan kata sandi atau PIN Master (default: admin123 / 202699)" class="w-full rounded-lg bg-slate-50 border border-slate-300 px-3.5 py-2.5 text-xs font-mono text-slate-900 focus:bg-white focus:border-slate-900 focus:outline-none">
+                </div>
+
+                <div class="pt-1">
+                    <button type="submit" id="btnLoginSubmit" class="w-full py-2.5 px-4 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition flex items-center justify-center gap-2">
+                        <span>Masuk ke Konsol Pengawas</span>
+                    </button>
+                </div>
+
+                <div class="pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
+                    <span>Terhubung ke Firebase Project: <code class="text-slate-600 font-mono">blockai-ba569</code></span>
+                    <span>v1.5</span>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Left Navigation Rail (Fixed Full-Height) -->
     <aside class="w-64 h-screen bg-white border-r border-slate-200 flex flex-col justify-between shrink-0 select-none overflow-hidden">
         <div class="flex flex-col flex-1 min-h-0">
@@ -58,7 +105,7 @@
                         <div class="text-[11px] text-slate-500 mt-1 font-medium">Exam Endpoint Control</div>
                     </div>
                 </div>
-                <span class="text-[10px] font-mono font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">v1.2</span>
+                <span class="text-[10px] font-mono font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">v1.5</span>
             </div>
 
             <!-- Primary Navigation -->
@@ -91,7 +138,7 @@
                         <svg class="w-4 h-4 shrink-0 opacity-80" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
                         </svg>
-                        <span>Kebijakan Daftar Blokir</span>
+                        <span>Kebijakan Blokir Fleksibel</span>
                     </span>
                 </button>
 
@@ -140,9 +187,15 @@
                 </div>
             </div>
 
-            <div class="pt-2 border-t border-slate-200/80 flex items-center justify-between text-[11px] text-slate-400">
+            <div class="pt-2 border-t border-slate-200/80 flex items-center justify-between text-[11px] text-slate-500">
+                <span id="sidebarAdminEmail" class="truncate font-mono text-[10px] text-slate-600">admin@guard.edu</span>
+                <button onclick="handleAdminLogout()" class="text-rose-600 hover:text-rose-700 font-semibold shrink-0">Keluar</button>
+            </div>
+
+            <div class="pt-1 flex items-center justify-between text-[11px] text-slate-400">
                 <span class="flex items-center gap-1.5">
-                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span> Sinkronisasi Aktif
+                    <span id="firebaseSyncDot" class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                    <span id="firebaseSyncLabel">Firebase Sync</span>
                 </span>
                 <span id="lastSyncClock" class="font-mono tabular-nums">--:--:--</span>
             </div>
@@ -184,13 +237,6 @@
 
             <!-- Global / Per-Room Classroom Controls -->
             <div class="flex items-center gap-2.5 shrink-0">
-                <button onclick="simulateStudent()" class="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 transition flex items-center gap-1.5">
-                    <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
-                    Simulasi Peserta
-                </button>
-
-                <div class="h-5 w-px bg-slate-200 mx-0.5"></div>
-
                 <div class="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5">
                     <button onclick="setGlobalStatus('LOCKED')" id="btnGlobalLock" class="px-3 py-1.5 rounded-md text-xs font-medium transition flex items-center gap-1.5 bg-slate-900 text-white shadow-sm">
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
@@ -338,45 +384,89 @@
                     </div>
                 </section>
 
-                <!-- VIEW 3: KEBIJAKAN DAFTAR BLOKIR -->
-                <section id="view-rules" class="hidden space-y-4">
+                <!-- VIEW 3: KEBIJAKAN DAFTAR BLOKIR FLEKSIBEL -->
+                <section id="view-rules" class="hidden space-y-6">
                     <div class="card-surface rounded-xl p-6 space-y-6">
                         <div class="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-200">
                             <div>
-                                <h2 class="text-sm font-semibold text-slate-900">Kebijakan Pemblokiran Endpoint (4-Layer Policy)</h2>
-                                <p class="text-xs text-slate-500 mt-0.5">Daftar di bawah ini didistribusikan secara otomatis ke seluruh ruangan dan perangkat mahasiswa.</p>
+                                <h2 class="text-sm font-semibold text-slate-900">Manajemen Blokir Domain & Aplikasi Secara Fleksibel</h2>
+                                <p class="text-xs text-slate-500 mt-0.5">Pilih layanan mana yang ingin diblokir atau diizinkan dengan mencentang kategori/domain di bawah ini, atau tambahkan domain kustom.</p>
                             </div>
-                            <button onclick="saveBlocklist()" class="px-4 py-2 rounded-lg text-xs font-medium bg-slate-900 hover:bg-slate-800 text-white transition">
-                                Simpan & Terapkan Kebijakan
-                            </button>
+                            <div class="flex items-center gap-2">
+                                <button onclick="toggleAllDomainGroups(true)" class="px-3 py-2 rounded-lg text-xs font-medium border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition">
+                                    Pilih Semua
+                                </button>
+                                <button onclick="toggleAllDomainGroups(false)" class="px-3 py-2 rounded-lg text-xs font-medium border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition">
+                                    Kosongkan Semua
+                                </button>
+                                <button onclick="saveBlocklist()" class="px-4 py-2 rounded-lg text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white transition shadow-sm">
+                                    Simpan & Terapkan ke Semua PC
+                                </button>
+                            </div>
                         </div>
 
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            <div class="space-y-2">
-                                <div class="flex items-center justify-between">
-                                    <label class="text-xs font-semibold text-slate-800">1. Domain Web AI & Endpoint API</label>
-                                    <span class="text-[11px] font-mono text-slate-400">Hosts + DNS</span>
+                        <!-- Toggle Kategori Layanan Populer -->
+                        <div>
+                            <div class="flex items-center justify-between mb-3">
+                                <span class="text-xs font-semibold text-slate-800">1. Pilih Cepat Berdasarkan Layanan / Kategori (Klik untuk Aktifkan / Nonaktifkan Blokir)</span>
+                                <span id="activeDomainsCounterBadge" class="text-[11px] font-mono font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-200">0 domain aktif</span>
+                            </div>
+                            <div id="domainCategoryCards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                                <!-- Diisi dinamis oleh JS -->
+                            </div>
+                        </div>
+
+                        <!-- Tambah Domain Fleksibel & Daftar Chip Domain -->
+                        <div class="pt-4 border-t border-slate-200 space-y-3">
+                            <div class="flex flex-wrap items-center justify-between gap-2">
+                                <label class="text-xs font-semibold text-slate-800">2. Daftar Domain Individual & Tambah Domain Kustom</label>
+                                <div class="flex items-center gap-2">
+                                    <input type="text" id="customDomainInput" placeholder="Tambah domain (misal: notion.so, discord.com)..." class="w-64 rounded-lg bg-white border border-slate-300 px-3 py-1.5 text-xs font-mono text-slate-900 focus:border-slate-600 focus:outline-none">
+                                    <button onclick="addCustomDomain()" class="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium transition">
+                                        + Tambah Domain
+                                    </button>
                                 </div>
-                                <p class="text-xs text-slate-500">Satu domain per baris. Dialihkan ke <code>0.0.0.0</code> dengan penguncian integritas file.</p>
-                                <textarea id="inputDomains" rows="16" class="w-full rounded-lg bg-slate-50 border border-slate-200 p-3 text-xs font-mono text-slate-800 focus:bg-white focus:border-slate-400 focus:outline-none"></textarea>
                             </div>
 
+                            <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                                <div class="lg:col-span-7 border border-slate-200 rounded-xl p-3.5 bg-slate-50/60 max-h-72 overflow-y-auto">
+                                    <div class="text-[11px] text-slate-500 mb-2 flex items-center justify-between">
+                                        <span>Centang domain yang ingin diblokir (hapus centang untuk mengizinkan akses):</span>
+                                        <input type="text" id="filterDomainChipInput" oninput="renderDomainChecklist()" placeholder="Filter domain..." class="rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-mono text-slate-800">
+                                    </div>
+                                    <div id="domainChecklistContainer" class="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs font-mono">
+                                        <!-- Diisi dinamis oleh JS -->
+                                    </div>
+                                </div>
+
+                                <div class="lg:col-span-5 space-y-1.5">
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-[11px] font-semibold text-slate-600">Mode Teks Mentah (Sinkron Otomatis)</span>
+                                        <span class="text-[10px] font-mono text-slate-400">1 baris = 1 domain</span>
+                                    </div>
+                                    <textarea id="inputDomains" oninput="syncChecklistFromTextarea()" rows="11" class="w-full rounded-xl bg-white border border-slate-200 p-3 text-xs font-mono text-slate-800 focus:border-slate-500 focus:outline-none"></textarea>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Proses & Ekstensi IDE -->
+                        <div class="pt-4 border-t border-slate-200 grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div class="space-y-2">
                                 <div class="flex items-center justify-between">
-                                    <label class="text-xs font-semibold text-slate-800">2. Proses AI-IDE & Local LLM</label>
+                                    <label class="text-xs font-semibold text-slate-800">3. Proses Aplikasi Desktop yang Diblokir (AI-IDE, LLM, Roblox)</label>
                                     <span class="text-[11px] font-mono text-slate-400">Process Guard</span>
                                 </div>
-                                <p class="text-xs text-slate-500">Nama executable (tanpa <code>.exe</code>) yang dihentikan otomatis setiap siklus pemeriksaan.</p>
-                                <textarea id="inputProcesses" rows="16" class="w-full rounded-lg bg-slate-50 border border-slate-200 p-3 text-xs font-mono text-slate-800 focus:bg-white focus:border-slate-400 focus:outline-none"></textarea>
+                                <p class="text-xs text-slate-500">Nama executable (tanpa <code>.exe</code>) yang dihentikan otomatis saat ruangan dikunci.</p>
+                                <textarea id="inputProcesses" rows="10" class="w-full rounded-lg bg-slate-50 border border-slate-200 p-3 text-xs font-mono text-slate-800 focus:bg-white focus:border-slate-400 focus:outline-none"></textarea>
                             </div>
 
                             <div class="space-y-2">
                                 <div class="flex items-center justify-between">
-                                    <label class="text-xs font-semibold text-slate-800">3. ID Ekstensi IDE (VS Code)</label>
-                                    <span class="text-[11px] font-mono text-slate-400">Quarantine</span>
+                                    <label class="text-xs font-semibold text-slate-800">4. ID Ekstensi IDE yang Dikarantina (VS Code)</label>
+                                    <span class="text-[11px] font-mono text-slate-400">Extension Guard</span>
                                 </div>
-                                <p class="text-xs text-slate-500">Prefix folder ekstensi pada <code>~/.vscode/extensions</code> yang dipindahkan sementara.</p>
-                                <textarea id="inputExtensions" rows="16" class="w-full rounded-lg bg-slate-50 border border-slate-200 p-3 text-xs font-mono text-slate-800 focus:bg-white focus:border-slate-400 focus:outline-none"></textarea>
+                                <p class="text-xs text-slate-500">Prefix folder ekstensi pada <code>~/.vscode/extensions</code> yang dikunci sementara.</p>
+                                <textarea id="inputExtensions" rows="10" class="w-full rounded-lg bg-slate-50 border border-slate-200 p-3 text-xs font-mono text-slate-800 focus:bg-white focus:border-slate-400 focus:outline-none"></textarea>
                             </div>
                         </div>
                     </div>
@@ -410,8 +500,8 @@
                         <!-- Kolom Kanan: PIN Master & Modul Proteksi -->
                         <div class="lg:col-span-5 card-surface rounded-xl p-6 space-y-6">
                             <div class="border-b border-slate-200 pb-4">
-                                <h2 class="text-sm font-semibold text-slate-900">PIN Master Admin & Modul Proteksi</h2>
-                                <p class="text-xs text-slate-500 mt-0.5">PIN Master dapat digunakan untuk membuka kunci atau menutup aplikasi di seluruh ruangan, selain PIN khusus masing-masing ruangan.</p>
+                                <h2 class="text-sm font-semibold text-slate-900">Kredensial Login Admin & Modul Proteksi</h2>
+                                <p class="text-xs text-slate-500 mt-0.5">Atur PIN Master Pengawas serta kata sandi untuk login ke dashboard web ini.</p>
                             </div>
 
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -422,6 +512,14 @@
                                 <div>
                                     <label class="block text-xs font-medium text-slate-700 mb-1.5">PIN Master Pengawas (Semua Ruangan)</label>
                                     <input type="text" id="cfgUnlockPin" class="w-full rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono font-medium text-slate-900 focus:border-slate-500 focus:outline-none" value="202699">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-slate-700 mb-1.5">Email Login Pengawas</label>
+                                    <input type="text" id="cfgAdminEmail" class="w-full rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono font-medium text-slate-900 focus:border-slate-500 focus:outline-none" value="admin@guard.edu">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-slate-700 mb-1.5">Kata Sandi Login Dashboard</label>
+                                    <input type="password" id="cfgAdminPassword" placeholder="Kosongkan jika tidak diubah" class="w-full rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono font-medium text-slate-900 focus:border-slate-500 focus:outline-none">
                                 </div>
                             </div>
 
@@ -478,7 +576,7 @@
                                     <div>
                                         <div class="flex items-center justify-between">
                                             <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Paket Standar</span>
-                                            <span class="text-[11px] font-mono text-slate-500">~62 KB</span>
+                                            <span class="text-[11px] font-mono text-slate-500">~82 KB</span>
                                         </div>
                                         <div class="text-sm font-semibold text-slate-900 mt-1">AIBlockerSetup.exe</div>
                                         <p class="text-xs text-slate-600 mt-1.5 leading-relaxed">Memasang agen ke direktori <code>Program Files\AIBlockerGuard</code> dan mendaftarkan agen berjalan otomatis di sistem.</p>
@@ -495,7 +593,7 @@
                                     <div>
                                         <div class="flex items-center justify-between">
                                             <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Paket Lab / Portable</span>
-                                            <span class="text-[11px] font-mono text-slate-500">~54 KB</span>
+                                            <span class="text-[11px] font-mono text-slate-500">~72 KB</span>
                                         </div>
                                         <div class="text-sm font-semibold text-slate-900 mt-1">AIBlockerGuard.exe</div>
                                         <p class="text-xs text-slate-600 mt-1.5 leading-relaxed">Eksekusi tunggal tanpa proses instalasi. Saat dibuka, peserta memilih ruangan yang tersedia dari daftar.</p>
@@ -527,13 +625,13 @@
                                     <strong class="text-slate-900">Siapkan Ruangan & PIN:</strong> Buat ruangan di menu <strong>Ruangan & PIN Pengawas</strong>. Setiap ruangan memiliki PIN Otorisasi Keluar tersendiri.
                                 </li>
                                 <li>
-                                    <strong class="text-slate-900">Pilih Ruangan di Aplikasi:</strong> Ketika aplikasi dibuka di PC mahasiswa, aplikasi tidak membuat ruangan sendiri melainkan meminta peserta memilih ruangan dari dropdown.
+                                    <strong class="text-slate-900">Pilih Kebijakan Domain Fleksibel:</strong> Di menu <strong>Kebijakan Blokir Fleksibel</strong>, centang kategori atau domain mana saja yang ingin diblokir atau diizinkan.
                                 </li>
                                 <li>
-                                    <strong class="text-slate-900">Kontrol Per-Ruangan:</strong> Pengawas dapat mengunci atau membuka kunci ruangan tertentu secara langsung dari dashboard kapan saja.
+                                    <strong class="text-slate-900">Pilih Ruangan di Aplikasi:</strong> Ketika aplikasi dibuka di PC mahasiswa, peserta memilih ruangan dari dropdown yang tersedia.
                                 </li>
                                 <li>
-                                    <strong class="text-slate-900">PIN Otorisasi Keluar Per-Ruangan:</strong> Untuk menutup agen sepenuhnya dari System Tray, gunakan PIN sesuai ruangan tersebut atau PIN Master Pengawas.
+                                    <strong class="text-slate-900">PIN Otorisasi Keluar Per-Ruangan:</strong> Untuk menutup agen dari System Tray atau membuka kunci lokal, gunakan PIN sesuai ruangan tersebut atau PIN Master Pengawas.
                                 </li>
                             </ol>
                         </div>
@@ -608,7 +706,163 @@
     <!-- Subtle Notification Toast -->
     <div id="toast" class="fixed bottom-5 right-5 hidden z-50 px-4 py-2.5 rounded-lg bg-slate-900 text-white text-xs font-medium shadow-lg"></div>
 
+    <!-- ======================================================================= -->
+    <!-- FIREBASE SDK INITIALIZATION (blockai-ba569)                             -->
+    <!-- ======================================================================= -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-analytics.js";
+        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBMMOxxu21GYPboTL6RiX3jDAFfgMb0gNY",
+            authDomain: "blockai-ba569.firebaseapp.com",
+            projectId: "blockai-ba569",
+            storageBucket: "blockai-ba569.firebasestorage.app",
+            messagingSenderId: "852320379154",
+            appId: "1:852320379154:web:7bbfa2069647161fc5d3cb",
+            measurementId: "G-186W7K0HK0"
+        };
+
+        try {
+            const app = initializeApp(firebaseConfig);
+            let analytics = null;
+            try { analytics = getAnalytics(app); } catch (e) {}
+            const auth = getAuth(app);
+            const db = getFirestore(app);
+
+            window.__firebaseApp = {
+                app,
+                auth,
+                db,
+                signInWithEmailAndPassword,
+                signOut,
+                saveStateToFirestore: async (payloadObj) => {
+                    try {
+                        await setDoc(doc(db, "guard_system", "main_state"), {
+                            payload: JSON.stringify(payloadObj),
+                            updatedAt: new Date().toISOString()
+                        }, { merge: true });
+                    } catch (e) {}
+                },
+                loadStateFromFirestore: async () => {
+                    try {
+                        const snap = await getDoc(doc(db, "guard_system", "main_state"));
+                        if (snap.exists() && snap.data()?.payload) {
+                            return JSON.parse(snap.data().payload);
+                        }
+                    } catch (e) {}
+                    return null;
+                }
+            };
+
+            onAuthStateChanged(auth, (user) => {
+                if (user && user.email) {
+                    window.completeAdminAuth(user.email);
+                }
+            });
+        } catch (err) {
+            console.warn("Firebase init notice:", err);
+        }
+    </script>
+
     <script>
+        // Kategori Domain Fleksibel
+        const DOMAIN_CATALOG_GROUPS = [
+            {
+                id: 'chatgpt',
+                title: 'ChatGPT & OpenAI',
+                desc: 'Web ChatGPT & API OpenAI',
+                domains: ['chatgpt.com', 'www.chatgpt.com', 'openai.com', 'www.openai.com', 'api.openai.com', 'auth.openai.com', 'chat.openai.com']
+            },
+            {
+                id: 'claude',
+                title: 'Claude & Anthropic',
+                desc: 'Web Claude AI & API Anthropic',
+                domains: ['claude.ai', 'www.claude.ai', 'anthropic.com', 'www.anthropic.com', 'api.anthropic.com']
+            },
+            {
+                id: 'gemini',
+                title: 'Google Gemini & AI Studio',
+                desc: 'Gemini, Bard, MakerSuite & AI Studio',
+                domains: ['gemini.google.com', 'bard.google.com', 'aistudio.google.com', 'generativelanguage.googleapis.com', 'makersuite.google.com', 'idx.google.com']
+            },
+            {
+                id: 'copilot_ide',
+                title: 'GitHub Copilot & MS Copilot',
+                desc: 'Copilot VS Code, Proxy & Bing Copilot',
+                domains: [
+                    'copilot.microsoft.com', 'www.copilot.microsoft.com', 'sydney.bing.com', 'edgeservices.bing.com',
+                    'githubcopilot.com', 'api.githubcopilot.com',
+                    'api.individual.githubcopilot.com', 'api.business.githubcopilot.com', 'api.enterprise.githubcopilot.com',
+                    'proxy.githubcopilot.com', 'proxy.individual.githubcopilot.com', 'proxy.business.githubcopilot.com', 'proxy.enterprise.githubcopilot.com',
+                    'api-model-lab.githubcopilot.com',
+                    'copilot-proxy.githubusercontent.com', 'copilot-telemetry.githubusercontent.com', 'origin-tracker.githubusercontent.com', 'default.exp-tas.com'
+                ]
+            },
+            {
+                id: 'deepseek_perplexity',
+                title: 'DeepSeek, Perplexity, Grok & Poe',
+                desc: 'Mesin pencari AI & chatbot alternatif',
+                domains: [
+                    'deepseek.com', 'www.deepseek.com', 'chat.deepseek.com', 'api.deepseek.com',
+                    'perplexity.ai', 'www.perplexity.ai', 'api.perplexity.ai',
+                    'poe.com', 'www.poe.com', 'grok.com', 'www.grok.com', 'x.ai', 'api.x.ai',
+                    'mistral.ai', 'chat.mistral.ai', 'api.mistral.ai',
+                    'meta.ai', 'www.meta.ai', 'pi.ai', 'inflection.ai', 'you.com', 'www.you.com'
+                ]
+            },
+            {
+                id: 'coding_ai',
+                title: 'Cursor, Windsurf, Blackbox & v0',
+                desc: 'AI Code Generator & App Builder',
+                domains: [
+                    'blackbox.ai', 'www.blackbox.ai', 'api.blackbox.ai', 'phind.com', 'www.phind.com',
+                    'v0.dev', 'www.v0.dev', 'v0.app', 'bolt.new', 'www.bolt.new', 'lovable.dev', 'www.lovable.dev',
+                    'replit.com', 'ai.replit.com',
+                    'cursor.sh', 'www.cursor.sh', 'cursor.com', 'www.cursor.com', 'api2.cursor.sh', 'api3.cursor.sh', 'repo42.cursor.sh',
+                    'codeium.com', 'www.codeium.com', 'server.codeium.com', 'windsurf.com', 'codeiumdata.com',
+                    'tabnine.com', 'www.tabnine.com', 'api.tabnine.com', 'supermaven.com', 'www.supermaven.com', 'api.supermaven.com',
+                    'continue.dev', 'www.continue.dev', 'sourcegraph.com', 'cody.dev'
+                ]
+            },
+            {
+                id: 'llm_api',
+                title: 'HuggingFace, OpenRouter & Groq',
+                desc: 'API Inference & Model Hosting',
+                domains: [
+                    'huggingface.co', 'www.huggingface.co', 'api-inference.huggingface.co',
+                    'openrouter.ai', 'www.openrouter.ai', 'api.openrouter.ai',
+                    'api.groq.com', 'console.groq.com', 'groq.com',
+                    'together.ai', 'api.together.xyz', 'fireworks.ai', 'api.fireworks.ai', 'cohere.com', 'api.cohere.ai'
+                ]
+            },
+            {
+                id: 'roblox',
+                title: 'Roblox Web, GameJoin & CDN',
+                desc: 'Seluruh akses website & server game Roblox',
+                domains: [
+                    'roblox.com', 'www.roblox.com', 'web.roblox.com', 'ro.blox.com',
+                    'api.roblox.com', 'apis.roblox.com', 'auth.roblox.com', 'accountsettings.roblox.com', 'accountinformation.roblox.com',
+                    'assetdelivery.roblox.com', 'avatar.roblox.com', 'badges.roblox.com', 'billing.roblox.com', 'catalog.roblox.com', 'chat.roblox.com',
+                    'clientsettings.roblox.com', 'clientsettingscdn.roblox.com', 'client-telemetry.roblox.com',
+                    'contentstore.roblox.com', 'create.roblox.com', 'develop.roblox.com', 'devforum.roblox.com', 'economy.roblox.com',
+                    'ecsv2.roblox.com', 'ephemeralcounters.api.roblox.com', 'engagementpayouts.roblox.com', 'followings.roblox.com',
+                    'friends.roblox.com', 'gameinternationalization.roblox.com', 'gamejoin.roblox.com', 'gamepersistence.roblox.com',
+                    'games.roblox.com', 'groups.roblox.com', 'inventory.roblox.com', 'itemconfiguration.roblox.com',
+                    'lms.roblox.com', 'locale.roblox.com', 'localizationtables.roblox.com', 'metrics.roblox.com',
+                    'notifications.roblox.com', 'points.roblox.com', 'premiumfeatures.roblox.com', 'presence.roblox.com', 'privatemessages.roblox.com',
+                    'publish.roblox.com', 'realtime.roblox.com', 'search.roblox.com', 'thumbnails.roblox.com', 'trades.roblox.com',
+                    'translationroles.roblox.com', 'translations.roblox.com', 'users.roblox.com', 'voice.roblox.com',
+                    'rbxcdn.com', 'www.rbxcdn.com', 'setup.rbxcdn.com', 'tr.rbxcdn.com', 'js.rbxcdn.com', 'css.rbxcdn.com', 'images.rbxcdn.com',
+                    't0.rbxcdn.com', 't1.rbxcdn.com', 't2.rbxcdn.com', 't3.rbxcdn.com', 't4.rbxcdn.com', 't5.rbxcdn.com', 't6.rbxcdn.com', 't7.rbxcdn.com',
+                    'c0.rbxcdn.com', 'c1.rbxcdn.com', 'c2.rbxcdn.com', 'c3.rbxcdn.com', 'c4.rbxcdn.com', 'c5.rbxcdn.com', 'c6.rbxcdn.com', 'c7.rbxcdn.com',
+                    'robloxlabs.com', 'corp.roblox.com', 'en.help.roblox.com'
+                ]
+            }
+        ];
+
         let currentTab = 'monitor';
         let currentFilter = 'ALL';
         let currentViewMode = 'table';
@@ -623,12 +877,248 @@
         let pinVisible = false;
         let currentUnlockPin = '202699';
         let currentRoomCode = 'KUIS-AI-01';
+        let allKnownDomains = [];
+        let activeBlockedDomainsSet = new Set();
+
+        // Inisialisasi daftar seluruh domain katalog
+        DOMAIN_CATALOG_GROUPS.forEach(g => {
+            g.domains.forEach(d => {
+                const clean = d.trim().toLowerCase();
+                if (!allKnownDomains.includes(clean)) allKnownDomains.push(clean);
+            });
+        });
 
         const endpointEl = document.getElementById('cloudEndpointUrl');
         if (endpointEl) {
             endpointEl.textContent = window.location.origin + window.location.pathname.replace(/\/index\.(php|html)$/, '').replace(/\/$/, '') + '/api/index.php';
         }
 
+        // ====================================================================
+        // OTENTIKASI LOGIN DASHBOARD PENGAWAS
+        // ====================================================================
+        function checkExistingAuthSession() {
+            const savedEmail = sessionStorage.getItem('guard_admin_auth');
+            if (savedEmail) {
+                completeAdminAuth(savedEmail);
+            }
+        }
+
+        window.completeAdminAuth = function(email) {
+            sessionStorage.setItem('guard_admin_auth', email);
+            const gate = document.getElementById('authGateOverlay');
+            if (gate) gate.classList.add('hidden');
+            const emailEl = document.getElementById('sidebarAdminEmail');
+            if (emailEl) emailEl.textContent = email;
+        };
+
+        async function handleAdminLogin(e) {
+            e.preventDefault();
+            const email = document.getElementById('loginEmail').value.trim();
+            const password = document.getElementById('loginPassword').value.trim();
+            const errBox = document.getElementById('loginErrorBox');
+            const btn = document.getElementById('btnLoginSubmit');
+            errBox.classList.add('hidden');
+            btn.disabled = true;
+            btn.textContent = 'Memverifikasi Kredensial...';
+
+            try {
+                // 1. Coba login melalui Firebase Auth jika akun terdaftar di Firebase Authentication
+                if (window.__firebaseApp && window.__firebaseApp.auth && email.includes('@')) {
+                    try {
+                        const cred = await window.__firebaseApp.signInWithEmailAndPassword(window.__firebaseApp.auth, email, password);
+                        if (cred && cred.user) {
+                            completeAdminAuth(cred.user.email);
+                            showToast('Login berhasil melalui Firebase Authentication');
+                            btn.disabled = false;
+                            btn.textContent = 'Masuk ke Konsol Pengawas';
+                            return;
+                        }
+                    } catch (fbErr) {
+                        // Lanjutkan verifikasi ke kredensial server Admin
+                    }
+                }
+
+                // 2. Verifikasi melalui server Admin API
+                const res = await fetch('api/index.php?action=admin_login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ email, password })
+                });
+                const data = await res.json();
+                if (data && data.ok) {
+                    completeAdminAuth(data.user?.email || email);
+                    showToast('Selamat datang di Konsol Pengawas GuardConsole');
+                } else {
+                    errBox.textContent = data.error || 'Email atau Kata Sandi / PIN Master tidak valid.';
+                    errBox.classList.remove('hidden');
+                }
+            } catch (err) {
+                errBox.textContent = 'Gagal menghubungi server otentikasi.';
+                errBox.classList.remove('hidden');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Masuk ke Konsol Pengawas';
+            }
+        }
+
+        async function handleAdminLogout() {
+            sessionStorage.removeItem('guard_admin_auth');
+            if (window.__firebaseApp && window.__firebaseApp.auth) {
+                try { await window.__firebaseApp.signOut(window.__firebaseApp.auth); } catch (e) {}
+            }
+            document.getElementById('loginPassword').value = '';
+            document.getElementById('authGateOverlay').classList.remove('hidden');
+        }
+
+        // ====================================================================
+        // MANAJEMEN DOMAIN FLEKSIBEL (KATEGORI + CHECKLIST + CUSTOM DOMAIN)
+        // ====================================================================
+        function initFlexibleDomainManager(domainsArray) {
+            activeBlockedDomainsSet = new Set((domainsArray || []).map(d => String(d).trim().toLowerCase()).filter(Boolean));
+            activeBlockedDomainsSet.forEach(d => {
+                if (!allKnownDomains.includes(d)) {
+                    allKnownDomains.unshift(d);
+                }
+            });
+            syncTextareaFromSet();
+            renderDomainCategoryCards();
+            renderDomainChecklist();
+        }
+
+        function syncTextareaFromSet() {
+            const ta = document.getElementById('inputDomains');
+            if (ta) {
+                ta.value = Array.from(activeBlockedDomainsSet).join('\n');
+            }
+            const badge = document.getElementById('activeDomainsCounterBadge');
+            if (badge) {
+                badge.textContent = `${activeBlockedDomainsSet.size} domain diblokir`;
+            }
+        }
+
+        function syncChecklistFromTextarea() {
+            const ta = document.getElementById('inputDomains');
+            if (!ta) return;
+            const list = ta.value.split('\n').map(s => s.trim().toLowerCase()).filter(Boolean);
+            activeBlockedDomainsSet = new Set(list);
+            list.forEach(d => {
+                if (!allKnownDomains.includes(d)) allKnownDomains.unshift(d);
+            });
+            const badge = document.getElementById('activeDomainsCounterBadge');
+            if (badge) badge.textContent = `${activeBlockedDomainsSet.size} domain diblokir`;
+            renderDomainCategoryCards();
+            renderDomainChecklist();
+        }
+
+        function renderDomainCategoryCards() {
+            const box = document.getElementById('domainCategoryCards');
+            if (!box) return;
+            box.innerHTML = DOMAIN_CATALOG_GROUPS.map(g => {
+                const total = g.domains.length;
+                const activeCount = g.domains.filter(d => activeBlockedDomainsSet.has(d.toLowerCase())).length;
+                const isAllActive = activeCount === total;
+                const isPartial = activeCount > 0 && activeCount < total;
+
+                const borderClass = isAllActive
+                    ? 'border-slate-900 bg-slate-900 text-white'
+                    : (isPartial ? 'border-amber-500 bg-amber-50/60 text-slate-900' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50');
+                const badgeClass = isAllActive
+                    ? 'bg-emerald-500/20 text-emerald-200 border-emerald-400/30'
+                    : (isPartial ? 'bg-amber-100 text-amber-800 border-amber-300' : 'bg-slate-100 text-slate-500 border-slate-200');
+                const statusText = isAllActive ? 'Diblokir' : (isPartial ? `${activeCount}/${total}` : 'Diizinkan');
+
+                return `
+                    <div onclick="toggleDomainGroup('${g.id}')" class="cursor-pointer rounded-xl border p-3.5 transition flex flex-col justify-between ${borderClass}">
+                        <div class="flex items-start justify-between gap-2">
+                            <div class="font-semibold text-xs">${escapeHtml(g.title)}</div>
+                            <span class="px-1.5 py-0.5 rounded text-[10px] font-mono border shrink-0 ${badgeClass}">${statusText}</span>
+                        </div>
+                        <div class="mt-2 flex items-center justify-between text-[11px] ${isAllActive ? 'text-slate-300' : 'text-slate-500'}">
+                            <span>${escapeHtml(g.desc)}</span>
+                            <span class="font-mono">${total} host</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function toggleDomainGroup(groupId) {
+            const group = DOMAIN_CATALOG_GROUPS.find(g => g.id === groupId);
+            if (!group) return;
+            const allActive = group.domains.every(d => activeBlockedDomainsSet.has(d.toLowerCase()));
+            group.domains.forEach(d => {
+                const clean = d.toLowerCase();
+                if (allActive) {
+                    activeBlockedDomainsSet.delete(clean);
+                } else {
+                    activeBlockedDomainsSet.add(clean);
+                }
+            });
+            syncTextareaFromSet();
+            renderDomainCategoryCards();
+            renderDomainChecklist();
+        }
+
+        function toggleAllDomainGroups(enable) {
+            if (enable) {
+                allKnownDomains.forEach(d => activeBlockedDomainsSet.add(d.toLowerCase()));
+            } else {
+                activeBlockedDomainsSet.clear();
+            }
+            syncTextareaFromSet();
+            renderDomainCategoryCards();
+            renderDomainChecklist();
+        }
+
+        function toggleSingleDomain(domain, checked) {
+            const clean = String(domain).trim().toLowerCase();
+            if (checked) {
+                activeBlockedDomainsSet.add(clean);
+            } else {
+                activeBlockedDomainsSet.delete(clean);
+            }
+            syncTextareaFromSet();
+            renderDomainCategoryCards();
+        }
+
+        function addCustomDomain() {
+            const inp = document.getElementById('customDomainInput');
+            if (!inp || !inp.value.trim()) return;
+            const raw = inp.value.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+            if (!raw) return;
+            if (!allKnownDomains.includes(raw)) {
+                allKnownDomains.unshift(raw);
+            }
+            activeBlockedDomainsSet.add(raw);
+            inp.value = '';
+            syncTextareaFromSet();
+            renderDomainCategoryCards();
+            renderDomainChecklist();
+            showToast(`Domain [${raw}] ditambahkan ke daftar blokir`);
+        }
+
+        function renderDomainChecklist() {
+            const box = document.getElementById('domainChecklistContainer');
+            if (!box) return;
+            const q = (document.getElementById('filterDomainChipInput')?.value || '').trim().toLowerCase();
+            const filtered = allKnownDomains.filter(d => !q || d.includes(q));
+
+            box.innerHTML = filtered.map(d => {
+                const isChecked = activeBlockedDomainsSet.has(d);
+                return `
+                    <label class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border ${isChecked ? 'bg-white border-slate-300 text-slate-900 font-medium' : 'bg-slate-100/60 border-transparent text-slate-400'} cursor-pointer hover:border-slate-400 transition">
+                        <span class="flex items-center gap-2 truncate">
+                            <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleSingleDomain('${escapeHtml(d)}', this.checked)" class="rounded border-slate-300 text-slate-900">
+                            <span class="truncate">${escapeHtml(d)}</span>
+                        </span>
+                    </label>
+                `;
+            }).join('');
+        }
+
+        // ====================================================================
+        // UTILITAS UI & NAVIGASI
+        // ====================================================================
         function showToast(msg, isError = false) {
             const t = document.getElementById('toast');
             t.textContent = msg;
@@ -750,7 +1240,6 @@
                 counts[r] = (counts[r] || 0) + 1;
             });
 
-            // Gunakan daftar ruangan resmi dari konfigurasi server agar ruangan yang dihapus tidak muncul kembali
             const allRooms = Array.from(new Set(cachedRooms));
             cachedRooms = allRooms;
 
@@ -801,7 +1290,7 @@
                 : cachedStudents.filter(st => (st.room_code || currentRoomCode || 'KUIS-AI-01').toUpperCase() === selectedRoom);
 
             const onlineCount = scoped.filter(st => st.is_online).length;
-            const lockedCount = scoped.filter(st => st.status === 'LOCKED' || st.status === 'DRY_RUN').length;
+            const lockedCount = scoped.filter(st => st.status === 'LOCKED').length;
             const violationCount = scoped.reduce((acc, st) => acc + parseInt(st.killed_processes_count || 0, 10), 0);
 
             document.getElementById('statOnline').textContent = onlineCount;
@@ -811,6 +1300,23 @@
 
             document.getElementById('navBadgeOnline').textContent = onlineCount;
             document.getElementById('navBadgeViolations').textContent = violationCount;
+        }
+
+        async function syncStateToFirebaseIfAvailable(configObj, blocklistObj) {
+            if (window.__firebaseApp && window.__firebaseApp.saveStateToFirestore) {
+                await window.__firebaseApp.saveStateToFirestore({
+                    config: configObj || {
+                        room_code: currentRoomCode,
+                        rooms: cachedRooms,
+                        room_statuses: cachedRoomStatuses,
+                        room_pins: cachedRoomPins,
+                        unlock_pin: currentUnlockPin,
+                        global_status: cachedGlobalStatus,
+                        blocklist_customized: true
+                    },
+                    blocklist: blocklistObj
+                });
+            }
         }
 
         async function fetchDashboard() {
@@ -835,11 +1341,14 @@
                 document.getElementById('lastSyncClock').textContent = timePart;
 
                 if (!blocklistLoaded && data.blocklist) {
-                    document.getElementById('inputDomains').value = (data.blocklist.domains || []).join('\n');
+                    initFlexibleDomainManager(data.blocklist.domains || []);
                     document.getElementById('inputProcesses').value = (data.blocklist.processes || []).join('\n');
                     document.getElementById('inputExtensions').value = (data.blocklist.ide_extensions || []).join('\n');
                     document.getElementById('cfgRoomCode').value = currentRoomCode;
                     document.getElementById('cfgUnlockPin').value = currentUnlockPin;
+                    if (data.config.admin_email) {
+                        document.getElementById('cfgAdminEmail').value = data.config.admin_email;
+                    }
                     blocklistLoaded = true;
                 }
 
@@ -893,14 +1402,10 @@
                     ? `<span class="inline-flex items-center gap-1.5 text-slate-700 font-medium"><span class="w-2 h-2 rounded-full bg-emerald-600 status-dot-live"></span>Terhubung</span>`
                     : `<span class="inline-flex items-center gap-1.5 text-slate-400"><span class="w-2 h-2 rounded-full bg-slate-300"></span>Terputus (${st.seconds_ago}d)</span>`;
 
-                let stateBadge = '';
-                if (st.status === 'LOCKED') {
-                    stateBadge = `<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-50 text-emerald-800 border border-emerald-200">Terkunci</span>`;
-                } else if (st.status === 'DRY_RUN') {
-                    stateBadge = `<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-sky-50 text-sky-800 border border-sky-200">Simulasi</span>`;
-                } else {
-                    stateBadge = `<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200">Terbuka</span>`;
-                }
+                const isLocked = st.status === 'LOCKED';
+                let stateBadge = isLocked
+                    ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-50 text-emerald-800 border border-emerald-200">Terkunci</span>`
+                    : `<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200">Terbuka</span>`;
 
                 if (st.vpn_detected) {
                     stateBadge += ` <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-200 ml-1">VPN</span>`;
@@ -916,7 +1421,6 @@
                     ? `<span class="inline-flex items-center px-2 py-0.5 rounded font-mono text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-200 tabular-nums">${incidents}x</span>`
                     : `<span class="text-slate-400 font-mono">0</span>`;
 
-                const isLocked = st.status === 'LOCKED' || st.status === 'DRY_RUN';
                 const lockBtnClass = isLocked
                     ? 'px-2.5 py-1 rounded border border-slate-900 bg-slate-900 text-white font-medium transition'
                     : 'px-2.5 py-1 rounded border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 font-medium transition';
@@ -952,7 +1456,7 @@
 
             grid.innerHTML = list.map(st => {
                 const stRoom = (st.room_code || currentRoomCode || 'KUIS-AI-01').toUpperCase();
-                const isLocked = st.status === 'LOCKED' || st.status === 'DRY_RUN';
+                const isLocked = st.status === 'LOCKED';
                 const topBorder = !st.is_online
                     ? 'border-t-4 border-t-slate-300'
                     : (isLocked ? 'border-t-4 border-t-emerald-600' : 'border-t-4 border-t-amber-500');
@@ -1259,23 +1763,12 @@
             }
         }
 
-        async function simulateStudent() {
-            const res = await fetch('api/index.php?action=simulate_student', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({room_code: selectedRoom})
-            });
-            const data = await res.json();
-            if (data.ok) {
-                showToast(`Simulasi peserta (${data.simulated.name}) ditambahkan ke [${data.room_code}]`);
-                fetchDashboard();
-            }
-        }
-
         async function saveConfig() {
             const payload = {
                 room_code: document.getElementById('cfgRoomCode').value,
                 unlock_pin: document.getElementById('cfgUnlockPin').value,
+                admin_email: document.getElementById('cfgAdminEmail').value,
+                admin_password: document.getElementById('cfgAdminPassword').value,
                 block_doh: document.getElementById('cfgBlockDoh').checked,
                 quarantine_extensions: document.getElementById('cfgQuarantineExt').checked,
                 kill_processes: document.getElementById('cfgKillProcs').checked,
@@ -1288,13 +1781,15 @@
             });
             const data = await res.json();
             if (data.ok) {
-                showToast('Pengaturan ruangan & PIN pengawas disimpan');
+                document.getElementById('cfgAdminPassword').value = '';
+                await syncStateToFirebaseIfAvailable(data.config, null);
+                showToast('Pengaturan ruangan, kredensial & PIN disimpan');
                 fetchDashboard();
             }
         }
 
         async function saveBlocklist() {
-            const domains = document.getElementById('inputDomains').value.split('\n').map(s => s.trim()).filter(Boolean);
+            const domains = document.getElementById('inputDomains').value.split('\n').map(s => s.trim().toLowerCase()).filter(Boolean);
             const processes = document.getElementById('inputProcesses').value.split('\n').map(s => s.trim()).filter(Boolean);
             const ide_extensions = document.getElementById('inputExtensions').value.split('\n').map(s => s.trim()).filter(Boolean);
 
@@ -1305,7 +1800,9 @@
             });
             const data = await res.json();
             if (data.ok) {
-                showToast('Kebijakan daftar blokir berhasil diperbarui');
+                initFlexibleDomainManager(data.blocklist.domains || domains);
+                await syncStateToFirebaseIfAvailable(null, data.blocklist);
+                showToast(`Kebijakan blokir berhasil disimpan (${domains.length} domain aktif)`);
                 fetchDashboard();
             }
         }
@@ -1322,6 +1819,7 @@
             }[s]));
         }
 
+        checkExistingAuthSession();
         fetchDashboard();
         setInterval(fetchDashboard, 3000);
     </script>
