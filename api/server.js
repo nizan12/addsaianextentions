@@ -8,29 +8,24 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const zlib = require('zlib');
 const crypto = require('crypto');
 
 const TMP_DB_PATH = path.join(os.tmpdir(), 'aiblocker_database.json');
 const FIREBASE_PROJECT_ID = 'blockai-ba569';
+const FIREBASE_API_KEY = process.env.FIREBASE_API_KEY || 'AIzaSyBMMOxxu21GYPboTL6RiX3jDAFfgMb0gNY';
 const FIRESTORE_DOC_URL = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/guard_system/main_state`;
 const RTDB_URL = process.env.FIREBASE_DB_URL || `https://${FIREBASE_PROJECT_ID}-default-rtdb.firebaseio.com/guard_system.json`;
+const FB_STORE_PREFIX = 'https://guard.db/v2/';
 
 function getDefaultSchema() {
     return {
         config: {
-            room_code: 'LAB-706',
-            rooms: ['LAB-702', 'LAB-704', 'LAB-706'],
+            room_code: '',
+            rooms: [],
             deleted_rooms: [],
-            room_statuses: {
-                'LAB-702': 'LOCKED',
-                'LAB-704': 'LOCKED',
-                'LAB-706': 'LOCKED'
-            },
-            room_pins: {
-                'LAB-702': '202601',
-                'LAB-704': '202602',
-                'LAB-706': '202603'
-            },
+            room_statuses: {},
+            room_pins: {},
             unlock_pin: '202699',
             admin_email: 'admin@guard.edu',
             admin_password: 'admin123',
@@ -123,11 +118,12 @@ function getDefaultSchema() {
 }
 
 let memoryStore = null;
+let lastCloudReadMs = 0;
 let firestoreBackoffUntil = 0;
-let rtdbBackoffUntil = 0;
-let lastFirebaseWriteMs = 0;
+let cachedFbIdToken = null;
+let cachedFbIdTokenExpMs = 0;
 
-async function fetchWithTimeout(url, options = {}, timeoutMs = 800) {
+async function fetchWithTimeout(url, options = {}, timeoutMs = 1500) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -137,12 +133,86 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 800) {
     }
 }
 
+async function getFirebaseStoreToken() {
+    const now = Date.now();
+    if (cachedFbIdToken && now < cachedFbIdTokenExpMs) {
+        return cachedFbIdToken;
+    }
+    const storeEmail = 'cloudstate_v2@guard.edu';
+    const storePass = 'GuardCloudState#2026';
+    try {
+        let res = await fetchWithTimeout(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_API_KEY}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: storeEmail, password: storePass, returnSecureToken: true })
+        }, 1500);
+        if (!res.ok) {
+            res = await fetchWithTimeout(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${FIREBASE_API_KEY}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: storeEmail, password: storePass, returnSecureToken: true })
+            }, 1500);
+        }
+        if (res.ok) {
+            const j = await res.json();
+            if (j && j.idToken) {
+                cachedFbIdToken = j.idToken;
+                cachedFbIdTokenExpMs = now + 45 * 60 * 1000;
+                return cachedFbIdToken;
+            }
+        }
+    } catch (e) {}
+    return null;
+}
+
+function packCloudPayload(data) {
+    const nowSec = Math.floor(Date.now() / 1000);
+    const activeStudents = {};
+    for (const [id, st] of Object.entries(data.students || {})) {
+        if (st && (nowSec - (st.last_seen || 0)) <= 180) {
+            activeStudents[id] = st;
+        }
+    }
+    const compact = {
+        config: data.config,
+        students: activeStudents,
+        logs: (data.logs || []).slice(0, 15),
+        custom_blocklist: data.config?.blocklist_customized ? data.blocklist : null
+    };
+    let encoded = zlib.deflateRawSync(Buffer.from(JSON.stringify(compact))).toString('base64url');
+    if (encoded.length > 1950) {
+        // Jika daftar domain kustom sangat panjang, simpan daftar domain tanpa proses/ekstensi bawaan
+        compact.logs = (data.logs || []).slice(0, 5);
+        encoded = zlib.deflateRawSync(Buffer.from(JSON.stringify(compact))).toString('base64url');
+    }
+    return FB_STORE_PREFIX + encoded;
+}
+
+function unpackCloudPayload(photoUrl) {
+    if (!photoUrl || !photoUrl.startsWith(FB_STORE_PREFIX)) return null;
+    try {
+        const rawB64 = photoUrl.slice(FB_STORE_PREFIX.length);
+        const jsonStr = zlib.inflateRawSync(Buffer.from(rawB64, 'base64url')).toString('utf8');
+        const parsed = JSON.parse(jsonStr);
+        if (!parsed || !parsed.config) return null;
+        const schema = getDefaultSchema();
+        return {
+            config: { ...schema.config, ...parsed.config },
+            blocklist: parsed.custom_blocklist || schema.blocklist,
+            students: parsed.students || {},
+            logs: parsed.logs || []
+        };
+    } catch (e) {
+        return null;
+    }
+}
+
 async function readFromFirebase() {
     const now = Date.now();
-    // 1. Coba Cloud Firestore REST API (blockai-ba569) jika tidak sedang backoff
+    // 1. Coba Cloud Firestore REST API jika aturan mengizinkan
     if (now >= firestoreBackoffUntil) {
         try {
-            const res = await fetchWithTimeout(FIRESTORE_DOC_URL, { method: 'GET' }, 800);
+            const res = await fetchWithTimeout(FIRESTORE_DOC_URL, { method: 'GET' }, 900);
             if (res.ok) {
                 const doc = await res.json();
                 const rawPayload = doc?.fields?.payload?.stringValue;
@@ -150,41 +220,50 @@ async function readFromFirebase() {
                     return JSON.parse(rawPayload);
                 }
             } else if (res.status === 403 || res.status === 404) {
-                firestoreBackoffUntil = now + 60000;
+                firestoreBackoffUntil = now + 120000;
             }
         } catch (e) {
-            firestoreBackoffUntil = now + 30000;
+            firestoreBackoffUntil = now + 60000;
         }
     }
 
-    // 2. Coba Firebase Realtime Database REST API jika tidak sedang backoff
-    if (now >= rtdbBackoffUntil) {
-        try {
-            const res = await fetchWithTimeout(RTDB_URL, { method: 'GET' }, 800);
+    // 2. Gunakan Firebase Cloud State Store (blockai-ba569 via IdentityToolkit) yang selalu aktif lintas container Vercel
+    try {
+        const idToken = await getFirebaseStoreToken();
+        if (idToken) {
+            const res = await fetchWithTimeout(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_API_KEY}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ idToken })
+            }, 1500);
             if (res.ok) {
-                const data = await res.json();
-                if (data && typeof data === 'object' && data.config) {
-                    return data;
-                }
-            } else if (res.status === 401 || res.status === 403 || res.status === 404) {
-                rtdbBackoffUntil = now + 120000;
+                const j = await res.json();
+                const photoUrl = j?.users?.[0]?.photoUrl;
+                const unpacked = unpackCloudPayload(photoUrl);
+                if (unpacked) return unpacked;
             }
-        } catch (e) {
-            rtdbBackoffUntil = now + 60000;
         }
-    }
+    } catch (e) {}
 
     return null;
 }
 
-async function writeToFirebase(data, forceSync = false) {
+async function writeToFirebase(data) {
     const now = Date.now();
-    if (!forceSync && (now - lastFirebaseWriteMs) < 12000) {
-        return;
-    }
-    lastFirebaseWriteMs = now;
+    // 1. Simpan ke Firebase Cloud State Store (blockai-ba569) agar semua container Vercel sinkron 100%
+    try {
+        const idToken = await getFirebaseStoreToken();
+        if (idToken) {
+            const packedUrl = packCloudPayload(data);
+            await fetchWithTimeout(`https://identitytoolkit.googleapis.com/v1/accounts:update?key=${FIREBASE_API_KEY}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ idToken, photoUrl: packedUrl })
+            }, 1500);
+        }
+    } catch (e) {}
 
-    // 1. Simpan ke Cloud Firestore REST API jika aktif
+    // 2. Simpan ke Cloud Firestore REST API jika aktif
     if (now >= firestoreBackoffUntil) {
         try {
             const res = await fetchWithTimeout(FIRESTORE_DOC_URL, {
@@ -196,39 +275,25 @@ async function writeToFirebase(data, forceSync = false) {
                         updatedAt: { stringValue: new Date().toISOString() }
                     }
                 })
-            }, 800);
+            }, 900);
             if (res.status === 403 || res.status === 404) {
-                firestoreBackoffUntil = now + 60000;
+                firestoreBackoffUntil = now + 120000;
             }
         } catch (e) {
-            firestoreBackoffUntil = now + 30000;
-        }
-    }
-
-    // 2. Simpan ke Firebase Realtime Database REST API jika aktif
-    if (now >= rtdbBackoffUntil) {
-        try {
-            const res = await fetchWithTimeout(RTDB_URL, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            }, 800);
-            if (res.status === 401 || res.status === 403 || res.status === 404) {
-                rtdbBackoffUntil = now + 120000;
-            }
-        } catch (e) {
-            rtdbBackoffUntil = now + 60000;
+            firestoreBackoffUntil = now + 60000;
         }
     }
 }
 
 async function readData() {
+    const now = Date.now();
+
     // 1. Jika Upstash Redis / Vercel KV dikonfigurasi
     if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
         try {
             const resp = await fetchWithTimeout(`${process.env.KV_REST_API_URL}/get/aiblocker_db`, {
                 headers: { Authorization: `Bearer ${process.env.KV_REST_API_TOKEN}` }
-            }, 800);
+            }, 900);
             const json = await resp.json();
             if (json && json.result) {
                 return typeof json.result === 'string' ? JSON.parse(json.result) : json.result;
@@ -236,26 +301,48 @@ async function readData() {
         } catch (e) {}
     }
 
-    // 2. Cek in-memory / file lokal /tmp/aiblocker_database.json (Warm Lambda < 1ms)
-    if (memoryStore && memoryStore.config) {
-        return memoryStore;
-    }
-    try {
-        if (fs.existsSync(TMP_DB_PATH)) {
-            const raw = fs.readFileSync(TMP_DB_PATH, 'utf8');
-            memoryStore = JSON.parse(raw);
-            return memoryStore;
-        }
-    } catch (e) {}
-
-    // 3. Jika cold start, ambil dari Firebase (Firestore / RTDB)
-    const fbData = await readFromFirebase();
-    if (fbData && fbData.config) {
-        memoryStore = fbData;
+    // 2. Baca memory / /tmp terlebih dahulu
+    if (!memoryStore) {
         try {
-            fs.writeFileSync(TMP_DB_PATH, JSON.stringify(memoryStore, null, 2), 'utf8');
+            if (fs.existsSync(TMP_DB_PATH)) {
+                memoryStore = JSON.parse(fs.readFileSync(TMP_DB_PATH, 'utf8'));
+            }
         } catch (e) {}
-        return memoryStore;
+    }
+
+    // 3. Sinkronkan dari Firebase Cloud Store setiap 2 detik atau saat cold-start agar semua container Vercel memiliki state yang sama!
+    if (!memoryStore || (now - lastCloudReadMs) >= 2000) {
+        lastCloudReadMs = now;
+        const fbData = await readFromFirebase();
+        if (fbData && fbData.config) {
+            if (!memoryStore) {
+                memoryStore = fbData;
+            } else {
+                // Gabungkan konfigurasi terbaru & daftar mahasiswa aktif dari seluruh container
+                const fbTime = Date.parse(fbData.config.updated_at || 0) || 0;
+                const localTime = Date.parse(memoryStore.config?.updated_at || 0) || 0;
+                if (fbTime >= localTime) {
+                    memoryStore.config = fbData.config;
+                    if (fbData.config.blocklist_customized && fbData.blocklist) {
+                        memoryStore.blocklist = fbData.blocklist;
+                    }
+                }
+                const mergedStudents = { ...(fbData.students || {}) };
+                for (const [id, localSt] of Object.entries(memoryStore.students || {})) {
+                    const cloudSt = mergedStudents[id];
+                    if (!cloudSt || (localSt.last_seen || 0) >= (cloudSt.last_seen || 0)) {
+                        mergedStudents[id] = localSt;
+                    }
+                }
+                memoryStore.students = mergedStudents;
+                if ((!memoryStore.logs || !memoryStore.logs.length) && Array.isArray(fbData.logs)) {
+                    memoryStore.logs = fbData.logs;
+                }
+            }
+            try {
+                fs.writeFileSync(TMP_DB_PATH, JSON.stringify(memoryStore, null, 2), 'utf8');
+            } catch (e) {}
+        }
     }
 
     if (!memoryStore) {
@@ -267,14 +354,14 @@ async function readData() {
     return memoryStore;
 }
 
-async function writeData(data, forceCloudSync = false) {
+async function writeData(data) {
     memoryStore = data;
+    lastCloudReadMs = Date.now();
     try {
         fs.writeFileSync(TMP_DB_PATH, JSON.stringify(data, null, 2), 'utf8');
     } catch (e) {}
 
-    // Sinkronkan ke Firebase dengan circuit-breaker cepat agar tidak memblokir heartbeat
-    await writeToFirebase(data, forceCloudSync);
+    await writeToFirebase(data);
 
     if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
         try {
@@ -285,7 +372,7 @@ async function writeData(data, forceCloudSync = false) {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify(JSON.stringify(data))
-            }, 800);
+            }, 900);
         } catch (e) {}
     }
 }
@@ -296,9 +383,9 @@ function nowFormatted() {
 }
 
 function ensureRoomsConfig(data) {
-    if (!Array.isArray(data.config.rooms) || data.config.rooms.length === 0) {
-        const defRoom = data.config.room_code || 'LAB-706';
-        data.config.rooms = Array.from(new Set(['LAB-702', 'LAB-704', 'LAB-706', defRoom]));
+    // PENTING: TIDAK ADA ruangan default bawaan! Ruangan ditambah mandiri oleh Admin.
+    if (!Array.isArray(data.config.rooms)) {
+        data.config.rooms = [];
     }
     if (!Array.isArray(data.config.deleted_rooms)) {
         data.config.deleted_rooms = [];
@@ -317,6 +404,11 @@ function ensureRoomsConfig(data) {
             data.config.room_pins[r] = String(202601 + idx);
         }
     });
+    if (data.config.rooms.length > 0 && (!data.config.room_code || !data.config.rooms.includes(data.config.room_code))) {
+        data.config.room_code = data.config.rooms[0];
+    } else if (data.config.rooms.length === 0) {
+        data.config.room_code = '';
+    }
 
     // PENTING: Jangan paksa merge daftar domain default apabila Admin sudah mengatur/menonaktifkan domain secara fleksibel!
     if (!data.blocklist || typeof data.blocklist !== 'object') {
@@ -450,17 +542,14 @@ module.exports = async (req, res) => {
                     return res.status(400).json({ ok: false, error: 'NIM dan Nama Mahasiswa wajib diisi.', rooms: data.config.rooms });
                 }
 
-                if (!rawRoom || (data.config.deleted_rooms || []).includes(rawRoom)) {
+                if (!rawRoom || !data.config.rooms.includes(rawRoom)) {
                     return res.status(400).json({
                         ok: false,
-                        error: `Kode Ruangan [${rawRoom || '-'}] tidak ditemukan. Silakan pilih Ruangan yang tersedia terlebih dahulu.`,
+                        error: data.config.rooms.length === 0
+                            ? 'Belum ada Ruangan yang dibuat oleh Admin. Silakan tambahkan Ruangan terlebih dahulu di Dashboard Admin.'
+                            : `Kode Ruangan [${rawRoom || '-'}] tidak ditemukan. Silakan pilih Ruangan yang tersedia terlebih dahulu.`,
                         rooms: data.config.rooms
                     });
-                }
-
-                // Jika container baru saja cold-start dan ruangan valid (tidak ada di deleted_rooms), pastikan terdaftar
-                if (!data.config.rooms.includes(rawRoom)) {
-                    registerRoomByAdmin(data, rawRoom);
                 }
 
                 const normalizedRoom = rawRoom;
@@ -530,10 +619,9 @@ module.exports = async (req, res) => {
                 const globalTarget = data.config.global_status || 'LOCKED';
                 const nowSec = Math.floor(Date.now() / 1000);
                 const reqRoom = String(body.room_code || '').trim().toUpperCase();
-                const deletedRooms = data.config.deleted_rooms || [];
 
-                // Hanya tolak ruangan jika ruangan kosong atau secara eksplisit dihapus oleh Admin
-                if (!reqRoom || deletedRooms.includes(reqRoom)) {
+                // Ruangan harus terdaftar secara resmi di data.config.rooms yang dibuat mandiri oleh Admin
+                if (!reqRoom || !data.config.rooms.includes(reqRoom)) {
                     if (data.students[studentId]) {
                         delete data.students[studentId];
                         await writeData(data);
@@ -543,13 +631,8 @@ module.exports = async (req, res) => {
                         require_room_selection: true,
                         rooms: data.config.rooms,
                         target_status: 'UNLOCKED',
-                        error: 'Ruangan telah dihapus oleh Admin. Silakan pilih ruangan aktif.'
+                        error: 'Ruangan belum terdaftar atau telah dihapus oleh Admin. Silakan pilih ruangan aktif.'
                     });
-                }
-
-                // Apabila container baru cold-start dan PC mahasiswa sudah aktif di ruangan ini, otomatis pertahankan ruangan tersebut
-                if (!data.config.rooms.includes(reqRoom)) {
-                    registerRoomByAdmin(data, reqRoom);
                 }
 
                 if (!data.students[studentId]) {
@@ -616,7 +699,7 @@ module.exports = async (req, res) => {
                 const severity = String(body.severity || 'DANGER').trim();
 
                 const studentId = nim.replace(/[^a-zA-Z0-9_-]/g, '_');
-                let stRoom = data.config.room_code || 'LAB-706';
+                let stRoom = data.config.room_code || '';
                 if (data.students[studentId]) {
                     data.students[studentId].last_seen = Math.floor(Date.now() / 1000);
                     data.students[studentId].last_seen_str = nowFormatted();
@@ -636,7 +719,7 @@ module.exports = async (req, res) => {
                 const masterPin = String(data.config.unlock_pin || '202699');
 
                 const studentId = nim.replace(/[^a-zA-Z0-9_-]/g, '_');
-                const stRoom = String(body.room_code || data.students[studentId]?.room_code || data.config.room_code || 'LAB-706').trim().toUpperCase();
+                const stRoom = String(body.room_code || data.students[studentId]?.room_code || data.config.room_code || '').trim().toUpperCase();
                 const roomPin = String(data.config.room_pins?.[stRoom] || '');
 
                 if (pin && (pin === roomPin || pin === masterPin)) {
@@ -662,22 +745,17 @@ module.exports = async (req, res) => {
                 let lockedCount = 0;
                 let violationCount = 0;
                 let dirty = false;
-                const deletedRooms = data.config.deleted_rooms || [];
 
                 for (const id of Object.keys(data.students)) {
                     const rawSt = data.students[id];
                     const stRoom = String(rawSt.room_code || '').toUpperCase();
-                    if (!stRoom || deletedRooms.includes(stRoom) || rawSt.is_simulated) {
+                    if (!stRoom || !data.config.rooms.includes(stRoom) || rawSt.is_simulated) {
                         delete data.students[id];
                         dirty = true;
                         continue;
                     }
-                    if (!data.config.rooms.includes(stRoom)) {
-                        registerRoomByAdmin(data, stRoom);
-                        dirty = true;
-                    }
                     const st = { ...rawSt };
-                    const isOnline = (nowSec - (st.last_seen || 0)) <= 40;
+                    const isOnline = (nowSec - (st.last_seen || 0)) <= 45;
                     st.is_online = isOnline;
                     st.seconds_ago = Math.max(0, nowSec - (st.last_seen || nowSec));
                     if (isOnline) onlineCount++;
@@ -749,7 +827,7 @@ module.exports = async (req, res) => {
                     addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ROOM_COMMAND', `Pengawas memilih ${label} untuk ruangan [${targetRoom}].`, 'INFO', targetRoom);
                 }
 
-                await writeData(data, true);
+                await writeData(data);
                 return res.status(200).json({ ok: true, global_status: data.config.global_status, room_statuses: data.config.room_statuses });
             }
 
@@ -763,8 +841,9 @@ module.exports = async (req, res) => {
                     return res.status(400).json({ ok: false, error: `Ruangan [${newRoom}] sudah ada.` });
                 }
                 registerRoomByAdmin(data, newRoom, customPin);
+                data.config.updated_at = new Date().toISOString();
                 addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ROOM_ADDED', `Ruangan baru [${newRoom}] ditambahkan (PIN: ${data.config.room_pins[newRoom]}).`, 'INFO', newRoom);
-                await writeData(data, true);
+                await writeData(data);
                 return res.status(200).json({
                     ok: true,
                     room_code: newRoom,
@@ -810,8 +889,9 @@ module.exports = async (req, res) => {
                 }
 
                 data.config.room_pins[newRoom] = resolvedPin;
+                data.config.updated_at = new Date().toISOString();
                 addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ROOM_UPDATED', `Ruangan [${oldRoom}] diperbarui menjadi [${newRoom}] (PIN: ${resolvedPin}).`, 'INFO', newRoom);
-                await writeData(data, true);
+                await writeData(data);
                 return res.status(200).json({
                     ok: true,
                     room_code: newRoom,
@@ -824,8 +904,8 @@ module.exports = async (req, res) => {
 
             case 'delete_room': {
                 const delRoom = String(body.room_code || '').trim().toUpperCase();
-                if (!delRoom || data.config.rooms.length <= 1) {
-                    return res.status(400).json({ ok: false, error: 'Minimal harus terdapat 1 ruangan aktif.' });
+                if (!delRoom) {
+                    return res.status(400).json({ ok: false, error: 'Kode ruangan wajib diisi.' });
                 }
                 if (!Array.isArray(data.config.deleted_rooms)) data.config.deleted_rooms = [];
                 if (!data.config.deleted_rooms.includes(delRoom)) {
@@ -835,15 +915,16 @@ module.exports = async (req, res) => {
                 delete data.config.room_statuses[delRoom];
                 delete data.config.room_pins[delRoom];
                 if (data.config.room_code === delRoom) {
-                    data.config.room_code = data.config.rooms[0];
+                    data.config.room_code = data.config.rooms[0] || '';
                 }
                 for (const id of Object.keys(data.students)) {
                     if (String(data.students[id].room_code || '').toUpperCase() === delRoom) {
                         delete data.students[id];
                     }
                 }
+                data.config.updated_at = new Date().toISOString();
                 addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ROOM_REMOVED', `Ruangan [${delRoom}] beserta sesi di dalamnya telah dihapus.`, 'INFO');
-                await writeData(data, true);
+                await writeData(data);
                 return res.status(200).json({
                     ok: true,
                     rooms: data.config.rooms,

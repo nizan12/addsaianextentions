@@ -21,20 +21,10 @@ class Storage {
     public static function getDefaultSchema() {
         return [
             'config' => [
-                'room_code' => 'KUIS-AI-01',
-                'rooms' => ['KUIS-AI-01', 'LAB-01', 'LAB-02', 'LAB-03'],
-                'room_statuses' => [
-                    'KUIS-AI-01' => 'LOCKED',
-                    'LAB-01' => 'LOCKED',
-                    'LAB-02' => 'LOCKED',
-                    'LAB-03' => 'LOCKED'
-                ],
-                'room_pins' => [
-                    'KUIS-AI-01' => '202601',
-                    'LAB-01' => '202602',
-                    'LAB-02' => '202603',
-                    'LAB-03' => '202604'
-                ],
+                'room_code' => '',
+                'rooms' => [],
+                'room_statuses' => [],
+                'room_pins' => [],
                 'unlock_pin' => '202699',
                 'admin_email' => 'admin@guard.edu',
                 'admin_password' => 'admin123',
@@ -204,10 +194,12 @@ class Storage {
     }
 
     public static function ensureRoomsConfig(&$data) {
-        if (empty($data['config']['rooms']) || !is_array($data['config']['rooms'])) {
-            $defRoom = $data['config']['room_code'] ?? 'KUIS-AI-01';
-            $data['config']['rooms'] = array_values(array_unique([$defRoom, 'LAB-01', 'LAB-02', 'LAB-03']));
+        if (!isset($data['config']['rooms']) || !is_array($data['config']['rooms'])) {
+            $data['config']['rooms'] = [];
         }
+        $data['config']['rooms'] = array_values(array_unique(array_filter(array_map(function ($r) {
+            return strtoupper(trim((string)$r));
+        }, $data['config']['rooms']))));
         if (empty($data['config']['room_statuses']) || !is_array($data['config']['room_statuses'])) {
             $data['config']['room_statuses'] = [];
         }
@@ -221,6 +213,11 @@ class Storage {
             if (empty($data['config']['room_pins'][$r])) {
                 $data['config']['room_pins'][$r] = (string)(202601 + $idx);
             }
+        }
+        if (empty($data['config']['rooms'])) {
+            $data['config']['room_code'] = '';
+        } elseif (empty($data['config']['room_code']) || !in_array($data['config']['room_code'], $data['config']['rooms'], true)) {
+            $data['config']['room_code'] = $data['config']['rooms'][0];
         }
         $defaults = self::getDefaultSchema()['blocklist'];
         if (!isset($data['blocklist']) || !is_array($data['blocklist'])) {

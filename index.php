@@ -313,7 +313,7 @@
                         <div class="flex flex-wrap items-center gap-2">
                             <div class="relative">
                                 <svg class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>
-                                <input type="search" id="searchStudent" name="guard_student_search_filter" autocomplete="off" spellcheck="false" oninput="renderCurrentStudents()" placeholder="Cari NIM, nama, ruangan, atau hostname..." class="pl-9 pr-3 py-1.5 rounded-lg border border-slate-200 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-slate-400 w-64">
+                                <input type="search" id="searchStudent" name="guard_student_search_filter" autocomplete="off" readonly onfocus="this.removeAttribute('readonly'); if(this.value.includes('@')){this.value='';renderCurrentStudents();}" spellcheck="false" oninput="renderCurrentStudents()" placeholder="Cari NIM, nama, ruangan, atau hostname..." class="pl-9 pr-3 py-1.5 rounded-lg border border-slate-200 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-slate-400 w-64 bg-white">
                             </div>
 
                             <div class="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 text-xs">
@@ -506,20 +506,20 @@
 
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
-                                    <label class="block text-xs font-medium text-slate-700 mb-1.5">Ruangan Utama (Default)</label>
-                                    <input type="text" id="cfgRoomCode" class="w-full rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono font-medium text-slate-900 focus:border-slate-500 focus:outline-none" value="KUIS-AI-01">
+                                    <label class="block text-xs font-medium text-slate-700 mb-1.5">Ruangan Utama (Opsional)</label>
+                                    <input type="text" id="cfgRoomCode" autocomplete="off" placeholder="Kosongkan jika belum ada ruangan" class="w-full rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono font-medium text-slate-900 focus:border-slate-500 focus:outline-none" value="">
                                 </div>
                                 <div>
                                     <label class="block text-xs font-medium text-slate-700 mb-1.5">PIN Master Pengawas (Semua Ruangan)</label>
-                                    <input type="text" id="cfgUnlockPin" class="w-full rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono font-medium text-slate-900 focus:border-slate-500 focus:outline-none" value="202699">
+                                    <input type="text" id="cfgUnlockPin" autocomplete="off" class="w-full rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono font-medium text-slate-900 focus:border-slate-500 focus:outline-none" value="202699">
                                 </div>
                                 <div>
                                     <label class="block text-xs font-medium text-slate-700 mb-1.5">Email Login Pengawas</label>
-                                    <input type="text" id="cfgAdminEmail" class="w-full rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono font-medium text-slate-900 focus:border-slate-500 focus:outline-none" value="admin@guard.edu">
+                                    <input type="text" id="cfgAdminEmail" autocomplete="off" class="w-full rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono font-medium text-slate-900 focus:border-slate-500 focus:outline-none" value="admin@guard.edu">
                                 </div>
                                 <div>
                                     <label class="block text-xs font-medium text-slate-700 mb-1.5">Kata Sandi Login Dashboard</label>
-                                    <input type="password" id="cfgAdminPassword" placeholder="Kosongkan jika tidak diubah" class="w-full rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono font-medium text-slate-900 focus:border-slate-500 focus:outline-none">
+                                    <input type="text" id="cfgAdminPassword" autocomplete="off" style="-webkit-text-security: disc;" placeholder="Kosongkan jika tidak diubah" class="w-full rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono font-medium text-slate-900 focus:border-slate-500 focus:outline-none">
                                 </div>
                             </div>
 
@@ -869,14 +869,14 @@
         let selectedRoom = 'ALL';
         let cachedStudents = [];
         let cachedLogs = [];
-        let cachedRooms = ['KUIS-AI-01', 'LAB-01', 'LAB-02', 'LAB-03'];
+        let cachedRooms = [];
         let cachedRoomStatuses = {};
         let cachedRoomPins = {};
         let cachedGlobalStatus = 'LOCKED';
         let blocklistLoaded = false;
         let pinVisible = false;
         let currentUnlockPin = '202699';
-        let currentRoomCode = 'KUIS-AI-01';
+        let currentRoomCode = '';
         let allKnownDomains = [];
         let activeBlockedDomainsSet = new Set();
 
@@ -1338,14 +1338,13 @@
                 document.getElementById('statProcs').textContent = data.stats.processes_count;
                 document.getElementById('statExts').textContent = data.stats.extensions_count;
 
-                currentRoomCode = data.config.room_code || 'LAB-706';
+                currentRoomCode = data.config.room_code || '';
                 currentUnlockPin = data.config.unlock_pin || '202699';
                 cachedGlobalStatus = data.config.global_status || 'LOCKED';
-                const serverRooms = Array.isArray(data.config.rooms) && data.config.rooms.length ? data.config.rooms : ['LAB-702', 'LAB-704', 'LAB-706'];
-                cachedRooms = Array.from(new Set([...cachedRooms, ...serverRooms])).filter(r => !explicitlyDeletedRooms.has(r));
-                if (!cachedRooms.length) cachedRooms = serverRooms;
-                cachedRoomStatuses = { ...cachedRoomStatuses, ...(data.config.room_statuses || {}) };
-                cachedRoomPins = { ...cachedRoomPins, ...(data.config.room_pins || {}) };
+                const serverRooms = Array.isArray(data.config.rooms) ? data.config.rooms : [];
+                cachedRooms = serverRooms.filter(r => !explicitlyDeletedRooms.has(r));
+                cachedRoomStatuses = data.config.room_statuses || {};
+                cachedRoomPins = data.config.room_pins || {};
 
                 updateSidebarPinUI();
                 const timePart = (data.server_time || '').split(' ')[1] || '--:--:--';
@@ -1447,12 +1446,12 @@
             const searchEl = document.getElementById('searchStudent');
             let q = (searchEl?.value || '').trim().toLowerCase();
             // Abaikan dan bersihkan otomatis jika browser password manager mengisi email login (mis. admin@guard.edu) ke kolom pencarian
-            if (q && q.includes('@')) {
+            if (q && (q.includes('@') || q === 'admin')) {
                 searchEl.value = '';
                 q = '';
             }
             return cachedStudents.filter(st => {
-                const stRoom = (st.room_code || currentRoomCode || 'LAB-706').toUpperCase();
+                const stRoom = (st.room_code || currentRoomCode || '-').toUpperCase();
                 if (selectedRoom !== 'ALL' && stRoom !== selectedRoom) return false;
                 if (currentFilter === 'ONLINE' && !st.is_online) return false;
                 if (currentFilter === 'UNLOCKED' && st.status === 'LOCKED') return false;
@@ -1480,7 +1479,7 @@
             }
 
             tbody.innerHTML = list.map(st => {
-                const stRoom = (st.room_code || currentRoomCode || 'KUIS-AI-01').toUpperCase();
+                const stRoom = (st.room_code || currentRoomCode || '-').toUpperCase();
                 const connBadge = st.is_online
                     ? `<span class="inline-flex items-center gap-1.5 text-slate-700 font-medium"><span class="w-2 h-2 rounded-full bg-emerald-600 status-dot-live"></span>Terhubung</span>`
                     : `<span class="inline-flex items-center gap-1.5 text-slate-400"><span class="w-2 h-2 rounded-full bg-slate-300"></span>Terputus (${st.seconds_ago}d)</span>`;
@@ -1538,7 +1537,7 @@
             }).join('');
 
             grid.innerHTML = list.map(st => {
-                const stRoom = (st.room_code || currentRoomCode || 'KUIS-AI-01').toUpperCase();
+                const stRoom = (st.room_code || currentRoomCode || '-').toUpperCase();
                 const isLocked = st.status === 'LOCKED';
                 const topBorder = !st.is_online
                     ? 'border-t-4 border-t-slate-300'
@@ -1589,9 +1588,13 @@
         function renderRoomsManager() {
             const box = document.getElementById('roomsListManager');
             if (!box) return;
+            if (!cachedRooms.length) {
+                box.innerHTML = `<div class="p-6 text-center text-xs text-slate-400">Belum ada ruangan yang dibuat. Silakan tambah ruangan secara mandiri menggunakan form di atas atau tombol <strong>+ Tambah</strong> di header.</div>`;
+                return;
+            }
             const counts = {};
             cachedStudents.forEach(st => {
-                const r = (st.room_code || currentRoomCode || 'KUIS-AI-01').toUpperCase();
+                const r = (st.room_code || currentRoomCode || '-').toUpperCase();
                 counts[r] = (counts[r] || 0) + 1;
             });
 
@@ -1620,7 +1623,7 @@
                             <button onclick="openEditRoomModal('${escapeHtml(r)}')" class="px-2.5 py-1 rounded border border-slate-200 hover:bg-slate-100 text-slate-700 font-medium">Edit & PIN</button>
                             <button onclick="setRoomStatusDirect('${escapeHtml(r)}', 'LOCKED')" class="px-2.5 py-1 rounded border ${status === 'LOCKED' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 hover:bg-slate-100 text-slate-700'} font-medium">Kunci</button>
                             <button onclick="setRoomStatusDirect('${escapeHtml(r)}', 'UNLOCKED')" class="px-2.5 py-1 rounded border ${status === 'UNLOCKED' ? 'border-amber-600 bg-amber-600 text-white' : 'border-slate-200 hover:bg-slate-100 text-slate-700'} font-medium">Buka</button>
-                            ${cachedRooms.length > 1 ? `<button onclick="deleteRoom('${escapeHtml(r)}')" class="px-2 py-1 rounded text-slate-400 hover:text-rose-600" title="Hapus ruangan">✕</button>` : ''}
+                            <button onclick="deleteRoom('${escapeHtml(r)}')" class="px-2 py-1 rounded text-slate-400 hover:text-rose-600" title="Hapus ruangan">✕</button>
                         </div>
                     </div>
                 `;

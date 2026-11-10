@@ -528,8 +528,8 @@ try {
             $delRoom = strtoupper(trim($jsonInput['room_code'] ?? ''));
             $result = Storage::update(function (&$data) use ($delRoom) {
                 Storage::ensureRoomsConfig($data);
-                if ($delRoom === '' || count($data['config']['rooms']) <= 1) {
-                    return ['ok' => false, 'error' => 'Minimal harus terdapat 1 ruangan aktif.'];
+                if ($delRoom === '') {
+                    return ['ok' => false, 'error' => 'Kode ruangan tidak valid.'];
                 }
                 $data['config']['rooms'] = array_values(array_filter($data['config']['rooms'], function ($r) use ($delRoom) {
                     return $r !== $delRoom;
@@ -537,7 +537,7 @@ try {
                 unset($data['config']['room_statuses'][$delRoom]);
                 unset($data['config']['room_pins'][$delRoom]);
                 if (($data['config']['room_code'] ?? '') === $delRoom) {
-                    $data['config']['room_code'] = $data['config']['rooms'][0];
+                    $data['config']['room_code'] = $data['config']['rooms'][0] ?? '';
                 }
                 foreach ($data['students'] as $id => $st) {
                     if (strtoupper($st['room_code'] ?? '') === $delRoom) {
