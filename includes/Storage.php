@@ -78,7 +78,24 @@ class Storage {
                     'api.groq.com', 'console.groq.com', 'groq.com',
                     'together.ai', 'api.together.xyz',
                     'fireworks.ai', 'api.fireworks.ai',
-                    'cohere.com', 'api.cohere.ai'
+                    'cohere.com', 'api.cohere.ai',
+                    // Roblox Web, Game Join, Auth, APIs & CDN
+                    'roblox.com', 'www.roblox.com', 'web.roblox.com', 'ro.blox.com',
+                    'api.roblox.com', 'apis.roblox.com', 'auth.roblox.com', 'accountsettings.roblox.com', 'accountinformation.roblox.com',
+                    'assetdelivery.roblox.com', 'avatar.roblox.com', 'badges.roblox.com', 'billing.roblox.com', 'catalog.roblox.com', 'chat.roblox.com',
+                    'clientsettings.roblox.com', 'clientsettingscdn.roblox.com', 'client-telemetry.roblox.com',
+                    'contentstore.roblox.com', 'create.roblox.com', 'develop.roblox.com', 'devforum.roblox.com', 'economy.roblox.com',
+                    'ecsv2.roblox.com', 'ephemeralcounters.api.roblox.com', 'engagementpayouts.roblox.com', 'followings.roblox.com',
+                    'friends.roblox.com', 'gameinternationalization.roblox.com', 'gamejoin.roblox.com', 'gamepersistence.roblox.com',
+                    'games.roblox.com', 'groups.roblox.com', 'inventory.roblox.com', 'itemconfiguration.roblox.com',
+                    'lms.roblox.com', 'locale.roblox.com', 'localizationtables.roblox.com', 'metrics.roblox.com',
+                    'notifications.roblox.com', 'points.roblox.com', 'premiumfeatures.roblox.com', 'presence.roblox.com', 'privatemessages.roblox.com',
+                    'publish.roblox.com', 'realtime.roblox.com', 'search.roblox.com', 'thumbnails.roblox.com', 'trades.roblox.com',
+                    'translationroles.roblox.com', 'translations.roblox.com', 'users.roblox.com', 'voice.roblox.com',
+                    'rbxcdn.com', 'www.rbxcdn.com', 'setup.rbxcdn.com', 'tr.rbxcdn.com', 'js.rbxcdn.com', 'css.rbxcdn.com', 'images.rbxcdn.com',
+                    't0.rbxcdn.com', 't1.rbxcdn.com', 't2.rbxcdn.com', 't3.rbxcdn.com', 't4.rbxcdn.com', 't5.rbxcdn.com', 't6.rbxcdn.com', 't7.rbxcdn.com',
+                    'c0.rbxcdn.com', 'c1.rbxcdn.com', 'c2.rbxcdn.com', 'c3.rbxcdn.com', 'c4.rbxcdn.com', 'c5.rbxcdn.com', 'c6.rbxcdn.com', 'c7.rbxcdn.com',
+                    'robloxlabs.com', 'corp.roblox.com', 'en.help.roblox.com'
                 ],
                 'processes' => [
                     // AI-Native IDEs & Desktop AI Clients
@@ -89,7 +106,11 @@ class Storage {
                     'LM Studio', 'lm-studio',
                     'jan', 'Jan',
                     'gpt4all', 'GPT4All',
-                    'llama-server', 'llama-cli', 'koboldcpp', 'text-generation-webui', 'anythingllm', 'AnythingLLM', 'msty', 'Msty'
+                    'llama-server', 'llama-cli', 'koboldcpp', 'text-generation-webui', 'anythingllm', 'AnythingLLM', 'msty', 'Msty',
+                    // Roblox Player, Studio, Launcher, Microsoft Store UWP & Bootstrapper
+                    'RobloxPlayerBeta', 'RobloxPlayerLauncher', 'RobloxPlayerInstaller',
+                    'RobloxStudioBeta', 'RobloxStudioLauncherBeta', 'RobloxStudioInstaller',
+                    'RobloxCrashHandler', 'Windows10Universal', 'Roblox', 'Bloxstrap', 'Fishstrap'
                 ],
                 'ide_extensions' => [
                     // VS Code & JetBrains Extension Prefixes / Keywords
@@ -142,7 +163,11 @@ class Storage {
         fclose($fp);
 
         $data = json_decode($content, true);
-        return is_array($data) ? $data : self::getDefaultSchema();
+        if (!is_array($data)) {
+            return self::getDefaultSchema();
+        }
+        self::ensureRoomsConfig($data);
+        return $data;
     }
 
     public static function update(callable $mutator) {
@@ -182,6 +207,11 @@ class Storage {
             if (!isset($data['config']['room_statuses'][$r])) {
                 $data['config']['room_statuses'][$r] = $data['config']['global_status'] ?? 'LOCKED';
             }
+        }
+        $defaults = self::getDefaultSchema()['blocklist'];
+        if (isset($data['blocklist'])) {
+            $data['blocklist']['domains'] = array_values(array_unique(array_merge($data['blocklist']['domains'] ?? [], $defaults['domains'])));
+            $data['blocklist']['processes'] = array_values(array_unique(array_merge($data['blocklist']['processes'] ?? [], $defaults['processes'])));
         }
     }
 

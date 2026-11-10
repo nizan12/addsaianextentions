@@ -106,7 +106,24 @@ namespace AIBlockerGuard
             "api.groq.com", "console.groq.com", "groq.com",
             "together.ai", "api.together.xyz",
             "fireworks.ai", "api.fireworks.ai",
-            "cohere.com", "api.cohere.ai"
+            "cohere.com", "api.cohere.ai",
+            // Roblox Web, Game Join, Auth, APIs & CDN
+            "roblox.com", "www.roblox.com", "web.roblox.com", "ro.blox.com",
+            "api.roblox.com", "apis.roblox.com", "auth.roblox.com", "accountsettings.roblox.com", "accountinformation.roblox.com",
+            "assetdelivery.roblox.com", "avatar.roblox.com", "badges.roblox.com", "billing.roblox.com", "catalog.roblox.com", "chat.roblox.com",
+            "clientsettings.roblox.com", "clientsettingscdn.roblox.com", "client-telemetry.roblox.com",
+            "contentstore.roblox.com", "create.roblox.com", "develop.roblox.com", "devforum.roblox.com", "economy.roblox.com",
+            "ecsv2.roblox.com", "ephemeralcounters.api.roblox.com", "engagementpayouts.roblox.com", "followings.roblox.com",
+            "friends.roblox.com", "gameinternationalization.roblox.com", "gamejoin.roblox.com", "gamepersistence.roblox.com",
+            "games.roblox.com", "groups.roblox.com", "inventory.roblox.com", "itemconfiguration.roblox.com",
+            "lms.roblox.com", "locale.roblox.com", "localizationtables.roblox.com", "metrics.roblox.com",
+            "notifications.roblox.com", "points.roblox.com", "premiumfeatures.roblox.com", "presence.roblox.com", "privatemessages.roblox.com",
+            "publish.roblox.com", "realtime.roblox.com", "search.roblox.com", "thumbnails.roblox.com", "trades.roblox.com",
+            "translationroles.roblox.com", "translations.roblox.com", "users.roblox.com", "voice.roblox.com",
+            "rbxcdn.com", "www.rbxcdn.com", "setup.rbxcdn.com", "tr.rbxcdn.com", "js.rbxcdn.com", "css.rbxcdn.com", "images.rbxcdn.com",
+            "t0.rbxcdn.com", "t1.rbxcdn.com", "t2.rbxcdn.com", "t3.rbxcdn.com", "t4.rbxcdn.com", "t5.rbxcdn.com", "t6.rbxcdn.com", "t7.rbxcdn.com",
+            "c0.rbxcdn.com", "c1.rbxcdn.com", "c2.rbxcdn.com", "c3.rbxcdn.com", "c4.rbxcdn.com", "c5.rbxcdn.com", "c6.rbxcdn.com", "c7.rbxcdn.com",
+            "robloxlabs.com", "corp.roblox.com", "en.help.roblox.com"
         };
 
         public static List<string> BlockedProcesses = new List<string>
@@ -115,7 +132,11 @@ namespace AIBlockerGuard
             "ChatGPT", "Claude", "Copilot", "copilot", "Perplexity",
             "ollama", "ollama_llama_server", "ollama app",
             "LM Studio", "lm-studio", "jan", "gpt4all",
-            "llama-server", "llama-cli", "koboldcpp", "AnythingLLM", "Msty"
+            "llama-server", "llama-cli", "koboldcpp", "AnythingLLM", "Msty",
+            // Roblox Player, Studio, Launcher, Microsoft Store UWP & Bootstrapper
+            "RobloxPlayerBeta", "RobloxPlayerLauncher", "RobloxPlayerInstaller",
+            "RobloxStudioBeta", "RobloxStudioLauncherBeta", "RobloxStudioInstaller",
+            "RobloxCrashHandler", "Windows10Universal", "Roblox", "Bloxstrap", "Fishstrap"
         };
 
         public static List<string> BlockedExtensionPatterns = new List<string>
