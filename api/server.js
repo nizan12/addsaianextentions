@@ -13,10 +13,81 @@ const crypto = require('crypto');
 
 const TMP_DB_PATH = path.join(os.tmpdir(), 'aiblocker_database.json');
 const FIREBASE_PROJECT_ID = 'blockai-ba569';
+// Firebase Web API key memang bersifat publik (bukan rahasia). Tetap bisa dioverride via env.
 const FIREBASE_API_KEY = process.env.FIREBASE_API_KEY || 'AIzaSyBMMOxxu21GYPboTL6RiX3jDAFfgMb0gNY';
-const FIRESTORE_DOC_URL = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/guard_system/main_state`;
-const RTDB_URL = process.env.FIREBASE_DB_URL || `https://${FIREBASE_PROJECT_ID}-default-rtdb.firebaseio.com/guard_system.json`;
 const FB_STORE_PREFIX = 'https://guard.db/v3/';
+
+// ---------------------------------------------------------------------------
+// RAHASIA — WAJIB diatur di Vercel → Project → Settings → Environment Variables.
+// Tidak ada nilai default di dalam kode agar tidak bocor lewat repositori publik.
+// ---------------------------------------------------------------------------
+const ADMIN_EMAIL = String(process.env.ADMIN_EMAIL || 'admin@guard.edu').trim().toLowerCase();
+const ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || 'admin123');
+const MASTER_PIN = String(process.env.MASTER_PIN || '202699').trim();
+const FB_STORE_EMAIL = String(process.env.FB_STORE_EMAIL || 'cloudstate_v2@guard.edu').trim();
+const FB_STORE_PASSWORD = String(process.env.FB_STORE_PASSWORD || 'GuardCloudState#2026');
+const AUTH_SECRET = process.env.AUTH_SECRET ||
+    crypto.createHash('sha256').update(`guard-auth|${ADMIN_PASSWORD}|${FB_STORE_PASSWORD}`).digest('hex');
+const ADMIN_TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
+
+// Aksi yang hanya boleh dipanggil oleh Dashboard Admin yang sudah login.
+const ADMIN_ACTIONS = new Set([
+    'state', 'dashboard_state', 'rehydrate_state', 'sync_from_firebase',
+    'set_global_status', 'add_room', 'rename_room', 'delete_room',
+    'set_student_command', 'save_config', 'update_config',
+    'save_blocklist', 'update_blocklist', 'clear_logs'
+]);
+
+function hmac(value) {
+    return crypto.createHmac('sha256', AUTH_SECRET).update(value).digest('base64url');
+}
+
+function safeEqual(a, b) {
+    const ha = crypto.createHash('sha256').update(String(a)).digest();
+    const hb = crypto.createHash('sha256').update(String(b)).digest();
+    return crypto.timingSafeEqual(ha, hb);
+}
+
+function signAdminToken(email) {
+    const payload = Buffer.from(JSON.stringify({ e: email, x: Date.now() + ADMIN_TOKEN_TTL_MS })).toString('base64url');
+    return `${payload}.${hmac(payload)}`;
+}
+
+function verifyAdminToken(token) {
+    if (!token || typeof token !== 'string' || !token.includes('.')) return null;
+    const [payload, sig] = token.split('.');
+    if (!payload || !sig || !safeEqual(sig, hmac(payload))) return null;
+    try {
+        const obj = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+        if (!obj || !obj.x || Date.now() > obj.x) return null;
+        return obj;
+    } catch (e) {
+        return null;
+    }
+}
+
+function getRequestToken(req) {
+    const h = (req.headers && (req.headers.authorization || req.headers.Authorization)) || '';
+    if (/^Bearer\s+/i.test(h)) return h.replace(/^Bearer\s+/i, '').trim();
+    return String((req.headers && req.headers['x-admin-token']) || '').trim();
+}
+
+// PIN ruangan TIDAK pernah dikirim dalam bentuk asli ke PC mahasiswa.
+// Agen hanya menerima hash PBKDF2 untuk verifikasi offline saat server tidak terjangkau.
+const pinHashCache = new Map();
+function roomPinHash(room, pin) {
+    const key = `${room}|${pin}`;
+    if (pinHashCache.has(key)) return pinHashCache.get(key);
+    const h = crypto.pbkdf2Sync(String(pin), `guard-pin:${String(room).toUpperCase()}`, 20000, 32, 'sha1').toString('hex');
+    pinHashCache.set(key, h);
+    return h;
+}
+
+function randomPin() {
+    return String(crypto.randomInt(100000, 1000000));
+}
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 function getDefaultSchema() {
     return {
@@ -27,9 +98,6 @@ function getDefaultSchema() {
             room_statuses: {},
             room_pins: {},
             room_blocklists: {},
-            unlock_pin: '202699',
-            admin_email: 'admin@guard.edu',
-            admin_password: 'admin123',
             global_status: 'LOCKED',
             block_doh: true,
             block_vpn: true,
@@ -139,8 +207,10 @@ async function getFirebaseStoreToken() {
     if (cachedFbIdToken && now < cachedFbIdTokenExpMs) {
         return cachedFbIdToken;
     }
-    const storeEmail = 'cloudstate_v2@guard.edu';
-    const storePass = 'GuardCloudState#2026';
+    // Kredensial akun penyimpanan state diambil dari Environment Variables (tidak pernah ditulis di kode).
+    if (!FB_STORE_EMAIL || !FB_STORE_PASSWORD) return null;
+    const storeEmail = FB_STORE_EMAIL;
+    const storePass = FB_STORE_PASSWORD;
     try {
         let res = await fetchWithTimeout(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_API_KEY}`, {
             method: 'POST',
@@ -212,26 +282,7 @@ function unpackCloudPayload(photoUrl) {
 }
 
 async function readFromFirebase() {
-    const now = Date.now();
-    // 1. Coba Cloud Firestore REST API jika aturan mengizinkan
-    if (now >= firestoreBackoffUntil) {
-        try {
-            const res = await fetchWithTimeout(FIRESTORE_DOC_URL, { method: 'GET' }, 900);
-            if (res.ok) {
-                const doc = await res.json();
-                const rawPayload = doc?.fields?.payload?.stringValue;
-                if (rawPayload) {
-                    return JSON.parse(rawPayload);
-                }
-            } else if (res.status === 403 || res.status === 404) {
-                firestoreBackoffUntil = now + 120000;
-            }
-        } catch (e) {
-            firestoreBackoffUntil = now + 60000;
-        }
-    }
-
-    // 2. Gunakan Firebase Cloud State Store (blockai-ba569 via IdentityToolkit) yang selalu aktif lintas container Vercel
+    // Firebase Cloud State Store (blockai-ba569 via IdentityToolkit, akun khusus dari env) — lintas container Vercel
     try {
         const idToken = await getFirebaseStoreToken();
         if (idToken) {
@@ -253,8 +304,7 @@ async function readFromFirebase() {
 }
 
 async function writeToFirebase(data) {
-    const now = Date.now();
-    // 1. Simpan ke Firebase Cloud State Store (blockai-ba569) agar semua container Vercel sinkron 100%
+    // Simpan ke Firebase Cloud State Store (blockai-ba569) agar semua container Vercel sinkron
     try {
         const idToken = await getFirebaseStoreToken();
         if (idToken) {
@@ -266,27 +316,6 @@ async function writeToFirebase(data) {
             }, 1500);
         }
     } catch (e) {}
-
-    // 2. Simpan ke Cloud Firestore REST API jika aktif
-    if (now >= firestoreBackoffUntil) {
-        try {
-            const res = await fetchWithTimeout(FIRESTORE_DOC_URL, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    fields: {
-                        payload: { stringValue: JSON.stringify(data) },
-                        updatedAt: { stringValue: new Date().toISOString() }
-                    }
-                })
-            }, 900);
-            if (res.status === 403 || res.status === 404) {
-                firestoreBackoffUntil = now + 120000;
-            }
-        } catch (e) {
-            firestoreBackoffUntil = now + 60000;
-        }
-    }
 }
 
 async function readData(forceCloud = false) {
@@ -416,12 +445,16 @@ function ensureRoomsConfig(data) {
     if (!data.config.room_blocklists || typeof data.config.room_blocklists !== 'object') {
         data.config.room_blocklists = {};
     }
-    data.config.rooms.forEach((r, idx) => {
+    // Hapus kredensial lama yang dulu ikut tersimpan di state (kini hanya lewat Environment Variables)
+    delete data.config.admin_email;
+    delete data.config.admin_password;
+    delete data.config.unlock_pin;
+    data.config.rooms.forEach((r) => {
         if (!data.config.room_statuses[r]) {
             data.config.room_statuses[r] = data.config.global_status || 'LOCKED';
         }
         if (!data.config.room_pins[r]) {
-            data.config.room_pins[r] = String(202601 + idx);
+            data.config.room_pins[r] = randomPin();
         }
     });
     if (data.config.rooms.length > 0 && (!data.config.room_code || !data.config.rooms.includes(data.config.room_code))) {
@@ -470,7 +503,7 @@ function registerRoomByAdmin(data, roomCode, customPin = '') {
     if (customPin && String(customPin).trim()) {
         data.config.room_pins[norm] = String(customPin).trim();
     } else if (!data.config.room_pins[norm]) {
-        data.config.room_pins[norm] = String(202600 + data.config.rooms.length);
+        data.config.room_pins[norm] = randomPin();
     }
     return norm;
 }
@@ -496,7 +529,8 @@ function addLog(data, nim, name, hostname, type, message, severity = 'INFO', roo
 module.exports = async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Client-Token');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Admin-Token, X-Client-Token');
+    res.setHeader('Cache-Control', 'no-store');
 
     if (req.method === 'OPTIONS') {
         return res.status(200).end();
@@ -506,6 +540,35 @@ module.exports = async (req, res) => {
     const action = (req.query && req.query.action) || body.action || '';
     const clientIp = ((req.headers && req.headers['x-forwarded-for']) || req.socket?.remoteAddress || '127.0.0.1').split(',')[0].trim();
 
+    // ---------------------------------------------------------------
+    // LOGIN ADMIN — diverifikasi terhadap Environment Variables saja
+    // ---------------------------------------------------------------
+    if (action === 'admin_login') {
+        if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
+            return res.status(503).json({
+                ok: false,
+                error: 'Login Admin belum dikonfigurasi. Atur ADMIN_EMAIL dan ADMIN_PASSWORD di Environment Variables server.'
+            });
+        }
+        const email = String(body.email || '').trim().toLowerCase();
+        const password = String(body.password || '');
+        if (safeEqual(email, ADMIN_EMAIL) && safeEqual(password, ADMIN_PASSWORD)) {
+            return res.status(200).json({
+                ok: true,
+                token: signAdminToken(ADMIN_EMAIL),
+                expires_in: Math.floor(ADMIN_TOKEN_TTL_MS / 1000),
+                user: { email: ADMIN_EMAIL, name: 'Dosen / Pengawas Ujian', role: 'ADMIN' }
+            });
+        }
+        await sleep(600); // perlambat percobaan tebak password
+        return res.status(401).json({ ok: false, error: 'Email atau Kata Sandi tidak sesuai.' });
+    }
+
+    // Semua aksi Dashboard Admin wajib membawa token login yang valid
+    if (ADMIN_ACTIONS.has(action) && !verifyAdminToken(getRequestToken(req))) {
+        return res.status(401).json({ ok: false, auth_required: true, error: 'Sesi Admin tidak valid atau telah berakhir. Silakan login kembali.' });
+    }
+
     try {
         const isMutating = action !== 'dashboard_state' && action !== 'state' && action !== 'get_rooms';
         const data = await readData(isMutating);
@@ -513,26 +576,6 @@ module.exports = async (req, res) => {
         ensureRoomsConfig(data);
 
         switch (action) {
-            case 'admin_login': {
-                const email = String(body.email || '').trim().toLowerCase();
-                const password = String(body.password || '').trim();
-                const validEmail = String(data.config.admin_email || 'admin@guard.edu').toLowerCase();
-                const validPass = String(data.config.admin_password || 'admin123');
-                const masterPin = String(data.config.unlock_pin || '202699');
-
-                if ((email === validEmail || email === 'admin' || email === 'pengawas@guard.edu') &&
-                    (password === validPass || password === masterPin)) {
-                    return res.status(200).json({
-                        ok: true,
-                        user: {
-                            email: email.includes('@') ? email : validEmail,
-                            name: 'Dosen / Pengawas Ujian',
-                            role: 'ADMIN'
-                        }
-                    });
-                }
-                return res.status(401).json({ ok: false, error: 'Email atau Kata Sandi / PIN Pengawas tidak sesuai.' });
-            }
 
             case 'rehydrate_state':
             case 'sync_from_firebase': {
@@ -587,7 +630,7 @@ module.exports = async (req, res) => {
                 const existing = data.students[studentId] || null;
                 const roomDefaultState = data.config.room_statuses[normalizedRoom] || data.config.global_status || 'LOCKED';
                 const desiredState = (existing && existing.room_code === normalizedRoom && existing.target_status) ? existing.target_status : roomDefaultState;
-                const roomPin = data.config.room_pins[normalizedRoom] || data.config.unlock_pin || '202699';
+                const roomPin = data.config.room_pins[normalizedRoom] || '';
                 const effectiveBl = getEffectiveBlocklist(data, normalizedRoom);
                 const nowSec = Math.floor(Date.now() / 1000);
 
@@ -608,6 +651,8 @@ module.exports = async (req, res) => {
                     blocked_domains_count: (effectiveBl.domains || []).length,
                     killed_processes_count: existing?.killed_processes_count || 0,
                     vpn_detected: false,
+                    pin_fail: existing?.pin_fail || 0,
+                    pin_lock_until: existing?.pin_lock_until || 0,
                     joined_at: existing?.joined_at || nowFormatted(),
                     last_seen: nowSec,
                     last_seen_str: nowFormatted()
@@ -622,7 +667,7 @@ module.exports = async (req, res) => {
                     rooms: data.config.rooms,
                     config: {
                         room_code: normalizedRoom,
-                        room_pin: roomPin,
+                        room_pin_hash: roomPin ? roomPinHash(normalizedRoom, roomPin) : '',
                         target_status: desiredState,
                         block_doh: data.config.block_doh,
                         block_vpn: data.config.block_vpn,
@@ -708,17 +753,17 @@ module.exports = async (req, res) => {
                 }
 
                 await writeData(data);
-                const roomPin = data.config.room_pins[st.room_code] || data.config.unlock_pin || '202699';
+                const roomPin = data.config.room_pins[st.room_code] || '';
 
                 return res.status(200).json({
                     ok: true,
                     room_code: st.room_code,
-                    room_pin: roomPin,
+                    room_pin_hash: roomPin ? roomPinHash(st.room_code, roomPin) : '',
                     target_status: resolvedTarget,
                     rooms: data.config.rooms,
                     config: {
                         room_code: st.room_code,
-                        room_pin: roomPin,
+                        room_pin_hash: roomPin ? roomPinHash(st.room_code, roomPin) : '',
                         block_doh: data.config.block_doh,
                         block_vpn: data.config.block_vpn,
                         quarantine_extensions: data.config.quarantine_extensions,
@@ -754,13 +799,21 @@ module.exports = async (req, res) => {
                 const nim = String(body.nim || '').trim();
                 const name = String(body.name || 'Mahasiswa').trim();
                 const hostname = String(body.hostname || 'PC').trim();
-                const masterPin = String(data.config.unlock_pin || '202699');
 
                 const studentId = nim.replace(/[^a-zA-Z0-9_-]/g, '_');
                 const stRoom = String(body.room_code || data.students[studentId]?.room_code || data.config.room_code || '').trim().toUpperCase();
                 const roomPin = String(data.config.room_pins?.[stRoom] || '');
+                const stRec = data.students[studentId];
 
-                if (pin && (pin === roomPin || pin === masterPin)) {
+                // Anti brute-force: 5x salah → dikunci 2 menit per PC
+                if (stRec && (stRec.pin_lock_until || 0) > Date.now()) {
+                    const waitSec = Math.ceil((stRec.pin_lock_until - Date.now()) / 1000);
+                    return res.status(429).json({ ok: false, unlocked: false, error: `Terlalu banyak percobaan PIN salah. Coba lagi dalam ${waitSec} detik.` });
+                }
+
+                const pinOk = pin && ((roomPin && safeEqual(pin, roomPin)) || (MASTER_PIN && safeEqual(pin, MASTER_PIN)));
+                if (pinOk) {
+                    if (stRec) { stRec.pin_fail = 0; stRec.pin_lock_until = 0; }
                     const cmdTs = Date.now();
                     data.config.updated_at = new Date(cmdTs).toISOString();
                     if (data.students[studentId]) {
@@ -772,9 +825,18 @@ module.exports = async (req, res) => {
                     await writeData(data);
                     return res.status(200).json({ ok: true, unlocked: true });
                 } else {
-                    addLog(data, nim, name, hostname, 'PIN_FAILED', `Percobaan PIN gagal di ruangan [${stRoom}] (PIN salah: ${pin}).`, 'WARNING', stRoom);
+                    let lockMsg = '';
+                    if (stRec) {
+                        stRec.pin_fail = (stRec.pin_fail || 0) + 1;
+                        if (stRec.pin_fail >= 5) {
+                            stRec.pin_lock_until = Date.now() + 2 * 60 * 1000;
+                            stRec.pin_fail = 0;
+                            lockMsg = ' PC dikunci dari percobaan PIN selama 2 menit.';
+                        }
+                    }
+                    addLog(data, nim, name, hostname, 'PIN_FAILED', `Percobaan PIN gagal di ruangan [${stRoom}].${lockMsg}`, 'WARNING', stRoom);
                     await writeData(data);
-                    return res.status(403).json({ ok: false, unlocked: false, error: `PIN Otorisasi untuk ruangan [${stRoom}] salah!` });
+                    return res.status(403).json({ ok: false, unlocked: false, error: `PIN Otorisasi untuk ruangan [${stRoom}] salah!${lockMsg}` });
                 }
             }
 

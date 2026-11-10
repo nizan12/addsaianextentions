@@ -1005,6 +1005,7 @@ namespace AIBlockerGuard
         private bool startMinimizedInTray = false;
         private bool allowProcessExit = false;
         private string offlinePin = "202699";
+        private string offlinePinHash = "";
         private string activeRoomCode = "";
         private int killedCounter = 0;
         private List<string> quarantinedExtensions = new List<string>();
@@ -1881,7 +1882,11 @@ namespace AIBlockerGuard
                         {
                             targetStatus = Convert.ToString(cfg["target_status"]);
                         }
-                        if (cfg.ContainsKey("room_pin") && !string.IsNullOrEmpty(Convert.ToString(cfg["room_pin"])))
+                        if (cfg.ContainsKey("room_pin_hash") && !string.IsNullOrEmpty(Convert.ToString(cfg["room_pin_hash"])))
+                        {
+                            offlinePinHash = Convert.ToString(cfg["room_pin_hash"]);
+                        }
+                        else if (cfg.ContainsKey("room_pin") && !string.IsNullOrEmpty(Convert.ToString(cfg["room_pin"])))
                         {
                             offlinePin = Convert.ToString(cfg["room_pin"]);
                         }
@@ -1966,8 +1971,12 @@ namespace AIBlockerGuard
                         if (bl != null) UpdateLocalBlocklistFromServer(bl);
                     }
 
-                    // Sinkronkan PIN khusus ruangan dari server
-                    if (res.ContainsKey("room_pin") && !string.IsNullOrEmpty(Convert.ToString(res["room_pin"])))
+                    // Sinkronkan PIN hash khusus ruangan dari server untuk cadangan offline aman
+                    if (res.ContainsKey("room_pin_hash") && !string.IsNullOrEmpty(Convert.ToString(res["room_pin_hash"])))
+                    {
+                        offlinePinHash = Convert.ToString(res["room_pin_hash"]);
+                    }
+                    else if (res.ContainsKey("room_pin") && !string.IsNullOrEmpty(Convert.ToString(res["room_pin"])))
                     {
                         offlinePin = Convert.ToString(res["room_pin"]);
                     }
@@ -2134,6 +2143,23 @@ namespace AIBlockerGuard
         // ====================================================================
         // OTORISASI PIN RUANGAN / ADMIN UNTUK BUKA KUNCI DARURAT / MATIKAN AGEN
         // ====================================================================
+        private static string ComputeRoomPinHash(string room, string pin)
+        {
+            if (string.IsNullOrEmpty(room) || string.IsNullOrEmpty(pin)) return "";
+            try
+            {
+                byte[] salt = Encoding.UTF8.GetBytes("guard-pin:" + room.Trim().ToUpperInvariant());
+                using (var pbkdf2 = new System.Security.Cryptography.Rfc2898DeriveBytes(pin.Trim(), salt, 20000))
+                {
+                    byte[] hash = pbkdf2.GetBytes(32);
+                    StringBuilder sb = new StringBuilder(hash.Length * 2);
+                    foreach (byte b in hash) sb.Append(b.ToString("x2"));
+                    return sb.ToString();
+                }
+            }
+            catch { return ""; }
+        }
+
         private async Task<bool> VerifyAdminPinAsync(string inputPin)
         {
             if (string.IsNullOrEmpty(inputPin)) return false;
@@ -2156,7 +2182,17 @@ namespace AIBlockerGuard
                 }
             }
 
-            return inputPin.Trim() == offlinePin || inputPin.Trim() == "202699";
+            // Verifikasi offline: jika server mengirimkan hash, verifikasi terhadap salted PBKDF2 hash
+            if (!string.IsNullOrEmpty(offlinePinHash))
+            {
+                string inputHash = ComputeRoomPinHash(activeRoomCode, inputPin);
+                if (!string.IsNullOrEmpty(inputHash) && string.Equals(inputHash, offlinePinHash, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return inputPin.Trim() == offlinePin;
         }
 
         private async void BtnUnlockWithPin_Click(object sender, EventArgs e)

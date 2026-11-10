@@ -915,12 +915,43 @@
         }
 
         // ====================================================================
-        // OTENTIKASI LOGIN DASHBOARD PENGAWAS
+        // OTENTIKASI & KEAMANAN DASHBOARD PENGAWAS
         // ====================================================================
+        // Transparent fetch interceptor: otomatis melampirkan header Authorization: Bearer <token>
+        // ke semua request API admin, dan menangani redirect jika sesi berakhir (401).
+        const _nativeFetch = window.fetch;
+        window.fetch = function(url, options = {}) {
+            const token = sessionStorage.getItem('guard_admin_token');
+            if (token && typeof url === 'string' && url.includes('api/')) {
+                options = options || {};
+                options.headers = options.headers || {};
+                if (options.headers instanceof Headers) {
+                    if (!options.headers.has('Authorization')) {
+                        options.headers.set('Authorization', 'Bearer ' + token);
+                    }
+                } else {
+                    if (!options.headers['Authorization'] && !options.headers['authorization']) {
+                        options.headers['Authorization'] = 'Bearer ' + token;
+                    }
+                }
+            }
+            return _nativeFetch.call(this, url, options).then(res => {
+                if (res.status === 401 && typeof url === 'string' && url.includes('api/') && !url.includes('admin_login')) {
+                    res.clone().json().then(j => {
+                        if (j && j.auth_required) {
+                            handleAdminLogout('Sesi Anda telah berakhir. Silakan login kembali.');
+                        }
+                    }).catch(() => {});
+                }
+                return res;
+            });
+        };
+
         function checkExistingAuthSession() {
             const savedEmail = sessionStorage.getItem('guard_admin_auth');
-            if (savedEmail) {
-                completeAdminAuth(savedEmail);
+            const savedToken = sessionStorage.getItem('guard_admin_token');
+            if (savedEmail && savedToken) {
+                completeAdminAuth(savedEmail, savedToken);
             }
         }
 
@@ -928,8 +959,11 @@
         const explicitlyRemovedStudentIds = new Set();
         const explicitlyDeletedRooms = new Set();
 
-        window.completeAdminAuth = function(email) {
+        window.completeAdminAuth = function(email, token) {
             sessionStorage.setItem('guard_admin_auth', email);
+            if (token) {
+                sessionStorage.setItem('guard_admin_token', token);
+            }
             const gate = document.getElementById('authGateOverlay');
             if (gate) gate.classList.add('hidden');
             const emailEl = document.getElementById('sidebarAdminEmail');
@@ -939,6 +973,7 @@
                 searchInp.value = '';
                 renderCurrentStudents();
             }
+            fetchDashboard();
         };
 
         async function handleAdminLogin(e) {
@@ -952,23 +987,7 @@
             btn.textContent = 'Memverifikasi Kredensial...';
 
             try {
-                // 1. Coba login melalui Cloud Auth jika akun terdaftar
-                if (window.__firebaseApp && window.__firebaseApp.auth && email.includes('@')) {
-                    try {
-                        const cred = await window.__firebaseApp.signInWithEmailAndPassword(window.__firebaseApp.auth, email, password);
-                        if (cred && cred.user) {
-                            completeAdminAuth(cred.user.email);
-                            showToast('Selamat datang di Konsol Pengawas GuardConsole');
-                            btn.disabled = false;
-                            btn.textContent = 'Masuk ke Konsol Pengawas';
-                            return;
-                        }
-                    } catch (fbErr) {
-                        // Lanjutkan verifikasi ke kredensial server Admin
-                    }
-                }
-
-                // 2. Verifikasi melalui server Admin API
+                // 1. Verifikasi kredensial ke Server API (Vercel Node.js / PHP) dan dapatkan token HMAC
                 const res = await fetch('api/index.php?action=admin_login', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
@@ -976,7 +995,15 @@
                 });
                 const data = await res.json();
                 if (data && data.ok) {
-                    completeAdminAuth(data.user?.email || email);
+                    completeAdminAuth(data.user?.email || email, data.token);
+
+                    // 2. Sinkronkan juga sesi Firebase Auth jika tersedia
+                    if (window.__firebaseApp && window.__firebaseApp.auth && email.includes('@')) {
+                        try {
+                            await window.__firebaseApp.signInWithEmailAndPassword(window.__firebaseApp.auth, email, password);
+                        } catch (fbErr) {}
+                    }
+
                     showToast('Selamat datang di Konsol Pengawas GuardConsole');
                 } else {
                     errBox.textContent = data.error || 'Email atau Kata Sandi tidak valid.';
@@ -991,8 +1018,9 @@
             }
         }
 
-        async function handleAdminLogout() {
+        async function handleAdminLogout(noticeMessage = '') {
             sessionStorage.removeItem('guard_admin_auth');
+            sessionStorage.removeItem('guard_admin_token');
             if (window.__firebaseApp && window.__firebaseApp.auth) {
                 try { await window.__firebaseApp.signOut(window.__firebaseApp.auth); } catch (e) {}
             }
@@ -1000,6 +1028,11 @@
             const passInp = document.getElementById('loginPassword');
             if (emailInp) { emailInp.value = ''; emailInp.setAttribute('readonly', 'readonly'); }
             if (passInp) { passInp.value = ''; passInp.setAttribute('readonly', 'readonly'); }
+            const errBox = document.getElementById('loginErrorBox');
+            if (errBox && noticeMessage) {
+                errBox.textContent = noticeMessage;
+                errBox.classList.remove('hidden');
+            }
             document.getElementById('authGateOverlay').classList.remove('hidden');
         }
 
@@ -1455,6 +1488,7 @@
         }
 
         async function fetchDashboard() {
+            if (!sessionStorage.getItem('guard_admin_token')) return;
             try {
                 const res = await fetch('api/index.php?action=dashboard_state');
                 const data = await res.json();

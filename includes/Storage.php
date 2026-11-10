@@ -25,9 +25,6 @@ class Storage {
                 'rooms' => [],
                 'room_statuses' => [],
                 'room_pins' => [],
-                'unlock_pin' => '202699',
-                'admin_email' => 'admin@guard.edu',
-                'admin_password' => 'admin123',
                 'global_status' => 'LOCKED', // LOCKED | UNLOCKED
                 'block_doh' => true,
                 'block_vpn' => true,
@@ -209,12 +206,13 @@ class Storage {
         if (empty($data['config']['room_blocklists']) || !is_array($data['config']['room_blocklists'])) {
             $data['config']['room_blocklists'] = [];
         }
-        foreach (array_values($data['config']['rooms']) as $idx => $r) {
+        unset($data['config']['admin_email'], $data['config']['admin_password'], $data['config']['unlock_pin']);
+        foreach (array_values($data['config']['rooms']) as $r) {
             if (!isset($data['config']['room_statuses'][$r])) {
                 $data['config']['room_statuses'][$r] = $data['config']['global_status'] ?? 'LOCKED';
             }
             if (empty($data['config']['room_pins'][$r])) {
-                $data['config']['room_pins'][$r] = (string)(202601 + $idx);
+                $data['config']['room_pins'][$r] = (string)random_int(100000, 999999);
             }
         }
         if (empty($data['config']['rooms'])) {

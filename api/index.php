@@ -7,7 +7,8 @@
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, X-Client-Token');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Admin-Token, X-Client-Token');
+header('Cache-Control: no-store');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
@@ -15,6 +16,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 require_once __DIR__ . '/../includes/Storage.php';
+
+$adminEmail = strtolower(trim(getenv('ADMIN_EMAIL') ?: 'admin@guard.edu'));
+$adminPassword = (string)(getenv('ADMIN_PASSWORD') ?: 'admin123');
+$masterPin = trim(getenv('MASTER_PIN') ?: '202699');
+$authSecret = getenv('AUTH_SECRET') ?: hash('sha256', "guard-auth-php|{$adminPassword}|{$masterPin}");
+
+function signAdminToken($email, $secret) {
+    $payload = rtrim(strtr(base64_encode(json_encode(['e' => $email, 'x' => time() + 43200])), '+/', '-_'), '=');
+    $sig = rtrim(strtr(base64_encode(hash_hmac('sha256', $payload, $secret, true)), '+/', '-_'), '=');
+    return "{$payload}.{$sig}";
+}
+
+function verifyAdminToken($token, $secret) {
+    if (!$token || strpos($token, '.') === false) return null;
+    $parts = explode('.', $token, 2);
+    if (count($parts) !== 2) return null;
+    list($payload, $sig) = $parts;
+    $expectedSig = rtrim(strtr(base64_encode(hash_hmac('sha256', $payload, $secret, true)), '+/', '-_'), '=');
+    if (!hash_equals($expectedSig, $sig)) return null;
+    $json = base64_decode(strtr($payload, '-_', '+/'));
+    $obj = json_decode($json, true);
+    if (!$obj || !isset($obj['x']) || time() > $obj['x']) return null;
+    return $obj;
+}
+
+function getRequestToken() {
+    $headers = function_exists('getallheaders') ? getallheaders() : [];
+    $auth = $headers['Authorization'] ?? $headers['authorization'] ?? ($_SERVER['HTTP_AUTHORIZATION'] ?? '');
+    if (preg_match('/^Bearer\s+(.*)$/i', $auth, $m)) return trim($m[1]);
+    return trim($headers['X-Admin-Token'] ?? $headers['x-admin-token'] ?? ($_SERVER['HTTP_X_ADMIN_TOKEN'] ?? ''));
+}
+
+function roomPinHash($room, $pin) {
+    return hash_pbkdf2('sha1', (string)$pin, "guard-pin:" . strtoupper((string)$room), 20000, 64);
+}
 
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 $rawInput = file_get_contents('php://input');
@@ -33,28 +69,38 @@ function respond($data, $code = 200) {
     exit;
 }
 
+// Perlindungan Aksi Dashboard Admin
+$adminActions = [
+    'state', 'dashboard_state', 'rehydrate_state', 'sync_from_firebase',
+    'set_global_status', 'add_room', 'rename_room', 'delete_room',
+    'set_student_command', 'update_config', 'save_config',
+    'update_blocklist', 'save_blocklist', 'clear_logs'
+];
+
+if (in_array($action, $adminActions, true) && !verifyAdminToken(getRequestToken(), $authSecret)) {
+    respond(['ok' => false, 'auth_required' => true, 'error' => 'Sesi Admin tidak valid atau telah berakhir. Silakan login kembali.'], 401);
+}
+
 try {
     switch ($action) {
         case 'admin_login':
-            $data = Storage::read();
             $email = strtolower(trim($jsonInput['email'] ?? ''));
             $password = trim($jsonInput['password'] ?? '');
-            $validEmail = strtolower(trim($data['config']['admin_email'] ?? 'admin@guard.edu'));
-            $validPass = (string)($data['config']['admin_password'] ?? 'admin123');
-            $masterPin = (string)($data['config']['unlock_pin'] ?? '202699');
 
-            if (in_array($email, [$validEmail, 'admin', 'pengawas@guard.edu'], true) &&
-                ($password === $validPass || $password === $masterPin)) {
+            if (hash_equals($adminEmail, $email) && hash_equals($adminPassword, $password)) {
                 respond([
                     'ok' => true,
+                    'token' => signAdminToken($adminEmail, $authSecret),
+                    'expires_in' => 43200,
                     'user' => [
-                        'email' => strpos($email, '@') !== false ? $email : $validEmail,
+                        'email' => $adminEmail,
                         'name' => 'Dosen / Pengawas Ujian',
                         'role' => 'ADMIN'
                     ]
                 ]);
             }
-            respond(['ok' => false, 'error' => 'Email atau Kata Sandi / PIN Pengawas tidak sesuai.'], 401);
+            usleep(500000);
+            respond(['ok' => false, 'error' => 'Email atau Kata Sandi tidak sesuai.'], 401);
             break;
 
         case 'sync_from_firebase':
@@ -117,7 +163,7 @@ try {
                 $desiredState = ($existing && ($existing['room_code'] ?? '') === $normalizedRoom && !empty($existing['target_status']))
                     ? $existing['target_status']
                     : $roomDefaultState;
-                $roomPin = $data['config']['room_pins'][$normalizedRoom] ?? ($data['config']['unlock_pin'] ?? '202699');
+                $roomPin = (string)($data['config']['room_pins'][$normalizedRoom] ?? '');
 
                 $data['students'][$studentId] = [
                     'id' => $studentId,
@@ -135,6 +181,8 @@ try {
                     'blocked_domains_count' => count($data['blocklist']['domains'] ?? []),
                     'killed_processes_count' => $existing['killed_processes_count'] ?? 0,
                     'vpn_detected' => false,
+                    'pin_fail' => $existing['pin_fail'] ?? 0,
+                    'pin_lock_until' => $existing['pin_lock_until'] ?? 0,
                     'joined_at' => $existing['joined_at'] ?? date('Y-m-d H:i:s'),
                     'last_seen' => time(),
                     'last_seen_str' => date('Y-m-d H:i:s')
@@ -157,7 +205,7 @@ try {
                     'rooms' => $data['config']['rooms'],
                     'config' => [
                         'room_code' => $normalizedRoom,
-                        'room_pin' => $roomPin,
+                        'room_pin_hash' => $roomPin !== '' ? roomPinHash($normalizedRoom, $roomPin) : '',
                         'target_status' => $desiredState,
                         'block_doh' => $data['config']['block_doh'],
                         'block_vpn' => $data['config']['block_vpn'],
@@ -252,7 +300,7 @@ try {
                 }
 
                 $targetStatus = $student['target_status'] ?? ($data['config']['room_statuses'][$student['room_code']] ?? $globalTarget);
-                $roomPin = $data['config']['room_pins'][$student['room_code']] ?? ($data['config']['unlock_pin'] ?? '202699');
+                $roomPin = (string)($data['config']['room_pins'][$student['room_code']] ?? '');
 
                 return [
                     'ok' => true,
@@ -260,7 +308,7 @@ try {
                     'rooms' => $data['config']['rooms'],
                     'config' => [
                         'room_code' => $student['room_code'],
-                        'room_pin' => $roomPin,
+                        'room_pin_hash' => $roomPin !== '' ? roomPinHash($student['room_code'], $roomPin) : '',
                         'block_doh' => $data['config']['block_doh'],
                         'block_vpn' => $data['config']['block_vpn'],
                         'quarantine_extensions' => $data['config']['quarantine_extensions'],
@@ -304,23 +352,41 @@ try {
             $hostname = trim($jsonInput['hostname'] ?? 'PC');
             $reqRoom = strtoupper(trim($jsonInput['room_code'] ?? ''));
 
-            $result = Storage::update(function (&$data) use ($pin, $nim, $name, $hostname, $reqRoom) {
+            $result = Storage::update(function (&$data) use ($pin, $nim, $name, $hostname, $reqRoom, $masterPin) {
                 Storage::ensureRoomsConfig($data);
-                $masterPin = (string)($data['config']['unlock_pin'] ?? '202699');
                 $studentId = preg_replace('/[^a-zA-Z0-9_-]/', '_', $nim);
-                $stRoom = $reqRoom ?: ($data['students'][$studentId]['room_code'] ?? ($data['config']['room_code'] ?? 'KUIS-AI-01'));
+                $stRoom = $reqRoom ?: ($data['students'][$studentId]['room_code'] ?? ($data['config']['room_code'] ?? ''));
                 $roomPin = (string)($data['config']['room_pins'][$stRoom] ?? '');
 
-                if ($pin !== '' && (($roomPin !== '' && hash_equals($roomPin, $pin)) || hash_equals($masterPin, $pin))) {
+                // Anti brute-force: 5x gagal → lockout 2 menit per PC
+                if (isset($data['students'][$studentId]) && ($data['students'][$studentId]['pin_lock_until'] ?? 0) > time()) {
+                    $waitSec = (int)($data['students'][$studentId]['pin_lock_until'] - time());
+                    return ['ok' => false, 'unlocked' => false, 'error' => "Terlalu banyak percobaan PIN salah. Coba lagi dalam {$waitSec} detik."];
+                }
+
+                $pinValid = ($pin !== '' && (($roomPin !== '' && hash_equals($roomPin, $pin)) || ($masterPin !== '' && hash_equals($masterPin, $pin))));
+                if ($pinValid) {
                     if (isset($data['students'][$studentId])) {
                         $data['students'][$studentId]['target_status'] = 'UNLOCKED';
                         $data['students'][$studentId]['status'] = 'UNLOCKED';
+                        $data['students'][$studentId]['pin_fail'] = 0;
+                        $data['students'][$studentId]['pin_lock_until'] = 0;
                     }
                     Storage::addLog($data, $nim, $name, $hostname, 'PIN_UNLOCK', "Kunci dibuka / otorisasi keluar menggunakan PIN Ruangan [{$stRoom}] yang valid.", 'INFO', $stRoom);
                     return ['ok' => true, 'unlocked' => true];
                 } else {
-                    Storage::addLog($data, $nim, $name, $hostname, 'PIN_FAILED', "Percobaan PIN gagal di ruangan [{$stRoom}] (PIN salah: {$pin}).", 'WARNING', $stRoom);
-                    return ['ok' => false, 'unlocked' => false, 'error' => "PIN Otorisasi untuk ruangan [{$stRoom}] salah!"];
+                    $lockMsg = '';
+                    if (isset($data['students'][$studentId])) {
+                        $fails = ($data['students'][$studentId]['pin_fail'] ?? 0) + 1;
+                        $data['students'][$studentId]['pin_fail'] = $fails;
+                        if ($fails >= 5) {
+                            $data['students'][$studentId]['pin_lock_until'] = time() + 120;
+                            $data['students'][$studentId]['pin_fail'] = 0;
+                            $lockMsg = ' PC dikunci dari percobaan PIN selama 2 menit.';
+                        }
+                    }
+                    Storage::addLog($data, $nim, $name, $hostname, 'PIN_FAILED', "Percobaan PIN gagal di ruangan [{$stRoom}].{$lockMsg}", 'WARNING', $stRoom);
+                    return ['ok' => false, 'unlocked' => false, 'error' => "PIN Otorisasi untuk ruangan [{$stRoom}] salah!{$lockMsg}"];
                 }
             });
 
