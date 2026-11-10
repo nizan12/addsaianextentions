@@ -747,7 +747,7 @@ namespace AIBlockerGuard
             configPanel.Controls.Add(rbOfflineMode);
 
             configPanel.Controls.Add(MakeLabel("Endpoint Server:", 18, 136));
-            txtServerUrl = MakeTextBox("http://localhost/blockwebanaiinideforquiz/api/index.php", 125, 133, 395);
+            txtServerUrl = MakeTextBox("https://blockai-wheat.vercel.app/api/index.php", 125, 133, 395);
             configPanel.Controls.Add(txtServerUrl);
 
             chkDryRun = new CheckBox
