@@ -206,6 +206,9 @@ class Storage {
         if (empty($data['config']['room_pins']) || !is_array($data['config']['room_pins'])) {
             $data['config']['room_pins'] = [];
         }
+        if (empty($data['config']['room_blocklists']) || !is_array($data['config']['room_blocklists'])) {
+            $data['config']['room_blocklists'] = [];
+        }
         foreach (array_values($data['config']['rooms']) as $idx => $r) {
             if (!isset($data['config']['room_statuses'][$r])) {
                 $data['config']['room_statuses'][$r] = $data['config']['global_status'] ?? 'LOCKED';
@@ -226,6 +229,21 @@ class Storage {
             $data['blocklist']['domains'] = array_values(array_unique(array_merge($data['blocklist']['domains'] ?? [], $defaults['domains'])));
             $data['blocklist']['processes'] = array_values(array_unique(array_merge($data['blocklist']['processes'] ?? [], $defaults['processes'])));
         }
+    }
+
+    public static function getEffectiveBlocklist(&$data, $roomCode = '') {
+        $norm = strtoupper(trim((string)$roomCode));
+        $globalBl = $data['blocklist'] ?? self::getDefaultSchema()['blocklist'];
+        if ($norm !== '' && $norm !== 'ALL' && !empty($data['config']['room_blocklists'][$norm]) && is_array($data['config']['room_blocklists'][$norm])) {
+            $rb = $data['config']['room_blocklists'][$norm];
+            return [
+                'domains' => isset($rb['domains']) && is_array($rb['domains']) ? $rb['domains'] : ($globalBl['domains'] ?? []),
+                'processes' => isset($rb['processes']) && is_array($rb['processes']) ? $rb['processes'] : ($globalBl['processes'] ?? []),
+                'ide_extensions' => isset($rb['ide_extensions']) && is_array($rb['ide_extensions']) ? $rb['ide_extensions'] : ($globalBl['ide_extensions'] ?? []),
+                'local_ai_ports' => $globalBl['local_ai_ports'] ?? [11434, 1234, 1337, 8080, 5001]
+            ];
+        }
+        return $globalBl;
     }
 
     public static function registerRoomIfNeeded(&$data, $roomCode, $customPin = '') {

@@ -16,7 +16,7 @@ const FIREBASE_PROJECT_ID = 'blockai-ba569';
 const FIREBASE_API_KEY = process.env.FIREBASE_API_KEY || 'AIzaSyBMMOxxu21GYPboTL6RiX3jDAFfgMb0gNY';
 const FIRESTORE_DOC_URL = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/guard_system/main_state`;
 const RTDB_URL = process.env.FIREBASE_DB_URL || `https://${FIREBASE_PROJECT_ID}-default-rtdb.firebaseio.com/guard_system.json`;
-const FB_STORE_PREFIX = 'https://guard.db/v2/';
+const FB_STORE_PREFIX = 'https://guard.db/v3/';
 
 function getDefaultSchema() {
     return {
@@ -26,6 +26,7 @@ function getDefaultSchema() {
             deleted_rooms: [],
             room_statuses: {},
             room_pins: {},
+            room_blocklists: {},
             unlock_pin: '202699',
             admin_email: 'admin@guard.edu',
             admin_password: 'admin123',
@@ -396,6 +397,9 @@ function ensureRoomsConfig(data) {
     if (!data.config.room_pins || typeof data.config.room_pins !== 'object') {
         data.config.room_pins = {};
     }
+    if (!data.config.room_blocklists || typeof data.config.room_blocklists !== 'object') {
+        data.config.room_blocklists = {};
+    }
     data.config.rooms.forEach((r, idx) => {
         if (!data.config.room_statuses[r]) {
             data.config.room_statuses[r] = data.config.global_status || 'LOCKED';
@@ -419,6 +423,21 @@ function ensureRoomsConfig(data) {
         data.blocklist.processes = Array.from(new Set([...(data.blocklist.processes || []), ...defaults.processes]));
         data.blocklist.ide_extensions = Array.from(new Set([...(data.blocklist.ide_extensions || []), ...defaults.ide_extensions]));
     }
+}
+
+function getEffectiveBlocklist(data, roomCode) {
+    const norm = String(roomCode || '').trim().toUpperCase();
+    const globalBl = data.blocklist || getDefaultSchema().blocklist;
+    if (norm && norm !== 'ALL' && data.config?.room_blocklists && data.config.room_blocklists[norm]) {
+        const rb = data.config.room_blocklists[norm];
+        return {
+            domains: Array.isArray(rb.domains) ? rb.domains : (globalBl.domains || []),
+            processes: Array.isArray(rb.processes) ? rb.processes : (globalBl.processes || []),
+            ide_extensions: Array.isArray(rb.ide_extensions) ? rb.ide_extensions : (globalBl.ide_extensions || []),
+            local_ai_ports: globalBl.local_ai_ports || [11434, 1234, 1337, 8080, 5001]
+        };
+    }
+    return globalBl;
 }
 
 function registerRoomByAdmin(data, roomCode, customPin = '') {
@@ -500,23 +519,17 @@ module.exports = async (req, res) => {
 
             case 'rehydrate_state':
             case 'sync_from_firebase': {
-                // Menerima sinkronisasi state dari Firebase client SDK / Admin Browser jika container baru cold-start
-                if (body.config && typeof body.config === 'object') {
-                    data.config = { ...data.config, ...body.config };
-                }
-                if (body.blocklist && typeof body.blocklist === 'object') {
-                    data.blocklist = { ...data.blocklist, ...body.blocklist };
-                    data.config.blocklist_customized = true;
-                }
+                // Hanya rehydrate peserta aktif yang berada di ruangan resmi yang sudah dibuat Admin
                 if (Array.isArray(body.students)) {
                     for (const st of body.students) {
-                        if (st && st.id && !data.students[st.id]) {
+                        const stRoom = String(st?.room_code || '').trim().toUpperCase();
+                        if (st && st.id && stRoom && data.config.rooms.includes(stRoom) && !data.students[st.id]) {
                             data.students[st.id] = st;
                         }
                     }
                 }
                 ensureRoomsConfig(data);
-                await writeData(data, true);
+                await writeData(data);
                 return res.status(200).json({ ok: true });
             }
 
@@ -558,6 +571,7 @@ module.exports = async (req, res) => {
                 const roomDefaultState = data.config.room_statuses[normalizedRoom] || data.config.global_status || 'LOCKED';
                 const desiredState = (existing && existing.room_code === normalizedRoom && existing.target_status) ? existing.target_status : roomDefaultState;
                 const roomPin = data.config.room_pins[normalizedRoom] || data.config.unlock_pin || '202699';
+                const effectiveBl = getEffectiveBlocklist(data, normalizedRoom);
                 const nowSec = Math.floor(Date.now() / 1000);
 
                 data.students[studentId] = {
@@ -573,7 +587,7 @@ module.exports = async (req, res) => {
                     target_status: desiredState,
                     quarantined_count: existing?.quarantined_count || 0,
                     quarantined_list: existing?.quarantined_list || [],
-                    blocked_domains_count: (data.blocklist.domains || []).length,
+                    blocked_domains_count: (effectiveBl.domains || []).length,
                     killed_processes_count: existing?.killed_processes_count || 0,
                     vpn_detected: false,
                     joined_at: existing?.joined_at || nowFormatted(),
@@ -597,7 +611,7 @@ module.exports = async (req, res) => {
                         quarantine_extensions: data.config.quarantine_extensions,
                         kill_processes: data.config.kill_processes
                     },
-                    blocklist: data.blocklist
+                    blocklist: effectiveBl
                 });
             }
 
@@ -653,6 +667,7 @@ module.exports = async (req, res) => {
                 const st = data.students[studentId];
                 if (name) st.name = name;
                 st.room_code = reqRoom;
+                const effectiveBl = getEffectiveBlocklist(data, st.room_code);
 
                 const prevVpn = Boolean(st.vpn_detected);
                 st.status = currentStatus;
@@ -660,6 +675,7 @@ module.exports = async (req, res) => {
                 st.ip = clientIp;
                 st.quarantined_count = quarantinedCount;
                 st.quarantined_list = quarantinedList;
+                st.blocked_domains_count = (effectiveBl.domains || []).length;
                 st.killed_processes_count = killedCount;
                 st.vpn_detected = vpnDetected;
                 st.last_seen = nowSec;
@@ -686,7 +702,7 @@ module.exports = async (req, res) => {
                         quarantine_extensions: data.config.quarantine_extensions,
                         kill_processes: data.config.kill_processes
                     },
-                    blocklist: data.blocklist
+                    blocklist: effectiveBl
                 });
             }
 
@@ -878,6 +894,10 @@ module.exports = async (req, res) => {
                     data.config.room_statuses[newRoom] = oldStatus;
                     delete data.config.room_statuses[oldRoom];
                     delete data.config.room_pins[oldRoom];
+                    if (data.config.room_blocklists && data.config.room_blocklists[oldRoom]) {
+                        data.config.room_blocklists[newRoom] = data.config.room_blocklists[oldRoom];
+                        delete data.config.room_blocklists[oldRoom];
+                    }
                     if (data.config.room_code === oldRoom) {
                         data.config.room_code = newRoom;
                     }
@@ -898,7 +918,8 @@ module.exports = async (req, res) => {
                     room_pin: resolvedPin,
                     rooms: data.config.rooms,
                     room_statuses: data.config.room_statuses,
-                    room_pins: data.config.room_pins
+                    room_pins: data.config.room_pins,
+                    room_blocklists: data.config.room_blocklists
                 });
             }
 
@@ -914,6 +935,9 @@ module.exports = async (req, res) => {
                 data.config.rooms = data.config.rooms.filter(r => r !== delRoom);
                 delete data.config.room_statuses[delRoom];
                 delete data.config.room_pins[delRoom];
+                if (data.config.room_blocklists) {
+                    delete data.config.room_blocklists[delRoom];
+                }
                 if (data.config.room_code === delRoom) {
                     data.config.room_code = data.config.rooms[0] || '';
                 }
@@ -929,7 +953,8 @@ module.exports = async (req, res) => {
                     ok: true,
                     rooms: data.config.rooms,
                     room_statuses: data.config.room_statuses,
-                    room_pins: data.config.room_pins
+                    room_pins: data.config.room_pins,
+                    room_blocklists: data.config.room_blocklists
                 });
             }
 
@@ -940,7 +965,7 @@ module.exports = async (req, res) => {
                     return res.status(404).json({ ok: false, error: 'Data mahasiswa tidak ditemukan.' });
                 }
                 const st = data.students[studentId];
-                const stRoom = st.room_code || data.config.room_code || 'KUIS-AI-01';
+                const stRoom = st.room_code || data.config.room_code || '-';
                 if (cmd === 'REMOVE') {
                     addLog(data, st.nim, st.name, st.hostname, 'ADMIN_REMOVE', `Data sesi mahasiswa dihapus dari ruangan [${stRoom}] oleh pengawas.`, 'INFO', stRoom);
                     delete data.students[studentId];
@@ -982,19 +1007,52 @@ module.exports = async (req, res) => {
 
             case 'save_blocklist':
             case 'update_blocklist': {
-                data.config.blocklist_customized = true;
-                if (Array.isArray(body.domains)) {
-                    data.blocklist.domains = [...new Set(body.domains.map(s => String(s).trim().toLowerCase()).filter(Boolean))];
+                const targetRoom = String(body.room_code || 'ALL').trim().toUpperCase();
+                const resetRoom = Boolean(body.reset_room);
+                if (!data.config.room_blocklists || typeof data.config.room_blocklists !== 'object') {
+                    data.config.room_blocklists = {};
                 }
-                if (Array.isArray(body.processes)) {
-                    data.blocklist.processes = [...new Set(body.processes.map(s => String(s).trim()).filter(Boolean))];
+
+                const cleanDomains = Array.isArray(body.domains)
+                    ? [...new Set(body.domains.map(s => String(s).trim().toLowerCase()).filter(Boolean))]
+                    : (data.blocklist.domains || []);
+                const cleanProcs = Array.isArray(body.processes)
+                    ? [...new Set(body.processes.map(s => String(s).trim()).filter(Boolean))]
+                    : (data.blocklist.processes || []);
+                const cleanExts = Array.isArray(body.ide_extensions)
+                    ? [...new Set(body.ide_extensions.map(s => String(s).trim()).filter(Boolean))]
+                    : (data.blocklist.ide_extensions || []);
+
+                if (targetRoom && targetRoom !== 'ALL') {
+                    if (resetRoom) {
+                        delete data.config.room_blocklists[targetRoom];
+                        addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'BLOCKLIST_RESET', `Kebijakan blokir khusus ruangan [${targetRoom}] dikembalikan ke Kebijakan Global.`, 'INFO', targetRoom);
+                    } else {
+                        data.config.room_blocklists[targetRoom] = {
+                            domains: cleanDomains,
+                            processes: cleanProcs,
+                            ide_extensions: cleanExts,
+                            updated_at: new Date().toISOString()
+                        };
+                        addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ROOM_BLOCKLIST_UPDATE', `Kebijakan blokir khusus ruangan [${targetRoom}] diperbarui (${cleanDomains.length} domain, ${cleanProcs.length} proses).`, 'INFO', targetRoom);
+                    }
+                } else {
+                    data.config.blocklist_customized = true;
+                    data.blocklist.domains = cleanDomains;
+                    data.blocklist.processes = cleanProcs;
+                    data.blocklist.ide_extensions = cleanExts;
+                    addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'BLOCKLIST_UPDATE', `Kebijakan blokir Global (Semua Ruangan) diperbarui (${cleanDomains.length} domain, ${cleanProcs.length} proses).`, 'INFO', 'ALL');
                 }
-                if (Array.isArray(body.ide_extensions)) {
-                    data.blocklist.ide_extensions = [...new Set(body.ide_extensions.map(s => String(s).trim()).filter(Boolean))];
-                }
-                addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'BLOCKLIST_UPDATE', `Daftar blokir diperbarui (${data.blocklist.domains.length} domain, ${data.blocklist.processes.length} proses).`, 'INFO');
+
+                data.config.updated_at = new Date().toISOString();
                 await writeData(data);
-                return res.status(200).json({ ok: true, blocklist: data.blocklist });
+                return res.status(200).json({
+                    ok: true,
+                    room_code: targetRoom || 'ALL',
+                    blocklist: data.blocklist,
+                    room_blocklists: data.config.room_blocklists,
+                    effective_blocklist: getEffectiveBlocklist(data, targetRoom)
+                });
             }
 
             case 'clear_logs': {

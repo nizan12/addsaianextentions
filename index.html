@@ -383,24 +383,43 @@
                     </div>
                 </section>
 
-                <!-- VIEW 3: KEBIJAKAN DAFTAR BLOKIR FLEKSIBEL -->
+                <!-- VIEW 3: KEBIJAKAN DAFTAR BLOKIR FLEKSIBEL (GLOBAL & PER-RUANGAN) -->
                 <section id="view-rules" class="hidden space-y-6">
                     <div class="card-surface rounded-xl p-6 space-y-6">
                         <div class="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-200">
                             <div>
-                                <h2 class="text-sm font-semibold text-slate-900">Manajemen Blokir Domain & Aplikasi Secara Fleksibel</h2>
-                                <p class="text-xs text-slate-500 mt-0.5">Pilih layanan mana yang ingin diblokir atau diizinkan dengan mencentang kategori/domain di bawah ini, atau tambahkan domain kustom.</p>
+                                <h2 class="text-sm font-semibold text-slate-900">Manajemen Blokir Domain & Aplikasi Secara Fleksibel (Per-Ruangan)</h2>
+                                <p class="text-xs text-slate-500 mt-0.5">Atur layanan AI, website, atau proses aplikasi mana yang diblokir secara Global maupun khusus untuk masing-masing ruangan.</p>
                             </div>
-                            <div class="flex items-center gap-2">
+                            <div class="flex flex-wrap items-center gap-2">
                                 <button onclick="toggleAllDomainGroups(true)" class="px-3 py-2 rounded-lg text-xs font-medium border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition">
                                     Pilih Semua
                                 </button>
                                 <button onclick="toggleAllDomainGroups(false)" class="px-3 py-2 rounded-lg text-xs font-medium border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition">
                                     Kosongkan Semua
                                 </button>
-                                <button onclick="saveBlocklist()" class="px-4 py-2 rounded-lg text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white transition shadow-sm">
-                                    Simpan & Terapkan ke Semua PC
+                                <button id="btnResetRoomRules" onclick="resetRoomBlocklistToGlobal()" class="hidden px-3 py-2 rounded-lg text-xs font-medium border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 transition">
+                                    Reset ke Kebijakan Global
                                 </button>
+                                <button id="btnSaveBlocklist" onclick="saveBlocklist()" class="px-4 py-2 rounded-lg text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white transition shadow-sm">
+                                    Simpan & Terapkan Kebijakan
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Bar Pemilih Ruangan untuk Kebijakan Blokir -->
+                        <div class="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                            <div class="flex flex-wrap items-center gap-3">
+                                <label for="rulesRoomSelect" class="text-xs font-semibold text-slate-800">Target Ruangan Kebijakan:</label>
+                                <select id="rulesRoomSelect" onchange="onSelectRulesRoom(this.value)" class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-mono font-semibold text-slate-900 focus:outline-none focus:border-slate-600">
+                                    <option value="ALL">Semua Ruangan (Kebijakan Global Default)</option>
+                                </select>
+                                <span id="rulesScopeBadge" class="inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-medium bg-slate-200/80 text-slate-700">
+                                    Kebijakan Global Default
+                                </span>
+                            </div>
+                            <div class="text-[11px] text-slate-500">
+                                Ruangan yang tidak memiliki aturan khusus akan otomatis mengikuti <strong>Kebijakan Global</strong>.
                             </div>
                         </div>
 
@@ -866,11 +885,14 @@
         let currentFilter = 'ALL';
         let currentViewMode = 'table';
         let selectedRoom = 'ALL';
+        let selectedRulesRoom = 'ALL';
         let cachedStudents = [];
         let cachedLogs = [];
         let cachedRooms = [];
         let cachedRoomStatuses = {};
         let cachedRoomPins = {};
+        let cachedRoomBlocklists = {};
+        let cachedGlobalBlocklist = { domains: [], processes: [], ide_extensions: [] };
         let cachedGlobalStatus = 'LOCKED';
         let blocklistLoaded = false;
         let pinVisible = false;
@@ -1205,9 +1227,104 @@
             }
         }
 
+        function getEffectiveBlocklistForRoom(roomCode) {
+            const norm = String(roomCode || 'ALL').trim().toUpperCase();
+            if (norm !== 'ALL' && cachedRoomBlocklists && cachedRoomBlocklists[norm]) {
+                const rb = cachedRoomBlocklists[norm];
+                return {
+                    domains: Array.isArray(rb.domains) ? rb.domains : (cachedGlobalBlocklist.domains || []),
+                    processes: Array.isArray(rb.processes) ? rb.processes : (cachedGlobalBlocklist.processes || []),
+                    ide_extensions: Array.isArray(rb.ide_extensions) ? rb.ide_extensions : (cachedGlobalBlocklist.ide_extensions || []),
+                    isCustom: true
+                };
+            }
+            return {
+                domains: cachedGlobalBlocklist.domains || [],
+                processes: cachedGlobalBlocklist.processes || [],
+                ide_extensions: cachedGlobalBlocklist.ide_extensions || [],
+                isCustom: false
+            };
+        }
+
+        function loadBlocklistIntoEditorForRoom(roomCode) {
+            selectedRulesRoom = roomCode || 'ALL';
+            if (selectedRulesRoom !== 'ALL' && !cachedRooms.includes(selectedRulesRoom)) {
+                selectedRulesRoom = 'ALL';
+            }
+            const eff = getEffectiveBlocklistForRoom(selectedRulesRoom);
+            initFlexibleDomainManager(eff.domains || []);
+            const procEl = document.getElementById('inputProcesses');
+            const extEl = document.getElementById('inputExtensions');
+            if (procEl) procEl.value = (eff.processes || []).join('\n');
+            if (extEl) extEl.value = (eff.ide_extensions || []).join('\n');
+            updateRulesRoomSelectorUI();
+        }
+
+        function updateRulesRoomSelectorUI() {
+            const sel = document.getElementById('rulesRoomSelect');
+            if (sel) {
+                const globalCount = (cachedGlobalBlocklist.domains || []).length;
+                let html = `<option value="ALL">Semua Ruangan — Kebijakan Global (${globalCount} domain)</option>`;
+                cachedRooms.forEach(r => {
+                    const hasCustom = Boolean(cachedRoomBlocklists && cachedRoomBlocklists[r]);
+                    const dCount = hasCustom ? (cachedRoomBlocklists[r].domains || []).length : globalCount;
+                    const modeText = hasCustom ? `Kebijakan Khusus · ${dCount} domain` : `Mengikuti Global · ${dCount} domain`;
+                    html += `<option value="${escapeHtml(r)}">Ruangan ${escapeHtml(r)} (${modeText})</option>`;
+                });
+                sel.innerHTML = html;
+                if (selectedRulesRoom !== 'ALL' && !cachedRooms.includes(selectedRulesRoom)) {
+                    selectedRulesRoom = 'ALL';
+                }
+                sel.value = selectedRulesRoom;
+            }
+
+            const badge = document.getElementById('rulesScopeBadge');
+            const btnReset = document.getElementById('btnResetRoomRules');
+            const btnSave = document.getElementById('btnSaveBlocklist');
+
+            if (selectedRulesRoom === 'ALL') {
+                if (badge) {
+                    badge.className = 'inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-medium bg-slate-200/80 text-slate-800';
+                    badge.textContent = 'Mode Edit: Kebijakan Global (Semua Ruangan)';
+                }
+                if (btnReset) btnReset.classList.add('hidden');
+                if (btnSave) btnSave.textContent = 'Simpan Kebijakan Global';
+            } else {
+                const hasCustom = Boolean(cachedRoomBlocklists && cachedRoomBlocklists[selectedRulesRoom]);
+                if (badge) {
+                    if (hasCustom) {
+                        badge.className = 'inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200';
+                        badge.textContent = `Ruangan [${selectedRulesRoom}] Menggunakan Kebijakan Khusus`;
+                    } else {
+                        badge.className = 'inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200';
+                        badge.textContent = `Ruangan [${selectedRulesRoom}] Mengikuti Global (Simpan untuk buat khusus)`;
+                    }
+                }
+                if (btnReset) btnReset.classList.toggle('hidden', !hasCustom);
+                if (btnSave) btnSave.textContent = `Simpan Khusus Ruangan [${selectedRulesRoom}]`;
+            }
+        }
+
+        function onSelectRulesRoom(roomCode) {
+            loadBlocklistIntoEditorForRoom(roomCode || 'ALL');
+        }
+
+        function openRoomRulesEditor(roomCode) {
+            selectedRoom = roomCode || 'ALL';
+            document.getElementById('sidebarRoomCode').textContent = selectedRoom === 'ALL' ? 'SEMUA RUANGAN' : selectedRoom;
+            const hdrSel = document.getElementById('headerRoomSelect');
+            if (hdrSel) hdrSel.value = selectedRoom;
+            loadBlocklistIntoEditorForRoom(selectedRoom);
+            updateSidebarPinUI();
+            updateHeaderStatusUI();
+            updateScopedStats();
+            switchTab('rules');
+        }
+
         function onSelectRoom(room) {
             selectedRoom = room || 'ALL';
             document.getElementById('sidebarRoomCode').textContent = selectedRoom === 'ALL' ? 'SEMUA RUANGAN' : selectedRoom;
+            loadBlocklistIntoEditorForRoom(selectedRoom);
             updateSidebarPinUI();
             updateHeaderStatusUI();
             updateScopedStats();
@@ -1247,7 +1364,7 @@
             if (!sel) return;
             const counts = {};
             cachedStudents.forEach(st => {
-                const r = (st.room_code || currentRoomCode || 'KUIS-AI-01').toUpperCase();
+                const r = (st.room_code || currentRoomCode || '-').toUpperCase();
                 counts[r] = (counts[r] || 0) + 1;
             });
 
@@ -1266,6 +1383,7 @@
             }
             sel.value = selectedRoom;
             document.getElementById('sidebarRoomCode').textContent = selectedRoom === 'ALL' ? 'SEMUA RUANGAN' : selectedRoom;
+            updateRulesRoomSelectorUI();
         }
 
         function updateHeaderStatusUI() {
@@ -1298,7 +1416,7 @@
         function updateScopedStats() {
             const scoped = selectedRoom === 'ALL'
                 ? cachedStudents
-                : cachedStudents.filter(st => (st.room_code || currentRoomCode || 'KUIS-AI-01').toUpperCase() === selectedRoom);
+                : cachedStudents.filter(st => (st.room_code || currentRoomCode || '-').toUpperCase() === selectedRoom);
 
             const onlineCount = scoped.filter(st => st.is_online).length;
             const lockedCount = scoped.filter(st => st.status === 'LOCKED').length;
@@ -1308,6 +1426,11 @@
             document.getElementById('statTotal').textContent = scoped.length;
             document.getElementById('statLocked').textContent = lockedCount;
             document.getElementById('statViolations').textContent = violationCount;
+
+            const effBl = getEffectiveBlocklistForRoom(selectedRoom);
+            document.getElementById('statDomains').textContent = (effBl.domains || []).length;
+            document.getElementById('statProcs').textContent = (effBl.processes || []).length;
+            document.getElementById('statExts').textContent = (effBl.ide_extensions || []).length;
 
             document.getElementById('navBadgeOnline').textContent = onlineCount;
             document.getElementById('navBadgeViolations').textContent = violationCount;
@@ -1321,6 +1444,7 @@
                         rooms: cachedRooms,
                         room_statuses: cachedRoomStatuses,
                         room_pins: cachedRoomPins,
+                        room_blocklists: cachedRoomBlocklists,
                         unlock_pin: currentUnlockPin,
                         global_status: cachedGlobalStatus,
                         blocklist_customized: true
@@ -1336,10 +1460,6 @@
                 const data = await res.json();
                 if (!data.ok) return;
 
-                document.getElementById('statDomains').textContent = data.stats.domains_count;
-                document.getElementById('statProcs').textContent = data.stats.processes_count;
-                document.getElementById('statExts').textContent = data.stats.extensions_count;
-
                 currentRoomCode = data.config.room_code || '';
                 currentUnlockPin = data.config.unlock_pin || '202699';
                 cachedGlobalStatus = data.config.global_status || 'LOCKED';
@@ -1347,18 +1467,22 @@
                 cachedRooms = serverRooms.filter(r => !explicitlyDeletedRooms.has(r));
                 cachedRoomStatuses = data.config.room_statuses || {};
                 cachedRoomPins = data.config.room_pins || {};
+                cachedRoomBlocklists = data.config.room_blocklists || {};
+                if (data.blocklist) {
+                    cachedGlobalBlocklist = data.blocklist;
+                }
 
                 updateSidebarPinUI();
                 const timePart = (data.server_time || '').split(' ')[1] || '--:--:--';
                 document.getElementById('lastSyncClock').textContent = timePart;
 
                 if (!blocklistLoaded && data.blocklist) {
-                    initFlexibleDomainManager(data.blocklist.domains || []);
-                    document.getElementById('inputProcesses').value = (data.blocklist.processes || []).join('\n');
-                    document.getElementById('inputExtensions').value = (data.blocklist.ide_extensions || []).join('\n');
+                    loadBlocklistIntoEditorForRoom(selectedRulesRoom);
                     document.getElementById('cfgRoomCode').value = currentRoomCode;
                     document.getElementById('cfgUnlockPin').value = currentUnlockPin;
                     blocklistLoaded = true;
+                } else {
+                    updateRulesRoomSelectorUI();
                 }
 
                 // Anti-Flicker & Multi-Container Sync Engine:
@@ -1601,24 +1725,33 @@
                 const count = counts[r] || 0;
                 const status = (cachedRoomStatuses[r] || cachedGlobalStatus) === 'LOCKED' ? 'LOCKED' : 'UNLOCKED';
                 const roomPin = cachedRoomPins[r] || currentUnlockPin || '202699';
+                const hasCustomBl = Boolean(cachedRoomBlocklists && cachedRoomBlocklists[r]);
+                const effDomainsCount = hasCustomBl
+                    ? (cachedRoomBlocklists[r].domains || []).length
+                    : (cachedGlobalBlocklist.domains || []).length;
+                const blBadge = hasCustomBl
+                    ? `<span class="px-2 py-0.5 rounded text-[10px] font-medium bg-indigo-50 text-indigo-800 border border-indigo-200">Blokir Khusus (${effDomainsCount} domain)</span>`
+                    : `<span class="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">Blokir Global (${effDomainsCount} domain)</span>`;
                 const badge = status === 'LOCKED'
                     ? `<span class="px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-50 text-emerald-800 border border-emerald-200">Terkunci</span>`
                     : `<span class="px-2 py-0.5 rounded text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200">Terbuka</span>`;
 
                 return `
                     <div class="p-3.5 flex flex-wrap items-center justify-between gap-3 hover:bg-slate-50/80 transition text-xs">
-                        <div class="flex flex-wrap items-center gap-2.5">
+                        <div class="flex flex-wrap items-center gap-2">
                             <span class="font-mono font-semibold text-slate-900 px-2.5 py-1 rounded bg-slate-100 border border-slate-200">${escapeHtml(r)}</span>
                             ${badge}
+                            ${blBadge}
                             <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-slate-50 border border-slate-200 text-slate-700">
-                                <span class="text-[11px] text-slate-500">PIN Keluar/Buka:</span>
+                                <span class="text-[11px] text-slate-500">PIN:</span>
                                 <strong class="font-mono text-slate-900">${escapeHtml(roomPin)}</strong>
                                 <button onclick="copyText('${escapeHtml(roomPin)}', 'PIN Ruangan [${escapeHtml(r)}] disalin')" class="text-[10px] text-slate-400 hover:text-slate-800 underline ml-0.5">Salin</button>
                             </span>
                             <span class="text-slate-500">${count} PC</span>
                         </div>
-                        <div class="flex items-center gap-1.5">
+                        <div class="flex flex-wrap items-center gap-1.5">
                             <button onclick="onSelectRoom('${escapeHtml(r)}'); switchTab('monitor');" class="px-2.5 py-1 rounded border border-slate-200 hover:bg-slate-100 text-slate-700 font-medium">Pantau</button>
+                            <button onclick="openRoomRulesEditor('${escapeHtml(r)}')" class="px-2.5 py-1 rounded border border-slate-200 hover:bg-slate-100 text-slate-700 font-medium">Atur Blokir</button>
                             <button onclick="openEditRoomModal('${escapeHtml(r)}')" class="px-2.5 py-1 rounded border border-slate-200 hover:bg-slate-100 text-slate-700 font-medium">Edit & PIN</button>
                             <button onclick="setRoomStatusDirect('${escapeHtml(r)}', 'LOCKED')" class="px-2.5 py-1 rounded border ${status === 'LOCKED' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 hover:bg-slate-100 text-slate-700'} font-medium">Kunci</button>
                             <button onclick="setRoomStatusDirect('${escapeHtml(r)}', 'UNLOCKED')" class="px-2.5 py-1 rounded border ${status === 'UNLOCKED' ? 'border-amber-600 bg-amber-600 text-white' : 'border-slate-200 hover:bg-slate-100 text-slate-700'} font-medium">Buka</button>
@@ -1893,6 +2026,7 @@
         }
 
         async function saveBlocklist() {
+            const targetRoom = selectedRulesRoom || 'ALL';
             const domains = document.getElementById('inputDomains').value.split('\n').map(s => s.trim().toLowerCase()).filter(Boolean);
             const processes = document.getElementById('inputProcesses').value.split('\n').map(s => s.trim()).filter(Boolean);
             const ide_extensions = document.getElementById('inputExtensions').value.split('\n').map(s => s.trim()).filter(Boolean);
@@ -1900,13 +2034,39 @@
             const res = await fetch('api/index.php?action=update_blocklist', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({domains, processes, ide_extensions})
+                body: JSON.stringify({ room_code: targetRoom, domains, processes, ide_extensions })
             });
             const data = await res.json();
             if (data.ok) {
-                initFlexibleDomainManager(data.blocklist.domains || domains);
+                if (data.blocklist) cachedGlobalBlocklist = data.blocklist;
+                if (data.room_blocklists) cachedRoomBlocklists = data.room_blocklists;
+                loadBlocklistIntoEditorForRoom(targetRoom);
+                updateScopedStats();
+                renderRoomsManager();
                 await syncStateToFirebaseIfAvailable(null, data.blocklist);
-                showToast(`Kebijakan blokir berhasil disimpan (${domains.length} domain aktif)`);
+                const label = targetRoom === 'ALL' ? 'Kebijakan Global (Semua Ruangan)' : `Kebijakan khusus Ruangan [${targetRoom}]`;
+                showToast(`${label} berhasil disimpan (${domains.length} domain aktif)`);
+                fetchDashboard();
+            }
+        }
+
+        async function resetRoomBlocklistToGlobal() {
+            const targetRoom = selectedRulesRoom || 'ALL';
+            if (targetRoom === 'ALL') return;
+            const res = await fetch('api/index.php?action=update_blocklist', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ room_code: targetRoom, reset_room: true })
+            });
+            const data = await res.json();
+            if (data.ok) {
+                if (data.blocklist) cachedGlobalBlocklist = data.blocklist;
+                if (data.room_blocklists) cachedRoomBlocklists = data.room_blocklists;
+                loadBlocklistIntoEditorForRoom(targetRoom);
+                updateScopedStats();
+                renderRoomsManager();
+                await syncStateToFirebaseIfAvailable(null, data.blocklist);
+                showToast(`Ruangan [${targetRoom}] dikembalikan untuk mengikuti Kebijakan Global`);
                 fetchDashboard();
             }
         }

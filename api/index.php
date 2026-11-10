@@ -164,7 +164,7 @@ try {
                         'quarantine_extensions' => $data['config']['quarantine_extensions'],
                         'kill_processes' => $data['config']['kill_processes']
                     ],
-                    'blocklist' => $data['blocklist']
+                    'blocklist' => Storage::getEffectiveBlocklist($data, $normalizedRoom)
                 ];
             });
 
@@ -611,18 +611,47 @@ try {
 
         case 'update_blocklist':
             $result = Storage::update(function (&$data) use ($jsonInput) {
-                $data['config']['blocklist_customized'] = true;
-                if (isset($jsonInput['domains']) && is_array($jsonInput['domains'])) {
-                    $data['blocklist']['domains'] = array_values(array_unique(array_filter(array_map('strtolower', array_map('trim', $jsonInput['domains'])))));
+                Storage::ensureRoomsConfig($data);
+                $targetRoom = strtoupper(trim($jsonInput['room_code'] ?? 'ALL'));
+                $resetRoom = !empty($jsonInput['reset_room']);
+
+                $domains = isset($jsonInput['domains']) && is_array($jsonInput['domains'])
+                    ? array_values(array_unique(array_filter(array_map('strtolower', array_map('trim', $jsonInput['domains'])))))
+                    : ($data['blocklist']['domains'] ?? []);
+                $procs = isset($jsonInput['processes']) && is_array($jsonInput['processes'])
+                    ? array_values(array_unique(array_filter(array_map('trim', $jsonInput['processes']))))
+                    : ($data['blocklist']['processes'] ?? []);
+                $exts = isset($jsonInput['ide_extensions']) && is_array($jsonInput['ide_extensions'])
+                    ? array_values(array_unique(array_filter(array_map('trim', $jsonInput['ide_extensions']))))
+                    : ($data['blocklist']['ide_extensions'] ?? []);
+
+                if ($targetRoom !== '' && $targetRoom !== 'ALL') {
+                    if ($resetRoom) {
+                        unset($data['config']['room_blocklists'][$targetRoom]);
+                        Storage::addLog($data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'BLOCKLIST_RESET', "Kebijakan blokir khusus ruangan [{$targetRoom}] dikembalikan ke Kebijakan Global.", 'INFO', $targetRoom);
+                    } else {
+                        $data['config']['room_blocklists'][$targetRoom] = [
+                            'domains' => $domains,
+                            'processes' => $procs,
+                            'ide_extensions' => $exts,
+                            'updated_at' => date('c')
+                        ];
+                        Storage::addLog($data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ROOM_BLOCKLIST_UPDATE', "Kebijakan blokir khusus ruangan [{$targetRoom}] diperbarui.", 'INFO', $targetRoom);
+                    }
+                } else {
+                    $data['config']['blocklist_customized'] = true;
+                    $data['blocklist']['domains'] = $domains;
+                    $data['blocklist']['processes'] = $procs;
+                    $data['blocklist']['ide_extensions'] = $exts;
+                    Storage::addLog($data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'BLOCKLIST_UPDATE', 'Kebijakan blokir Global (Semua Ruangan) telah diperbarui.', 'INFO', 'ALL');
                 }
-                if (isset($jsonInput['processes']) && is_array($jsonInput['processes'])) {
-                    $data['blocklist']['processes'] = array_values(array_unique(array_filter(array_map('trim', $jsonInput['processes']))));
-                }
-                if (isset($jsonInput['ide_extensions']) && is_array($jsonInput['ide_extensions'])) {
-                    $data['blocklist']['ide_extensions'] = array_values(array_unique(array_filter(array_map('trim', $jsonInput['ide_extensions']))));
-                }
-                Storage::addLog($data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'BLOCKLIST_UPDATE', 'Daftar domain/proses/ekstensi AI yang diblokir telah diperbarui.', 'INFO');
-                return ['ok' => true, 'blocklist' => $data['blocklist']];
+                return [
+                    'ok' => true,
+                    'room_code' => $targetRoom ?: 'ALL',
+                    'blocklist' => $data['blocklist'],
+                    'room_blocklists' => $data['config']['room_blocklists'],
+                    'effective_blocklist' => Storage::getEffectiveBlocklist($data, $targetRoom)
+                ];
             });
             respond($result);
             break;
