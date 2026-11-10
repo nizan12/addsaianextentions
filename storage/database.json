@@ -175,8 +175,123 @@
             5001
         ]
     },
-    "students": [],
+    "students": {
+        "240101001": {
+            "id": "240101001",
+            "nim": "240101001",
+            "name": "user",
+            "hostname": "DESKTOP-8243D9U",
+            "ip": "::1",
+            "os_info": "Microsoft Windows NT 10.0.26300.0",
+            "version": "1.0.0",
+            "status": "UNLOCKED",
+            "target_status": "UNLOCKED",
+            "quarantined_count": 4,
+            "quarantined_list": [
+                "continue.continue-2.0.0-win32-x64",
+                "kilocode.kilo-code-7.5.15-win32-x64",
+                "saoudrizwan.claude-dev-4.1.25",
+                "saoudrizwan.claude-dev-4.1.26"
+            ],
+            "blocked_domains_count": 100,
+            "killed_processes_count": 18,
+            "vpn_detected": false,
+            "joined_at": "2026-11-10 04:42:24",
+            "last_seen": 1794285920,
+            "last_seen_str": "2026-11-10 04:45:20"
+        }
+    },
     "logs": [
+        {
+            "id": "log_6af2a162dc42e",
+            "timestamp": "2026-11-10 04:45:22",
+            "nim": "240101001",
+            "name": "user",
+            "hostname": "DESKTOP-8243D9U",
+            "type": "PIN_UNLOCK",
+            "message": "Kunci dibuka menggunakan PIN Dosen/Pengawas yang valid.",
+            "severity": "INFO"
+        },
+        {
+            "id": "log_6af2a103efbc1",
+            "timestamp": "2026-11-10 04:43:47",
+            "nim": "240101001",
+            "name": "user",
+            "hostname": "DESKTOP-8243D9U",
+            "type": "EXTENSION_QUARANTINE",
+            "message": "Layer 3 Aktif: Mengkarantina 4 ekstensi AI IDE: continue.continue-2.0.0-win32-x64, kilocode.kilo-code-7.5.15-win32-x64, saoudrizwan.claude-dev-4.1.25, saoudrizwan.claude-dev-4.1.26",
+            "severity": "WARNING"
+        },
+        {
+            "id": "log_6af2a103dd430",
+            "timestamp": "2026-11-10 04:43:47",
+            "nim": "240101001",
+            "name": "user",
+            "hostname": "DESKTOP-8243D9U",
+            "type": "JOIN",
+            "message": "PC Mahasiswa terhubung ke ruangan (Microsoft Windows NT 10.0.26300.0). Status target: LOCKED",
+            "severity": "INFO"
+        },
+        {
+            "id": "log_6af2a0e746b5d",
+            "timestamp": "2026-11-10 04:43:19",
+            "nim": "240101001",
+            "name": "user",
+            "hostname": "DESKTOP-8243D9U",
+            "type": "REMOTE_CMD",
+            "message": "Pengawas mengubah status endpoint menjadi LOCKED.",
+            "severity": "INFO"
+        },
+        {
+            "id": "log_6af2a0dd0bfb9",
+            "timestamp": "2026-11-10 04:43:09",
+            "nim": "240101001",
+            "name": "user",
+            "hostname": "DESKTOP-8243D9U",
+            "type": "REMOTE_CMD",
+            "message": "Pengawas mengubah status endpoint menjadi UNLOCKED.",
+            "severity": "INFO"
+        },
+        {
+            "id": "log_6af2a0c3ea94e",
+            "timestamp": "2026-11-10 04:42:43",
+            "nim": "240101001",
+            "name": "user",
+            "hostname": "DESKTOP-8243D9U",
+            "type": "REMOTE_CMD",
+            "message": "Pengawas mengubah status endpoint menjadi LOCKED.",
+            "severity": "INFO"
+        },
+        {
+            "id": "log_6af2a0b0cae0b",
+            "timestamp": "2026-11-10 04:42:24",
+            "nim": "240101001",
+            "name": "user",
+            "hostname": "DESKTOP-8243D9U",
+            "type": "PROCESS_KILLED",
+            "message": "Menghentikan proses/port AI terlarang: ChatGPT.exe (PID 8952), ChatGPT.exe (PID 27312), ChatGPT.exe (PID 26896), ChatGPT.exe (PID 19884), ChatGPT.exe (PID 6092), ChatGPT.exe (PID 29036), ChatGPT.exe (PID 23420), ollama.exe (PID 30744), ChatGPT.exe (PID 22828), ChatGPT.exe (PID 26900), ChatGPT.exe (PID 5760), ollama app.exe (PID 4792), ChatGPT.exe (PID 4788), ChatGPT.exe (PID 28028), ChatGPT.exe (PID 27724), ChatGPT.exe (PID 29460), ChatGPT.exe (PID 20236), Local LLM Port Aktif (:11434)",
+            "severity": "DANGER"
+        },
+        {
+            "id": "log_6af2a0b0be6f8",
+            "timestamp": "2026-11-10 04:42:24",
+            "nim": "240101001",
+            "name": "user",
+            "hostname": "DESKTOP-8243D9U",
+            "type": "EXTENSION_QUARANTINE",
+            "message": "Layer 3 Aktif: Mengkarantina 4 ekstensi AI IDE: continue.continue-2.0.0-win32-x64, kilocode.kilo-code-7.5.15-win32-x64, saoudrizwan.claude-dev-4.1.25, saoudrizwan.claude-dev-4.1.26",
+            "severity": "WARNING"
+        },
+        {
+            "id": "log_6af2a0b091597",
+            "timestamp": "2026-11-10 04:42:24",
+            "nim": "240101001",
+            "name": "user",
+            "hostname": "DESKTOP-8243D9U",
+            "type": "JOIN",
+            "message": "PC Mahasiswa terhubung ke ruangan (Microsoft Windows NT 10.0.26300.0). Status target: LOCKED",
+            "severity": "INFO"
+        },
         {
             "id": "log_6af29c5b313c7",
             "timestamp": "2026-11-10 04:23:55",

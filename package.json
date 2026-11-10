@@ -1,0 +1,12 @@
+{
+  "name": "guardconsole-ai-blocker",
+  "version": "2.4.0",
+  "description": "GuardConsole & GuardAgent — Sistem Pengawasan & Pemblokir AI Ujian Laboratorium (Vercel Serverless + Local Laragon Ready)",
+  "private": true,
+  "scripts": {
+    "start": "echo 'Use Vercel CLI (npx vercel) or Laragon locally'"
+  },
+  "engines": {
+    "node": ">=18.x"
+  }
+}

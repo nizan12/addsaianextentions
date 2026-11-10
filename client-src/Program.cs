@@ -670,7 +670,7 @@ namespace AIBlockerGuard
                 BackColor = Color.FromArgb(30, 41, 59),
                 AutoSize = true,
                 Padding = new Padding(8, 4, 8, 4),
-                Location = new Point(695, 20),
+                Location = new Point(headerBanner.Width - 155, 24),
                 Anchor = AnchorStyles.Top | AnchorStyles.Right
             };
 
@@ -692,6 +692,7 @@ namespace AIBlockerGuard
             Label lblSection1 = new Label
             {
                 Text = "PARAMETER PESERTA & KONEKSI SESI UJIAN",
+                UseMnemonic = false,
                 Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(71, 85, 105),
                 Location = new Point(18, 14),
@@ -746,13 +747,13 @@ namespace AIBlockerGuard
             configPanel.Controls.Add(rbOfflineMode);
 
             configPanel.Controls.Add(MakeLabel("Endpoint Server:", 18, 136));
-            txtServerUrl = MakeTextBox("http://localhost/blockwebanaiinideforquiz/api/index.php", 125, 133, 375);
+            txtServerUrl = MakeTextBox("http://localhost/blockwebanaiinideforquiz/api/index.php", 125, 133, 395);
             configPanel.Controls.Add(txtServerUrl);
 
             chkDryRun = new CheckBox
             {
-                Text = "Mode Simulasi / Uji Coba (Tanpa blokir destruktif)",
-                Location = new Point(518, 135),
+                Text = "Mode Uji Coba (Tanpa Blokir)",
+                Location = new Point(540, 135),
                 AutoSize = true,
                 ForeColor = Color.FromArgb(71, 85, 105),
                 Font = new Font("Segoe UI", 8.5f, FontStyle.Regular)
@@ -820,6 +821,7 @@ namespace AIBlockerGuard
             Label lblLogHeader = new Label
             {
                 Text = "JURNAL AUDIT ENDPOINT LOKAL",
+                UseMnemonic = false,
                 Font = new Font("Segoe UI", 8f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(100, 116, 139),
                 Location = new Point(22, 442),
@@ -862,6 +864,7 @@ namespace AIBlockerGuard
             return new Label
             {
                 Text = text,
+                UseMnemonic = false,
                 Location = new Point(x, y),
                 AutoSize = true,
                 ForeColor = Color.FromArgb(71, 85, 105),
@@ -895,6 +898,7 @@ namespace AIBlockerGuard
             Label lTitle = new Label
             {
                 Text = title,
+                UseMnemonic = false,
                 Location = new Point(12, 11),
                 AutoSize = true,
                 Font = new Font("Segoe UI", 7.5f, FontStyle.Bold),
@@ -903,6 +907,7 @@ namespace AIBlockerGuard
             Label lVal = new Label
             {
                 Text = initialValue,
+                UseMnemonic = false,
                 Location = new Point(12, 33),
                 AutoSize = true,
                 Font = new Font("Segoe UI", 12f, FontStyle.Bold),
