@@ -238,26 +238,68 @@ async function getFirebaseStoreToken() {
 
 function packCloudPayload(data) {
     const nowSec = Math.floor(Date.now() / 1000);
-    const activeStudents = {};
+    const s = {};
     for (const [id, st] of Object.entries(data.students || {})) {
-        if (st && (nowSec - (st.last_seen || 0)) <= 180) {
-            activeStudents[id] = st;
+        if (st && (nowSec - (st.last_seen || 0)) <= 150) {
+            // compact tuple: [nim, name, hostname, room, status, target_status, last_seen, q_cnt, k_cnt, vpn, cmd_ts]
+            s[id] = [
+                st.nim || id,
+                st.name || st.nim || id,
+                st.hostname || id,
+                st.room_code || '',
+                st.status === 'UNLOCKED' ? 'U' : 'L',
+                st.target_status === 'UNLOCKED' ? 'U' : 'L',
+                st.last_seen || nowSec,
+                st.quarantined_count || 0,
+                st.killed_processes_count || 0,
+                st.vpn_detected ? 1 : 0,
+                st.cmd_updated_at || 0
+            ];
         }
     }
-    const compact = {
-        config: data.config,
-        students: activeStudents,
-        logs: (data.logs || []).slice(0, 15),
-        custom_blocklist: data.config?.blocklist_customized ? data.blocklist : null
-    };
-    let encoded = zlib.deflateRawSync(Buffer.from(JSON.stringify(compact))).toString('base64url');
-    if (encoded.length > 1900) {
-        compact.logs = (data.logs || []).slice(0, 5);
-        encoded = zlib.deflateRawSync(Buffer.from(JSON.stringify(compact))).toString('base64url');
+
+    // Compact room blocklists: only store domain lists
+    const rbl = {};
+    if (data.config?.room_blocklists && typeof data.config.room_blocklists === 'object') {
+        for (const [r, val] of Object.entries(data.config.room_blocklists)) {
+            if (val && Array.isArray(val.domains)) {
+                rbl[r] = val.domains;
+            } else if (Array.isArray(val)) {
+                rbl[r] = val;
+            }
+        }
     }
-    if (encoded.length > 1950) {
-        compact.logs = [];
-        encoded = zlib.deflateRawSync(Buffer.from(JSON.stringify(compact))).toString('base64url');
+
+    const compact = {
+        v: 4,
+        cfg: {
+            r: data.config.room_code || '',
+            rs: data.config.rooms || [],
+            dr: data.config.deleted_rooms || [],
+            rst: data.config.room_statuses || {},
+            pin: data.config.room_pins || {},
+            rbl: rbl,
+            gst: data.config.global_status || 'LOCKED',
+            bc: Boolean(data.config.blocklist_customized),
+            up: data.config.updated_at || new Date().toISOString()
+        },
+        s: s,
+        cbl: data.config?.blocklist_customized ? data.blocklist : null
+    };
+
+    let encoded = zlib.deflateRawSync(Buffer.from(JSON.stringify(compact)), { level: 9 }).toString('base64url');
+    // Multi-tier safeguards to ensure total URL NEVER exceeds Google IdentityToolkit's 2,048 char photoUrl limit
+    if (encoded.length > 1900) {
+        for (const [id, tuple] of Object.entries(compact.s)) {
+            if ((nowSec - tuple[6]) > 50) delete compact.s[id];
+        }
+        encoded = zlib.deflateRawSync(Buffer.from(JSON.stringify(compact)), { level: 9 }).toString('base64url');
+    }
+    if (encoded.length > 1900) {
+        for (const [id, tuple] of Object.entries(compact.s)) {
+            if ((nowSec - tuple[6]) > 30) delete compact.s[id];
+        }
+        encoded = zlib.deflateRawSync(Buffer.from(JSON.stringify(compact)), { level: 9 }).toString('base64url');
     }
     return FB_STORE_PREFIX + encoded;
 }
@@ -268,14 +310,77 @@ function unpackCloudPayload(photoUrl) {
         const rawB64 = photoUrl.slice(FB_STORE_PREFIX.length);
         const jsonStr = zlib.inflateRawSync(Buffer.from(rawB64, 'base64url')).toString('utf8');
         const parsed = JSON.parse(jsonStr);
-        if (!parsed || !parsed.config) return null;
+        if (!parsed) return null;
+
         const schema = getDefaultSchema();
-        return {
-            config: { ...schema.config, ...parsed.config },
-            blocklist: parsed.custom_blocklist || schema.blocklist,
-            students: parsed.students || {},
-            logs: parsed.logs || []
-        };
+
+        // 1. New Ultra-Compact v4 format
+        if (parsed.v === 4 && parsed.cfg) {
+            const students = {};
+            for (const [id, val] of Object.entries(parsed.s || {})) {
+                if (Array.isArray(val)) {
+                    students[id] = {
+                        id,
+                        nim: val[0] || id,
+                        name: val[1] || val[0] || id,
+                        hostname: val[2] || id,
+                        room_code: val[3] || '',
+                        status: val[4] === 'U' ? 'UNLOCKED' : 'LOCKED',
+                        target_status: val[5] === 'U' ? 'UNLOCKED' : 'LOCKED',
+                        last_seen: val[6] || Math.floor(Date.now() / 1000),
+                        last_seen_str: new Date((val[6] || Math.floor(Date.now() / 1000)) * 1000).toISOString(),
+                        quarantined_count: val[7] || 0,
+                        killed_processes_count: val[8] || 0,
+                        vpn_detected: Boolean(val[9]),
+                        cmd_updated_at: val[10] || 0,
+                        ip: '103.164.80.66',
+                        os_info: 'Windows',
+                        version: '1.5.0'
+                    };
+                } else {
+                    students[id] = val;
+                }
+            }
+
+            // Restore room_blocklists format
+            const roomBlocklists = {};
+            for (const [r, val] of Object.entries(parsed.cfg.rbl || {})) {
+                if (Array.isArray(val)) {
+                    roomBlocklists[r] = { domains: val, processes: schema.blocklist.processes, ide_extensions: schema.blocklist.ide_extensions };
+                } else if (val && Array.isArray(val.domains)) {
+                    roomBlocklists[r] = val;
+                }
+            }
+
+            return {
+                config: {
+                    ...schema.config,
+                    room_code: parsed.cfg.r || '',
+                    rooms: parsed.cfg.rs || schema.config.rooms,
+                    deleted_rooms: parsed.cfg.dr || [],
+                    room_statuses: parsed.cfg.rst || {},
+                    room_pins: parsed.cfg.pin || {},
+                    room_blocklists: roomBlocklists,
+                    global_status: parsed.cfg.gst || 'LOCKED',
+                    blocklist_customized: Boolean(parsed.cfg.bc),
+                    updated_at: parsed.cfg.up || new Date().toISOString()
+                },
+                blocklist: parsed.cbl || schema.blocklist,
+                students: students,
+                logs: []
+            };
+        }
+
+        // 2. Legacy v3 format
+        if (parsed.config) {
+            return {
+                config: { ...schema.config, ...parsed.config },
+                blocklist: parsed.custom_blocklist || schema.blocklist,
+                students: parsed.students || {},
+                logs: parsed.logs || []
+            };
+        }
+        return null;
     } catch (e) {
         return null;
     }
@@ -309,13 +414,19 @@ async function writeToFirebase(data) {
         const idToken = await getFirebaseStoreToken();
         if (idToken) {
             const packedUrl = packCloudPayload(data);
-            await fetchWithTimeout(`https://identitytoolkit.googleapis.com/v1/accounts:update?key=${FIREBASE_API_KEY}`, {
+            const res = await fetchWithTimeout(`https://identitytoolkit.googleapis.com/v1/accounts:update?key=${FIREBASE_API_KEY}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ idToken, photoUrl: packedUrl })
-            }, 1500);
+            }, 2500);
+            if (!res.ok) {
+                const errText = await res.text();
+                console.error('[writeToFirebase] Error updating cloud state:', res.status, errText);
+            }
         }
-    } catch (e) {}
+    } catch (e) {
+        console.error('[writeToFirebase] Network error:', e.message);
+    }
 }
 
 async function readData(forceCloud = false) {

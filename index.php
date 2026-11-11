@@ -1272,6 +1272,7 @@
         }
 
         const knownStudentsCache = new Map(); // id -> { student, seenAtMs }
+        const recentLocalStudentCommands = new Map(); // id -> { status, ts }
         const explicitlyRemovedStudentIds = new Set();
         const explicitlyDeletedRooms = new Set();
 
@@ -1737,10 +1738,13 @@
             const norm = String(roomCode || 'ALL').trim().toUpperCase();
             if (norm !== 'ALL' && cachedRoomBlocklists && cachedRoomBlocklists[norm]) {
                 const rb = cachedRoomBlocklists[norm];
+                const rDomains = Array.isArray(rb) ? rb : (Array.isArray(rb.domains) ? rb.domains : (cachedGlobalBlocklist.domains || []));
+                const rProcs = (rb && Array.isArray(rb.processes)) ? rb.processes : (cachedGlobalBlocklist.processes || []);
+                const rExts = (rb && Array.isArray(rb.ide_extensions)) ? rb.ide_extensions : (cachedGlobalBlocklist.ide_extensions || []);
                 return {
-                    domains: Array.isArray(rb.domains) ? rb.domains : (cachedGlobalBlocklist.domains || []),
-                    processes: Array.isArray(rb.processes) ? rb.processes : (cachedGlobalBlocklist.processes || []),
-                    ide_extensions: Array.isArray(rb.ide_extensions) ? rb.ide_extensions : (cachedGlobalBlocklist.ide_extensions || []),
+                    domains: rDomains,
+                    processes: rProcs,
+                    ide_extensions: rExts,
                     isCustom: true
                 };
             }
@@ -1773,7 +1777,9 @@
                 let html = `<option value="ALL">Semua Ruangan — Kebijakan Global (${globalCount} domain)</option>`;
                 cachedRooms.forEach(r => {
                     const hasCustom = Boolean(cachedRoomBlocklists && cachedRoomBlocklists[r]);
-                    const dCount = hasCustom ? (cachedRoomBlocklists[r].domains || []).length : globalCount;
+                    const dCount = hasCustom 
+                        ? (Array.isArray(cachedRoomBlocklists[r]) ? cachedRoomBlocklists[r].length : (cachedRoomBlocklists[r].domains || []).length)
+                        : globalCount;
                     const modeText = hasCustom ? `Kebijakan Khusus · ${dCount} domain` : `Mengikuti Global · ${dCount} domain`;
                     html += `<option value="${escapeHtml(r)}">Ruangan ${escapeHtml(r)} (${modeText})</option>`;
                 });
@@ -2050,6 +2056,11 @@
                     if (!st || !st.id) return;
                     const stRoom = String(st.room_code || '').toUpperCase();
                     if (explicitlyRemovedStudentIds.has(st.id) || explicitlyDeletedRooms.has(stRoom)) return;
+                    const recentCmd = recentLocalStudentCommands.get(st.id);
+                    if (recentCmd && (nowMs - recentCmd.ts) < 12000) {
+                        st.status = recentCmd.status;
+                        st.target_status = recentCmd.status;
+                    }
                     incomingIds.add(st.id);
                     knownStudentsCache.set(st.id, {
                         student: { ...st },
@@ -2068,6 +2079,11 @@
                         continue;
                     }
                     if (!incomingIds.has(id)) {
+                        const recentCmd = recentLocalStudentCommands.get(id);
+                        if (recentCmd && (nowMs - recentCmd.ts) < 12000) {
+                            entry.student.status = recentCmd.status;
+                            entry.student.target_status = recentCmd.status;
+                        }
                         const preserved = {
                             ...entry.student,
                             seconds_ago: ageSec,
@@ -2077,6 +2093,12 @@
                         if (ageSec <= 45) {
                             missingActiveForRehydrate.push(preserved);
                         }
+                    }
+                }
+
+                for (const [id, cmd] of recentLocalStudentCommands.entries()) {
+                    if (nowMs - cmd.ts > 15000) {
+                        recentLocalStudentCommands.delete(id);
                     }
                 }
 
@@ -2419,7 +2441,7 @@
                 const roomPin = cachedRoomPins[r] || currentUnlockPin || '202699';
                 const hasCustomBl = Boolean(cachedRoomBlocklists && cachedRoomBlocklists[r]);
                 const effDomainsCount = hasCustomBl
-                    ? (cachedRoomBlocklists[r].domains || []).length
+                    ? (Array.isArray(cachedRoomBlocklists[r]) ? cachedRoomBlocklists[r].length : (cachedRoomBlocklists[r].domains || []).length)
                     : (cachedGlobalBlocklist.domains || []).length;
                 const blBadge = hasCustomBl
                     ? `<span class="px-2 py-0.5 rounded text-[10px] font-medium bg-indigo-50 text-indigo-800 border border-indigo-200">Blokir Khusus (${effDomainsCount} domain)</span>`
@@ -2578,6 +2600,19 @@
         }
 
         async function setGlobalStatus(status) {
+            const nowMs = Date.now();
+            for (const [id, entry] of knownStudentsCache.entries()) {
+                if (entry && entry.student) {
+                    const rCode = (entry.student.room_code || '').toUpperCase();
+                    if (!selectedRoom || selectedRoom === 'ALL' || rCode === selectedRoom.toUpperCase()) {
+                        entry.student.status = status;
+                        entry.student.target_status = status;
+                        recentLocalStudentCommands.set(id, { status, ts: nowMs });
+                    }
+                }
+            }
+            renderCurrentStudents();
+
             const res = await fetch('api/index.php?action=set_global_status', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -2585,16 +2620,6 @@
             });
             const data = await res.json();
             if (data.ok) {
-                Object.keys(knownStudentsCache).forEach(id => {
-                    const entry = knownStudentsCache[id];
-                    if (entry && entry.student) {
-                        const rCode = (entry.student.room_code || '').toUpperCase();
-                        if (!selectedRoom || selectedRoom === 'ALL' || rCode === selectedRoom.toUpperCase()) {
-                            entry.student.status = status;
-                            entry.student.target_status = status;
-                        }
-                    }
-                });
                 const scopeText = selectedRoom === 'ALL' ? 'Seluruh ruangan' : `Ruangan [${selectedRoom}]`;
                 showToast(status === 'LOCKED'
                     ? `${scopeText} dikunci (Proteksi AI Aktif)`
@@ -2604,6 +2629,19 @@
         }
 
         async function setRoomStatusDirect(roomCode, status) {
+            const nowMs = Date.now();
+            for (const [id, entry] of knownStudentsCache.entries()) {
+                if (entry && entry.student) {
+                    const rCode = (entry.student.room_code || '').toUpperCase();
+                    if (rCode === (roomCode || '').toUpperCase()) {
+                        entry.student.status = status;
+                        entry.student.target_status = status;
+                        recentLocalStudentCommands.set(id, { status, ts: nowMs });
+                    }
+                }
+            }
+            renderCurrentStudents();
+
             const res = await fetch('api/index.php?action=set_global_status', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -2611,16 +2649,6 @@
             });
             const data = await res.json();
             if (data.ok) {
-                Object.keys(knownStudentsCache).forEach(id => {
-                    const entry = knownStudentsCache[id];
-                    if (entry && entry.student) {
-                        const rCode = (entry.student.room_code || '').toUpperCase();
-                        if (rCode === (roomCode || '').toUpperCase()) {
-                            entry.student.status = status;
-                            entry.student.target_status = status;
-                        }
-                    }
-                });
                 showToast(status === 'LOCKED'
                     ? `Ruangan [${roomCode}] dikunci (Proteksi AI Aktif)`
                     : `Ruangan [${roomCode}] dibuka! Minta peserta tutup & buka kembali browser (Chrome/Edge).`);
@@ -2764,11 +2792,21 @@
             if (command === 'REMOVE') {
                 explicitlyRemovedStudentIds.add(student_id);
                 knownStudentsCache.delete(student_id);
+                recentLocalStudentCommands.delete(student_id);
                 setTimeout(() => explicitlyRemovedStudentIds.delete(student_id), 25000);
-            } else if (knownStudentsCache.has(student_id)) {
-                const entry = knownStudentsCache.get(student_id);
-                entry.student.status = command;
-                entry.student.target_status = command;
+            } else if (['LOCKED', 'UNLOCKED'].includes(command)) {
+                recentLocalStudentCommands.set(student_id, { status: command, ts: Date.now() });
+                if (knownStudentsCache.has(student_id)) {
+                    const entry = knownStudentsCache.get(student_id);
+                    entry.student.status = command;
+                    entry.student.target_status = command;
+                }
+                const localSt = cachedStudents.find(s => s.id === student_id);
+                if (localSt) {
+                    localSt.status = command;
+                    localSt.target_status = command;
+                }
+                renderCurrentStudents();
             }
             const res = await fetch('api/index.php?action=set_student_command', {
                 method: 'POST',
@@ -2823,7 +2861,15 @@
                 loadBlocklistIntoEditorForRoom(targetRoom);
                 updateScopedStats();
                 renderRoomsManager();
-                await syncStateToFirebaseIfAvailable(null, data.blocklist);
+                await syncStateToFirebaseIfAvailable({
+                    room_code: currentRoomCode,
+                    rooms: cachedRooms,
+                    room_statuses: cachedRoomStatuses,
+                    room_pins: cachedRoomPins,
+                    room_blocklists: cachedRoomBlocklists,
+                    global_status: cachedGlobalStatus,
+                    blocklist_customized: true
+                }, data.blocklist || cachedGlobalBlocklist);
                 const label = targetRoom === 'ALL' ? 'Kebijakan Global (Semua Ruangan)' : `Kebijakan khusus Ruangan [${targetRoom}]`;
                 showToast(`${label} berhasil disimpan (${domains.length} domain aktif)`);
                 fetchDashboard();
@@ -2845,7 +2891,15 @@
                 loadBlocklistIntoEditorForRoom(targetRoom);
                 updateScopedStats();
                 renderRoomsManager();
-                await syncStateToFirebaseIfAvailable(null, data.blocklist);
+                await syncStateToFirebaseIfAvailable({
+                    room_code: currentRoomCode,
+                    rooms: cachedRooms,
+                    room_statuses: cachedRoomStatuses,
+                    room_pins: cachedRoomPins,
+                    room_blocklists: cachedRoomBlocklists,
+                    global_status: cachedGlobalStatus,
+                    blocklist_customized: true
+                }, data.blocklist || cachedGlobalBlocklist);
                 showToast(`Ruangan [${targetRoom}] dikembalikan untuk mengikuti Kebijakan Global`);
                 fetchDashboard();
             }

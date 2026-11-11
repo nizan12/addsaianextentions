@@ -235,10 +235,11 @@ class Storage {
     public static function getEffectiveBlocklist(&$data, $roomCode = '') {
         $norm = strtoupper(trim((string)$roomCode));
         $globalBl = $data['blocklist'] ?? self::getDefaultSchema()['blocklist'];
-        if ($norm !== '' && $norm !== 'ALL' && !empty($data['config']['room_blocklists'][$norm]) && is_array($data['config']['room_blocklists'][$norm])) {
+        if ($norm !== '' && $norm !== 'ALL' && !empty($data['config']['room_blocklists'][$norm])) {
             $rb = $data['config']['room_blocklists'][$norm];
+            $rDomains = is_array($rb) ? (isset($rb['domains']) && is_array($rb['domains']) ? $rb['domains'] : (isset($rb[0]) ? $rb : ($globalBl['domains'] ?? []))) : ($globalBl['domains'] ?? []);
             return [
-                'domains' => isset($rb['domains']) && is_array($rb['domains']) ? $rb['domains'] : ($globalBl['domains'] ?? []),
+                'domains' => $rDomains,
                 'processes' => isset($rb['processes']) && is_array($rb['processes']) ? $rb['processes'] : ($globalBl['processes'] ?? []),
                 'ide_extensions' => isset($rb['ide_extensions']) && is_array($rb['ide_extensions']) ? $rb['ide_extensions'] : ($globalBl['ide_extensions'] ?? []),
                 'local_ai_ports' => $globalBl['local_ai_ports'] ?? [11434, 1234, 1337, 8080, 5001]
