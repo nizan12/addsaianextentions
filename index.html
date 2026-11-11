@@ -2596,7 +2596,9 @@
                     }
                 });
                 const scopeText = selectedRoom === 'ALL' ? 'Seluruh ruangan' : `Ruangan [${selectedRoom}]`;
-                showToast(status === 'LOCKED' ? `${scopeText} dikunci (Proteksi AI Aktif)` : `${scopeText} dibuka dan dipulihkan`);
+                showToast(status === 'LOCKED'
+                    ? `${scopeText} dikunci (Proteksi AI Aktif)`
+                    : `${scopeText} dibuka & dipulihkan! Minta peserta tutup & buka kembali browser (Chrome/Edge).`);
                 fetchDashboard();
             }
         }
@@ -2619,7 +2621,9 @@
                         }
                     }
                 });
-                showToast(`Ruangan [${roomCode}] diubah menjadi ${status}`);
+                showToast(status === 'LOCKED'
+                    ? `Ruangan [${roomCode}] dikunci (Proteksi AI Aktif)`
+                    : `Ruangan [${roomCode}] dibuka! Minta peserta tutup & buka kembali browser (Chrome/Edge).`);
                 fetchDashboard();
             }
         }

@@ -25,12 +25,32 @@ if exist "C:\Program Files\AIBlockerGuard\AIBlockerGuard.exe" (
     "C:\Program Files\AIBlockerGuard\AIBlockerGuard.exe" --restore
 )
 
-echo [*] Membersihkan kebijakan Registry Browser DNS-over-HTTPS (DoH) & VS Code...
+echo [*] Membersihkan kebijakan Registry Browser URLBlocklist, DoH & VS Code...
+reg delete "HKLM\SOFTWARE\Policies\Google\Chrome\URLBlocklist" /f >nul 2>&1
+reg delete "HKCU\SOFTWARE\Policies\Google\Chrome\URLBlocklist" /f >nul 2>&1
 reg delete "HKLM\SOFTWARE\Policies\Google\Chrome" /v DnsOverHttpsMode /f >nul 2>&1
+reg delete "HKLM\SOFTWARE\Policies\Google\Chrome" /v BuiltInDnsClientEnabled /f >nul 2>&1
+reg delete "HKLM\SOFTWARE\Policies\Google\Chrome" /v QuicAllowed /f >nul 2>&1
 reg delete "HKLM\SOFTWARE\Policies\Google\Chrome" /v GenAiDefaultSettings /f >nul 2>&1
+reg delete "HKCU\SOFTWARE\Policies\Google\Chrome" /v DnsOverHttpsMode /f >nul 2>&1
+reg delete "HKCU\SOFTWARE\Policies\Google\Chrome" /v BuiltInDnsClientEnabled /f >nul 2>&1
+
+reg delete "HKLM\SOFTWARE\Policies\Microsoft\Edge\URLBlocklist" /f >nul 2>&1
+reg delete "HKCU\SOFTWARE\Policies\Microsoft\Edge\URLBlocklist" /f >nul 2>&1
 reg delete "HKLM\SOFTWARE\Policies\Microsoft\Edge" /v DnsOverHttpsMode /f >nul 2>&1
+reg delete "HKLM\SOFTWARE\Policies\Microsoft\Edge" /v BuiltInDnsClientEnabled /f >nul 2>&1
+reg delete "HKLM\SOFTWARE\Policies\Microsoft\Edge" /v QuicAllowed /f >nul 2>&1
 reg delete "HKLM\SOFTWARE\Policies\Microsoft\Edge" /v HubsSidebarEnabled /f >nul 2>&1
+reg delete "HKLM\SOFTWARE\Policies\Microsoft\Edge" /v CopilotCDPPageContext /f >nul 2>&1
+reg delete "HKCU\SOFTWARE\Policies\Microsoft\Edge" /v DnsOverHttpsMode /f >nul 2>&1
+reg delete "HKCU\SOFTWARE\Policies\Microsoft\Edge" /v BuiltInDnsClientEnabled /f >nul 2>&1
+
+reg delete "HKLM\SOFTWARE\Policies\BraveSoftware\Brave\URLBlocklist" /f >nul 2>&1
+reg delete "HKCU\SOFTWARE\Policies\BraveSoftware\Brave\URLBlocklist" /f >nul 2>&1
 reg delete "HKLM\SOFTWARE\Policies\BraveSoftware\Brave" /v DnsOverHttpsMode /f >nul 2>&1
+reg delete "HKLM\SOFTWARE\Policies\BraveSoftware\Brave" /v BraveAIChatEnabled /f >nul 2>&1
+reg delete "HKCU\SOFTWARE\Policies\BraveSoftware\Brave" /v DnsOverHttpsMode /f >nul 2>&1
+
 reg delete "HKLM\SOFTWARE\Policies\Microsoft\VSCode" /v ChatEnabled /f >nul 2>&1
 reg delete "HKCU\SOFTWARE\Policies\Microsoft\VSCode" /v ChatEnabled /f >nul 2>&1
 
