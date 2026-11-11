@@ -673,9 +673,26 @@ namespace AIBlockerGuard
             {
                 ApplyVsCodeAiDisableSettings(dryRun);
             }
+
+            // Deteksi instalasi VS Code secara komprehensif (User Installer, System 64-bit, System 32-bit, maupun settings.json)
             string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            string vscInstallDir = Path.Combine(localAppData, "Programs", "Microsoft VS Code");
-            if (Directory.Exists(vscInstallDir))
+            string progFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            string progFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+            string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+            string[] vscPossibleDirs = new string[]
+            {
+                Path.Combine(localAppData, "Programs", "Microsoft VS Code"),
+                Path.Combine(progFiles, "Microsoft VS Code"),
+                Path.Combine(progFilesX86, "Microsoft VS Code"),
+                Path.Combine(Environment.GetEnvironmentVariable("ProgramW6432") ?? @"C:\Program Files", "Microsoft VS Code")
+            };
+
+            bool vscInstalled = vscPossibleDirs.Any(d => Directory.Exists(d)) ||
+                                File.Exists(GetVsCodeUserSettingsPath()) ||
+                                Directory.Exists(Path.Combine(userProfile, ".vscode"));
+
+            if (vscInstalled)
             {
                 detectedNames.Add("vscode.builtin-copilot (chat.disableAIFeatures=true)");
             }
@@ -686,7 +703,6 @@ namespace AIBlockerGuard
                 detectedNames.Add(item.Name);
             }
 
-            string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             string[] vscodeDirs = new string[]
             {
                 Path.Combine(userProfile, ".vscode", "extensions"),

@@ -2269,13 +2269,13 @@
 
                 const extCount = st.quarantined_count || 0;
                 const extSummary = extCount > 0
-                    ? `<button onclick="openStudentModal('${escapeHtml(st.id)}')" class="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-indigo-50/80 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/70 font-mono text-[11px] font-semibold transition" title="Lihat modul ekstensi yang dikarantina">
+                    ? `<button onclick="openStudentModal('${escapeHtml(st.id)}')" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50/90 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 font-mono text-[11px] font-semibold transition shadow-2xs" title="Proteksi Aktif: ${extCount} modul/fitur AI diamankan & dikarantina. Klik untuk melihat detail.">
                         <svg class="w-3.5 h-3.5 text-indigo-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14.25 9.75L16.5 12l-2.25 2.25m-4.5 0L7.5 12l2.25-2.25M6 20.25h12A2.25 2.25 0 0020.25 18V6A2.25 2.25 0 0018 3.75H6A2.25 2.25 0 003.75 6v12A2.25 2.25 0 006 20.25z"/></svg>
-                        <span>${extCount} modul</span>
+                        <span>${extCount} modul dikunci</span>
                       </button>`
-                    : `<span class="inline-flex items-center gap-1 text-slate-400 font-medium text-[11px]">
-                        <svg class="w-3.5 h-3.5 text-emerald-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
-                        <span>Bersih</span>
+                    : `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200/80 font-medium text-[11px]" title="Proteksi IDE Aktif: Tidak ditemukan ekstensi/modul AI terlarang pada perangkat ini">
+                        <svg class="w-3.5 h-3.5 text-emerald-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
+                        <span>Bersih (0 AI)</span>
                       </span>`;
 
                 const incidents = st.killed_processes_count || 0;
@@ -2400,7 +2400,7 @@
                                 </div>
                                 <div class="flex items-center justify-between">
                                     <span class="text-slate-400 text-[11px]">Modul Ekstensi</span>
-                                    <span class="font-mono text-[11px] ${extCount > 0 ? 'text-indigo-700 font-semibold' : 'text-slate-500'}">${extCount > 0 ? extCount + ' dikunci' : 'Bersih'}</span>
+                                    <span class="font-mono text-[11px] ${extCount > 0 ? 'text-indigo-700 font-semibold' : 'text-emerald-700 font-medium'}">${extCount > 0 ? extCount + ' dikunci' : 'Bersih (0 AI)'}</span>
                                 </div>
                                 <div class="flex items-center justify-between">
                                     <span class="text-slate-400 text-[11px]">Intersepsi AI</span>

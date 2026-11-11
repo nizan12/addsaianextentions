@@ -330,6 +330,7 @@ function unpackCloudPayload(photoUrl) {
                         last_seen: val[6] || Math.floor(Date.now() / 1000),
                         last_seen_str: new Date((val[6] || Math.floor(Date.now() / 1000)) * 1000).toISOString(),
                         quarantined_count: val[7] || 0,
+                        quarantined_list: (val[7] > 0 ? ['vscode.builtin-copilot (chat.disableAIFeatures=true)'] : []),
                         killed_processes_count: val[8] || 0,
                         vpn_detected: Boolean(val[9]),
                         cmd_updated_at: val[10] || 0,
