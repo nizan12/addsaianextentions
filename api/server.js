@@ -537,7 +537,14 @@ module.exports = async (req, res) => {
     }
 
     const body = typeof req.body === 'string' ? (() => { try { return JSON.parse(req.body); } catch { return {}; } })() : (req.body || {});
-    const action = (req.query && req.query.action) || body.action || '';
+    let queryAction = req.query?.action;
+    if (!queryAction && req.url && req.url.includes('?')) {
+        try {
+            const u = new URL(req.url, 'http://localhost');
+            queryAction = u.searchParams.get('action');
+        } catch (e) {}
+    }
+    const action = queryAction || body.action || '';
     const clientIp = ((req.headers && req.headers['x-forwarded-for']) || req.socket?.remoteAddress || '127.0.0.1').split(',')[0].trim();
 
     // ---------------------------------------------------------------
@@ -664,6 +671,9 @@ module.exports = async (req, res) => {
                 return res.status(200).json({
                     ok: true,
                     student_id: studentId,
+                    room_code: normalizedRoom,
+                    room_pin_hash: roomPin ? roomPinHash(normalizedRoom, roomPin) : '',
+                    target_status: desiredState,
                     rooms: data.config.rooms,
                     config: {
                         room_code: normalizedRoom,

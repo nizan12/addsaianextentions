@@ -194,6 +194,9 @@ class Storage {
         if (!isset($data['config']['rooms']) || !is_array($data['config']['rooms'])) {
             $data['config']['rooms'] = [];
         }
+        if (!isset($data['config']['deleted_rooms']) || !is_array($data['config']['deleted_rooms'])) {
+            $data['config']['deleted_rooms'] = [];
+        }
         $data['config']['rooms'] = array_values(array_unique(array_filter(array_map(function ($r) {
             return strtoupper(trim((string)$r));
         }, $data['config']['rooms']))));
@@ -250,6 +253,11 @@ class Storage {
         if ($norm === '') {
             return '';
         }
+        if (isset($data['config']['deleted_rooms']) && is_array($data['config']['deleted_rooms'])) {
+            $data['config']['deleted_rooms'] = array_values(array_filter($data['config']['deleted_rooms'], function ($r) use ($norm) {
+                return $r !== $norm;
+            }));
+        }
         if (!in_array($norm, $data['config']['rooms'], true)) {
             $data['config']['rooms'][] = $norm;
         }
@@ -259,7 +267,7 @@ class Storage {
         if (trim($customPin) !== '') {
             $data['config']['room_pins'][$norm] = trim($customPin);
         } elseif (empty($data['config']['room_pins'][$norm])) {
-            $data['config']['room_pins'][$norm] = (string)(202600 + count($data['config']['rooms']));
+            $data['config']['room_pins'][$norm] = (string)random_int(100000, 999999);
         }
         return $norm;
     }

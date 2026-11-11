@@ -12,6 +12,9 @@ if %errorLevel% neq 0 (
     exit /b 1
 )
 
+echo [*] Menghentikan proses AIBlockerGuard jika sedang berjalan...
+taskkill /f /im AIBlockerGuard.exe >nul 2>&1
+
 if exist "%~dp0AIBlockerGuard.exe" (
     echo [*] Menjalankan pemulihan otomatis lewat AIBlockerGuard.exe --restore ...
     "%~dp0AIBlockerGuard.exe" --restore

@@ -156,6 +156,22 @@ namespace AIBlockerInstaller
 
                 string targetExe = Path.Combine(targetDir, "AIBlockerGuard.exe");
 
+                // Hentikan proses AIBlockerGuard yang sedang berjalan agar executable dapat diperbarui tanpa konflik "Akses ditolak"
+                try
+                {
+                    Process[] running = Process.GetProcessesByName("AIBlockerGuard");
+                    foreach (Process p in running)
+                    {
+                        try
+                        {
+                            p.Kill();
+                            p.WaitForExit(3000);
+                        }
+                        catch { }
+                    }
+                }
+                catch { }
+
                 Assembly asm = Assembly.GetExecutingAssembly();
                 using (Stream resStream = asm.GetManifestResourceStream("AIBlockerGuard.exe"))
                 {

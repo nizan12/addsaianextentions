@@ -776,8 +776,9 @@
             };
 
             onAuthStateChanged(auth, (user) => {
-                if (user && user.email) {
-                    window.completeAdminAuth(user.email);
+                const savedToken = sessionStorage.getItem('guard_admin_token');
+                if (user && user.email && savedToken) {
+                    window.completeAdminAuth(user.email, savedToken);
                 }
             });
         } catch (err) {
@@ -1478,7 +1479,6 @@
                         room_statuses: cachedRoomStatuses,
                         room_pins: cachedRoomPins,
                         room_blocklists: cachedRoomBlocklists,
-                        unlock_pin: currentUnlockPin,
                         global_status: cachedGlobalStatus,
                         blocklist_customized: true
                     },
@@ -2057,9 +2057,6 @@
         async function saveConfig() {
             const payload = {
                 room_code: document.getElementById('cfgRoomCode').value,
-                unlock_pin: document.getElementById('cfgUnlockPin').value,
-                admin_email: document.getElementById('cfgAdminEmail').value,
-                admin_password: document.getElementById('cfgAdminPassword').value,
                 block_doh: document.getElementById('cfgBlockDoh').checked,
                 quarantine_extensions: document.getElementById('cfgQuarantineExt').checked,
                 kill_processes: document.getElementById('cfgKillProcs').checked,
@@ -2072,9 +2069,10 @@
             });
             const data = await res.json();
             if (data.ok) {
-                document.getElementById('cfgAdminPassword').value = '';
+                const passEl = document.getElementById('cfgAdminPassword');
+                if (passEl) passEl.value = '';
                 await syncStateToFirebaseIfAvailable(data.config, null);
-                showToast('Pengaturan ruangan, kredensial & PIN disimpan');
+                showToast('Pengaturan ruangan & modul proteksi disimpan');
                 fetchDashboard();
             }
         }

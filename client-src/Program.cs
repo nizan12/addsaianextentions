@@ -1007,6 +1007,7 @@ namespace AIBlockerGuard
         private string offlinePin = "202699";
         private string offlinePinHash = "";
         private string activeRoomCode = "";
+        private string lastPinVerifyError = "";
         private int killedCounter = 0;
         private List<string> quarantinedExtensions = new List<string>();
         private System.Windows.Forms.Timer guardTimer;
@@ -1873,16 +1874,24 @@ namespace AIBlockerGuard
                 }
 
                 string targetStatus = "LOCKED";
+                if (response.ContainsKey("target_status") && !string.IsNullOrEmpty(Convert.ToString(response["target_status"])))
+                {
+                    targetStatus = Convert.ToString(response["target_status"]);
+                }
+                if (response.ContainsKey("room_pin_hash") && !string.IsNullOrEmpty(Convert.ToString(response["room_pin_hash"])))
+                {
+                    offlinePinHash = Convert.ToString(response["room_pin_hash"]);
+                }
                 if (response.ContainsKey("config"))
                 {
                     var cfg = response["config"] as Dictionary<string, object>;
                     if (cfg != null)
                     {
-                        if (cfg.ContainsKey("target_status"))
+                        if (cfg.ContainsKey("target_status") && !string.IsNullOrEmpty(Convert.ToString(cfg["target_status"])))
                         {
                             targetStatus = Convert.ToString(cfg["target_status"]);
                         }
-                        if (cfg.ContainsKey("room_pin_hash") && !string.IsNullOrEmpty(Convert.ToString(cfg["room_pin_hash"])))
+                        if (string.IsNullOrEmpty(offlinePinHash) && cfg.ContainsKey("room_pin_hash") && !string.IsNullOrEmpty(Convert.ToString(cfg["room_pin_hash"])))
                         {
                             offlinePinHash = Convert.ToString(cfg["room_pin_hash"]);
                         }
@@ -1972,9 +1981,22 @@ namespace AIBlockerGuard
                     }
 
                     // Sinkronkan PIN hash khusus ruangan dari server untuk cadangan offline aman
+                    string pinHash = null;
                     if (res.ContainsKey("room_pin_hash") && !string.IsNullOrEmpty(Convert.ToString(res["room_pin_hash"])))
                     {
-                        offlinePinHash = Convert.ToString(res["room_pin_hash"]);
+                        pinHash = Convert.ToString(res["room_pin_hash"]);
+                    }
+                    else if (res.ContainsKey("config"))
+                    {
+                        var cfg = res["config"] as Dictionary<string, object>;
+                        if (cfg != null && cfg.ContainsKey("room_pin_hash") && !string.IsNullOrEmpty(Convert.ToString(cfg["room_pin_hash"])))
+                        {
+                            pinHash = Convert.ToString(cfg["room_pin_hash"]);
+                        }
+                    }
+                    if (!string.IsNullOrEmpty(pinHash))
+                    {
+                        offlinePinHash = pinHash;
                     }
                     else if (res.ContainsKey("room_pin") && !string.IsNullOrEmpty(Convert.ToString(res["room_pin"])))
                     {
@@ -1982,16 +2004,25 @@ namespace AIBlockerGuard
                     }
 
                     // Jika Admin mengganti nama ruangan di server, perbarui kode ruangan lokal secara otomatis
+                    string srvRoom = null;
                     if (res.ContainsKey("room_code"))
                     {
-                        string srvRoom = Convert.ToString(res["room_code"]).Trim().ToUpperInvariant();
-                        if (!string.IsNullOrEmpty(srvRoom) && !srvRoom.Equals(activeRoomCode, StringComparison.OrdinalIgnoreCase))
+                        srvRoom = Convert.ToString(res["room_code"]).Trim().ToUpperInvariant();
+                    }
+                    else if (res.ContainsKey("config"))
+                    {
+                        var cfg = res["config"] as Dictionary<string, object>;
+                        if (cfg != null && cfg.ContainsKey("room_code"))
                         {
-                            activeRoomCode = srvRoom;
-                            if (!cmbRoomCode.Items.Contains(srvRoom)) cmbRoomCode.Items.Add(srvRoom);
-                            cmbRoomCode.SelectedItem = srvRoom;
-                            SaveCurrentAgentConfig(true);
+                            srvRoom = Convert.ToString(cfg["room_code"]).Trim().ToUpperInvariant();
                         }
+                    }
+                    if (!string.IsNullOrEmpty(srvRoom) && !srvRoom.Equals(activeRoomCode, StringComparison.OrdinalIgnoreCase))
+                    {
+                        activeRoomCode = srvRoom;
+                        if (!cmbRoomCode.Items.Contains(srvRoom)) cmbRoomCode.Items.Add(srvRoom);
+                        cmbRoomCode.SelectedItem = srvRoom;
+                        SaveCurrentAgentConfig(true);
                     }
 
                     string target = res.ContainsKey("target_status") ? Convert.ToString(res["target_status"]) : "LOCKED";
@@ -2176,23 +2207,43 @@ namespace AIBlockerGuard
                     { "hostname", Environment.MachineName }
                 };
                 var res = await PostJsonAsync(txtServerUrl.Text.Trim(), payload);
-                if (res != null && res.ContainsKey("unlocked") && (bool)res["unlocked"])
+                if (res != null)
                 {
-                    return true;
+                    if (res.ContainsKey("unlocked") && (bool)res["unlocked"])
+                    {
+                        lastPinVerifyError = "";
+                        return true;
+                    }
+                    if (res.ContainsKey("error"))
+                    {
+                        lastPinVerifyError = Convert.ToString(res["error"]);
+                    }
+                    else
+                    {
+                        lastPinVerifyError = "PIN Otorisasi Ruangan yang dimasukkan salah!";
+                    }
+                    return false;
                 }
             }
 
-            // Verifikasi offline: jika server mengirimkan hash, verifikasi terhadap salted PBKDF2 hash
+            // Verifikasi offline: jika server sedang tidak dapat dihubungi (res == null),
+            // lakukan verifikasi terhadap salted PBKDF2 hash cadangan lokal
             if (!string.IsNullOrEmpty(offlinePinHash))
             {
                 string inputHash = ComputeRoomPinHash(activeRoomCode, inputPin);
                 if (!string.IsNullOrEmpty(inputHash) && string.Equals(inputHash, offlinePinHash, StringComparison.OrdinalIgnoreCase))
                 {
+                    lastPinVerifyError = "";
                     return true;
                 }
             }
 
-            return inputPin.Trim() == offlinePin;
+            bool matchOffline = inputPin.Trim() == offlinePin;
+            if (!matchOffline)
+            {
+                lastPinVerifyError = "PIN Otorisasi Ruangan yang dimasukkan salah!";
+            }
+            return matchOffline;
         }
 
         private async void BtnUnlockWithPin_Click(object sender, EventArgs e)
@@ -2207,8 +2258,11 @@ namespace AIBlockerGuard
             }
             else
             {
-                AddLog("PERINGATAN: Percobaan membuka kunci gagal (PIN Ruangan salah)!");
-                MessageBox.Show("PIN Otorisasi Ruangan yang dimasukkan salah!", "Akses Ditolak", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                string errMsg = string.IsNullOrEmpty(lastPinVerifyError)
+                    ? "PIN Otorisasi Ruangan yang dimasukkan salah!"
+                    : lastPinVerifyError;
+                AddLog("PERINGATAN: Percobaan membuka kunci gagal (" + errMsg + ")!");
+                MessageBox.Show(errMsg, "Akses Ditolak", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -2233,7 +2287,10 @@ namespace AIBlockerGuard
             }
             else
             {
-                MessageBox.Show("PIN Otorisasi Ruangan salah! Agen tetap aktif di sistem.", "Akses Ditolak", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                string errMsg = string.IsNullOrEmpty(lastPinVerifyError)
+                    ? "PIN Otorisasi Ruangan salah! Agen tetap aktif di sistem."
+                    : lastPinVerifyError;
+                MessageBox.Show(errMsg, "Akses Ditolak", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
