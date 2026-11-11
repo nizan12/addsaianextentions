@@ -101,10 +101,12 @@
         .radar-wave-2 {
             animation: radar-ripple 2.6s cubic-bezier(0.16, 1, 0.3, 1) infinite;
             animation-delay: 0.8s;
+            animation-fill-mode: backwards;
         }
         .radar-wave-3 {
             animation: radar-ripple 2.6s cubic-bezier(0.16, 1, 0.3, 1) infinite;
             animation-delay: 1.6s;
+            animation-fill-mode: backwards;
         }
         .toggle-switch-track {
             transition: background-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
@@ -1407,6 +1409,21 @@
             roblox: `<svg class="w-5 h-5 text-[#E11D48]" viewBox="0 0 24 24" fill="currentColor"><path d="M5.16 2.5L21.5 6.84L18.84 23.16L2.5 18.82L5.16 2.5ZM10.59 10.05L9.61 16.03L15.6 17.01L16.58 11.03L10.59 10.05Z"/></svg>`
         };
 
+        const BRAND_SVG_URLS = {
+            chatgpt: "https://cdn.worldvectorlogo.com/logos/chatgpt-6.svg",
+            gemini: "https://cdn.worldvectorlogo.com/logos/gemini-icon-logo.svg",
+            claude: "https://cdn.worldvectorlogo.com/logos/claude-logo.svg",
+            copilot_ide: "https://cdn.worldvectorlogo.com/logos/github-icon-1.svg",
+            copilot: "https://cdn.worldvectorlogo.com/logos/github-icon-1.svg",
+            deepseek_perplexity: "https://cdn.worldvectorlogo.com/logos/deepseek-2.svg",
+            deepseek: "https://cdn.worldvectorlogo.com/logos/deepseek-2.svg",
+            coding_ai: "https://cdn.worldvectorlogo.com/logos/28106466-5830-463a-8f91-0bb7a23ab920/cursor.svg",
+            ide_ai: "https://cdn.worldvectorlogo.com/logos/28106466-5830-463a-8f91-0bb7a23ab920/cursor.svg",
+            llm_api: "https://cdn.worldvectorlogo.com/logos/huggingface-2.svg",
+            api_llm: "https://cdn.worldvectorlogo.com/logos/huggingface-2.svg",
+            roblox: "https://cdn.worldvectorlogo.com/logos/roblox-studio-1.svg"
+        };
+
         function renderDomainCategoryCards() {
             const box = document.getElementById('domainCategoryCards');
             if (!box) return;
@@ -1416,7 +1433,11 @@
                 const isAllActive = activeCount === total;
                 const isPartial = activeCount > 0 && activeCount < total;
 
-                const icon = GROUP_BRAND_ICONS[g.id] || `<svg class="w-5 h-5 text-slate-700" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>`;
+                const brandUrl = BRAND_SVG_URLS[g.id];
+                const fallbackSvg = GROUP_BRAND_ICONS[g.id] || `<svg class="w-5 h-5 text-slate-700" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>`;
+                const icon = brandUrl
+                    ? `<img src="${brandUrl}" class="w-5 h-5 object-contain select-none" alt="${escapeHtml(g.title)}" loading="lazy" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.classList.remove('hidden');"><span class="hidden flex items-center justify-center">${fallbackSvg}</span>`
+                    : fallbackSvg;
 
                 const thumbTranslate = isAllActive ? 'translate-x-4' : (isPartial ? 'translate-x-2' : 'translate-x-0');
                 const trackBg = isAllActive
