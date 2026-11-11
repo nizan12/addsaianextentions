@@ -90,13 +90,21 @@
             background: rgba(225, 29, 72, 0.4);
             animation: radar-ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
         }
-        @keyframes sonar-sweep {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        @keyframes radar-ripple {
+            0% { transform: scale(0.6); opacity: 0.85; }
+            50% { opacity: 0.35; }
+            100% { transform: scale(2.2); opacity: 0; }
         }
-        .sonar-scanner {
-            background: conic-gradient(from 0deg at 50% 50%, rgba(16, 185, 129, 0) 0deg, rgba(16, 185, 129, 0.2) 360deg);
-            animation: sonar-sweep 3s linear infinite;
+        .radar-wave-1 {
+            animation: radar-ripple 2.6s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+        }
+        .radar-wave-2 {
+            animation: radar-ripple 2.6s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+            animation-delay: 0.8s;
+        }
+        .radar-wave-3 {
+            animation: radar-ripple 2.6s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+            animation-delay: 1.6s;
         }
         .toggle-switch-track {
             transition: background-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
@@ -1385,14 +1393,18 @@
         }
 
         const GROUP_BRAND_ICONS = {
-            chatgpt: `<svg class="w-5 h-5 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 0 1 10 10c0 5.523-4.477 10-10 10S2 17.523 2 12A10 10 0 0 1 12 2Z"/><path d="m9 12 2 2 4-4"/></svg>`,
-            claude: `<svg class="w-5 h-5 text-amber-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3m-3.05-6.95-2.12 2.12M7.17 16.83l-2.12 2.12m13.9 0-2.12-2.12M7.17 7.17 5.05 5.05"/></svg>`,
-            gemini: `<svg class="w-5 h-5 text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M4.93 19.07 19.07 4.93"/></svg>`,
-            copilot: `<svg class="w-5 h-5 text-sky-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 15h.01M17 15h.01M9 10h6"/></svg>`,
-            deepseek: `<svg class="w-5 h-5 text-blue-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c-4.97 0-9 3.582-9 8 0 2.923 1.774 5.485 4.45 6.84L7 21l3.37-1.123C10.79 19.957 11.385 20 12 20c4.97 0 9-3.582 9-8s-4.03-9-9-9Z"/></svg>`,
-            ide_ai: `<svg class="w-5 h-5 text-purple-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/><line x1="12" y1="2" x2="12" y2="22"/></svg>`,
-            api_llm: `<svg class="w-5 h-5 text-teal-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="8" rx="2"/><rect x="2" y="13" width="20" height="8" rx="2"/><line x1="6" y1="7" x2="6.01" y2="7"/><line x1="6" y1="17" x2="6.01" y2="17"/></svg>`,
-            roblox: `<svg class="w-5 h-5 text-rose-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" transform="rotate(15 12 12)"/><circle cx="12" cy="12" r="2"/></svg>`
+            chatgpt: `<svg class="w-5 h-5 text-[#10A37F]" viewBox="0 0 24 24" fill="currentColor"><path d="M22.28 9.82a5.98 5.98 0 0 0-.51-4.91 6.05 6.05 0 0 0-6.51-2.9A6.06 6.06 0 0 0 4.98 4.18a5.98 5.98 0 0 0-4 2.9 6.05 6.05 0 0 0 .75 7.1 5.98 5.98 0 0 0 .51 4.91 6.05 6.05 0 0 0 6.51 2.9A5.98 5.98 0 0 0 13.26 24a6.05 6.05 0 0 0 5.77-4.2 5.99 5.99 0 0 0 4-2.9 6.05 6.05 0 0 0-.75-7.08zm-9.02 12.61a4.48 4.48 0 0 1-2.88-1.04l.14-.08 4.78-2.76a.8.8 0 0 0 .4-.68v-6.74l2.02 1.17a.07.07 0 0 1 .04.05v5.58a4.5 4.5 0 0 1-4.5 4.5zm-9.66-4.52a4.47 4.47 0 0 1-.53-3.01l.14.08 4.78 2.76a.77.77 0 0 0 .78 0l5.85-3.37v2.33a.08.08 0 0 1-.04.06L9.74 19.95a4.5 4.5 0 0 1-6.14-2.04zM2.34 8.78a4.48 4.48 0 0 1 2.34-1.96v5.6a.79.79 0 0 0 .39.68l5.85 3.37-2.02 1.16a.08.08 0 0 1-.07 0l-4.83-2.79A4.5 4.5 0 0 1 2.34 8.78zm16.6 3.86L13.09 9.27l2.02-1.16a.08.08 0 0 1 .07 0l4.83 2.79a4.5 4.5 0 0 1-.68 8.1v-5.67a.79.79 0 0 0-.4-.69zm2.01-3.03l-.14-.08-4.78-2.78a.78.78 0 0 0-.78 0L9.41 10.13V7.8a.08.08 0 0 1 .03-.06l4.94-2.86a4.5 4.5 0 0 1 6.58 4.71zm-9.69-3.22v6.74l-2.02-1.17a.07.07 0 0 1-.04-.05V3.35a4.5 4.5 0 0 1 7.37-3.45l-.14.08-4.78 2.76a.8.8 0 0 0-.39.68zM10.53 9.47l2.92-1.69 2.93 1.69v3.37l-2.93 1.69-2.92-1.69z"/></svg>`,
+            claude: `<svg class="w-5 h-5 text-[#CC785C]" viewBox="0 0 24 24" fill="currentColor"><path d="M4.5 10.5C3.67 10.5 3 11.17 3 12s.67 1.5 1.5 1.5h2.5c.83 0 1.5-.67 1.5-1.5s-.67-1.5-1.5-1.5H4.5zm12.5 0c-.83 0-1.5.67-1.5 1.5s.67 1.5 1.5 1.5h2.5c.83 0 1.5-.67 1.5-1.5s-.67-1.5-1.5-1.5H17zM10.5 4.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5v2.5c0 .83-.67 1.5-1.5 1.5s-1.5-.67-1.5-1.5V4.5zm0 12.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5v2.5c0 .83-.67 1.5-1.5 1.5s-1.5-.67-1.5-1.5V17zM6.62 6.62c-.59-.59-1.54-.59-2.12 0s-.59 1.54 0 2.12l1.77 1.77c.59.59 1.54.59 2.12 0s.59-1.54 0-2.12L6.62 6.62zm10.76 10.76c-.59-.59-1.54-.59-2.12 0s-.59 1.54 0 2.12l1.77 1.77c.59.59 1.54.59 2.12 0s.59-1.54 0-2.12l-1.77-1.77zM6.62 17.38l-1.77-1.77c-.59-.59-.59-1.54 0-2.12s1.54-.59 2.12 0l1.77 1.77c.59.59.59 1.54 0 2.12-.59.58-1.54.58-2.12 0zm10.76-10.76l1.77-1.77c.59-.59 1.54-.59 2.12 0s.59 1.54 0 2.12l-1.77 1.77c-.59.59-1.54.59-2.12 0s-.59-1.54 0-2.12z"/></svg>`,
+            gemini: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none"><path d="M12 24C12 17.37 6.63 12 0 12C6.63 12 12 6.63 12 0C12 6.63 17.37 12 24 12C17.37 12 12 17.37 12 24Z" fill="url(#gemini-grad)"/><defs><linearGradient id="gemini-grad" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse"><stop stop-color="#4E82EE"/><stop offset="0.5" stop-color="#9C59DE"/><stop offset="1" stop-color="#DE5E78"/></linearGradient></defs></svg>`,
+            copilot_ide: `<svg class="w-5 h-5 text-slate-900" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>`,
+            copilot: `<svg class="w-5 h-5 text-slate-900" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>`,
+            deepseek_perplexity: `<svg class="w-5 h-5 text-[#0066FF]" viewBox="0 0 24 24" fill="currentColor"><path d="M22 13.5C22 8.8 17.5 5 12 5C6.5 5 2 8.8 2 13.5C2 16.5 4 19.1 7 20.5L6 22H9L11 20C11.3 20 11.7 20 12 20C17.5 20 22 17.1 22 13.5ZM7.5 13C6.7 13 6 12.3 6 11.5C6 10.7 6.7 10 7.5 10C8.3 10 9 10.7 9 11.5C9 12.3 8.3 13 7.5 13ZM18.5 15C16.8 16.2 14.5 17 12 17C10.5 17 9.1 16.7 7.9 16.1C7.6 16 7.4 15.6 7.6 15.3C7.8 15 8.2 14.8 8.5 15C9.5 15.5 10.7 15.8 12 15.8C14.1 15.8 16.1 15.1 17.5 14.1C17.8 13.9 18.2 14 18.4 14.3C18.6 14.6 18.5 15 18.5 15Z"/></svg>`,
+            deepseek: `<svg class="w-5 h-5 text-[#0066FF]" viewBox="0 0 24 24" fill="currentColor"><path d="M22 13.5C22 8.8 17.5 5 12 5C6.5 5 2 8.8 2 13.5C2 16.5 4 19.1 7 20.5L6 22H9L11 20C11.3 20 11.7 20 12 20C17.5 20 22 17.1 22 13.5ZM7.5 13C6.7 13 6 12.3 6 11.5C6 10.7 6.7 10 7.5 10C8.3 10 9 10.7 9 11.5C9 12.3 8.3 13 7.5 13ZM18.5 15C16.8 16.2 14.5 17 12 17C10.5 17 9.1 16.7 7.9 16.1C7.6 16 7.4 15.6 7.6 15.3C7.8 15 8.2 14.8 8.5 15C9.5 15.5 10.7 15.8 12 15.8C14.1 15.8 16.1 15.1 17.5 14.1C17.8 13.9 18.2 14 18.4 14.3C18.6 14.6 18.5 15 18.5 15Z"/></svg>`,
+            coding_ai: `<svg class="w-5 h-5 text-slate-900" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 7.5V16.5L12 22L22 16.5V7.5L12 2ZM12 4.3L19.3 8.3L12 12.3L4.7 8.3L12 4.3ZM4 9.9L11 13.7V20.1L4 16.2V9.9ZM13 20.1V13.7L20 9.9V16.2L13 20.1Z"/></svg>`,
+            ide_ai: `<svg class="w-5 h-5 text-slate-900" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 7.5V16.5L12 22L22 16.5V7.5L12 2ZM12 4.3L19.3 8.3L12 12.3L4.7 8.3L12 4.3ZM4 9.9L11 13.7V20.1L4 16.2V9.9ZM13 20.1V13.7L20 9.9V16.2L13 20.1Z"/></svg>`,
+            llm_api: `<svg class="w-5 h-5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#FFD21E"/><circle cx="8" cy="10" r="1.5" fill="#1F2937"/><circle cx="16" cy="10" r="1.5" fill="#1F2937"/><path d="M8 14.5C8.8 16.5 10.3 17.5 12 17.5C13.7 17.5 15.2 16.5 16 14.5" stroke="#1F2937" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M4 14C4.5 15.5 6 16.5 7.5 16" stroke="#E65100" stroke-width="1.5" stroke-linecap="round" fill="none"/><path d="M20 14C19.5 15.5 18 16.5 16.5 16" stroke="#E65100" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg>`,
+            api_llm: `<svg class="w-5 h-5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#FFD21E"/><circle cx="8" cy="10" r="1.5" fill="#1F2937"/><circle cx="16" cy="10" r="1.5" fill="#1F2937"/><path d="M8 14.5C8.8 16.5 10.3 17.5 12 17.5C13.7 17.5 15.2 16.5 16 14.5" stroke="#1F2937" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M4 14C4.5 15.5 6 16.5 7.5 16" stroke="#E65100" stroke-width="1.5" stroke-linecap="round" fill="none"/><path d="M20 14C19.5 15.5 18 16.5 16.5 16" stroke="#E65100" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg>`,
+            roblox: `<svg class="w-5 h-5 text-[#E11D48]" viewBox="0 0 24 24" fill="currentColor"><path d="M5.16 2.5L21.5 6.84L18.84 23.16L2.5 18.82L5.16 2.5ZM10.59 10.05L9.61 16.03L15.6 17.01L16.58 11.03L10.59 10.05Z"/></svg>`
         };
 
         function renderDomainCategoryCards() {
@@ -1429,12 +1441,24 @@
                     ? 'border-slate-900/40 bg-gradient-to-b from-white to-slate-50/70 shadow-sm'
                     : (isPartial ? 'border-amber-400/50 bg-gradient-to-b from-white to-amber-50/30' : 'border-slate-200 bg-white hover:border-slate-300');
 
+                const BRAND_CONTAINER_COLORS = {
+                    chatgpt: 'bg-emerald-50/90 border-emerald-200/80',
+                    claude: 'bg-orange-50/90 border-orange-200/80',
+                    gemini: 'bg-indigo-50/90 border-indigo-200/80',
+                    copilot_ide: 'bg-slate-100 border-slate-200/90',
+                    deepseek_perplexity: 'bg-blue-50/90 border-blue-200/80',
+                    coding_ai: 'bg-slate-100 border-slate-200/90',
+                    llm_api: 'bg-amber-50/90 border-amber-200/80',
+                    roblox: 'bg-rose-50/90 border-rose-200/80'
+                };
+                const iconBg = BRAND_CONTAINER_COLORS[g.id] || 'bg-slate-100 border-slate-200/80';
+
                 return `
                     <div onclick="toggleDomainGroup('${g.id}')" class="btn-tactile cursor-pointer rounded-2xl border p-4 transition flex flex-col justify-between ${cardBorder} select-none">
                         <div>
                             <div class="flex items-start justify-between gap-2.5">
                                 <div class="flex items-center gap-2.5 min-w-0">
-                                    <div class="w-9 h-9 rounded-xl bg-slate-100 border border-slate-200/80 flex items-center justify-center shrink-0 shadow-2xs">
+                                    <div class="w-9 h-9 rounded-xl ${iconBg} border flex items-center justify-center shrink-0 shadow-2xs">
                                         ${icon}
                                     </div>
                                     <div class="min-w-0">
@@ -2137,11 +2161,15 @@
 
                 const emptyStateHtml = `
                     <div class="py-14 px-4 text-center max-w-md mx-auto flex flex-col items-center">
-                        <div class="relative w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-200/80 flex items-center justify-center text-emerald-600 shadow-sm mb-4">
-                            <div class="sonar-scanner absolute inset-0 rounded-2xl opacity-40"></div>
-                            <svg class="w-7 h-7 relative z-10" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M8.288 15.038a5.25 5.25 0 017.424 0M5.106 11.856c3.807-3.808 9.98-3.808 13.788 0M1.924 8.674c5.565-5.565 14.587-5.565 20.152 0M12.53 18.22l-.53.53-.53-.53a.75.75 0 011.06 0z"/>
-                            </svg>
+                        <div class="relative w-24 h-24 flex items-center justify-center mb-3">
+                            <div class="radar-wave-1 absolute inset-0 rounded-full border-2 border-emerald-500/50 bg-emerald-500/10 pointer-events-none"></div>
+                            <div class="radar-wave-2 absolute inset-0 rounded-full border-2 border-emerald-500/35 bg-emerald-500/5 pointer-events-none"></div>
+                            <div class="radar-wave-3 absolute inset-0 rounded-full border border-emerald-500/20 pointer-events-none"></div>
+                            <div class="relative z-10 w-12 h-12 rounded-full bg-slate-900 text-white flex items-center justify-center shadow-xl border border-slate-700/80">
+                                <svg class="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M8.288 15.038a5.25 5.25 0 017.424 0M5.106 11.856c3.807-3.808 9.98-3.808 13.788 0M1.924 8.674c5.565-5.565 14.587-5.565 20.152 0M12.53 18.22l-.53.53-.53-.53a.75.75 0 011.06 0z"/>
+                                </svg>
+                            </div>
                         </div>
                         <h3 class="text-sm font-bold text-slate-900">Menunggu Sambungan Agen Peserta</h3>
                         <p class="text-xs text-slate-500 mt-1.5 leading-relaxed">${emptyMsg} Jalankan aplikasi <code class="font-mono bg-slate-100 px-1 py-0.5 rounded text-slate-700">GuardAgent.exe</code> di workstation ujian untuk mulai memantau.</p>
