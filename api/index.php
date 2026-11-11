@@ -171,7 +171,7 @@ try {
                     'name' => $name,
                     'hostname' => $hostname,
                     'room_code' => $normalizedRoom,
-                    'ip' => $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
+                    'ip' => !empty($jsonInput['ip']) ? trim((string)$jsonInput['ip']) : ($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1'),
                     'os_info' => $osInfo,
                     'version' => $clientVersion,
                     'status' => $existing['status'] ?? $desiredState,
@@ -262,7 +262,7 @@ try {
                         'name' => $name,
                         'hostname' => $hostname,
                         'room_code' => $reqRoom,
-                        'ip' => $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
+                        'ip' => !empty($jsonInput['ip']) ? trim((string)$jsonInput['ip']) : ($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1'),
                         'os_info' => 'Windows',
                         'version' => '1.5.0',
                         'target_status' => $data['config']['room_statuses'][$reqRoom] ?? $globalTarget,
@@ -278,7 +278,7 @@ try {
 
                 $student['status'] = $currentStatus;
                 $student['hostname'] = $hostname;
-                $student['ip'] = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+                $student['ip'] = !empty($jsonInput['ip']) ? trim((string)$jsonInput['ip']) : ($student['ip'] ?? ($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1'));
                 $student['quarantined_count'] = $quarantinedCount;
                 if (is_array($quarantinedList)) {
                     $student['quarantined_list'] = $quarantinedList;

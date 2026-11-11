@@ -253,7 +253,8 @@ function packCloudPayload(data) {
                 st.quarantined_count || 0,
                 st.killed_processes_count || 0,
                 st.vpn_detected ? 1 : 0,
-                st.cmd_updated_at || 0
+                st.cmd_updated_at || 0,
+                st.ip || ''
             ];
         }
     }
@@ -334,7 +335,7 @@ function unpackCloudPayload(photoUrl) {
                         killed_processes_count: val[8] || 0,
                         vpn_detected: Boolean(val[9]),
                         cmd_updated_at: val[10] || 0,
-                        ip: '103.164.80.66',
+                        ip: val[11] || '127.0.0.1',
                         os_info: 'Windows',
                         version: '1.5.0'
                     };
@@ -759,7 +760,7 @@ module.exports = async (req, res) => {
                     name,
                     hostname,
                     room_code: normalizedRoom,
-                    ip: clientIp,
+                    ip: (body.ip && String(body.ip).trim()) || clientIp,
                     os_info: osInfo,
                     version,
                     status: desiredState,
@@ -841,7 +842,7 @@ module.exports = async (req, res) => {
                         name,
                         hostname,
                         room_code: reqRoom,
-                        ip: clientIp,
+                        ip: (body.ip && String(body.ip).trim()) || clientIp,
                         os_info: 'Windows',
                         version: '1.5.0',
                         target_status: data.config.room_statuses[reqRoom] || globalTarget,
@@ -861,7 +862,7 @@ module.exports = async (req, res) => {
                 st.target_status = resolvedTarget;
                 st.status = isRecentCmd ? resolvedTarget : currentStatus;
                 st.hostname = hostname;
-                st.ip = clientIp;
+                st.ip = (body.ip && String(body.ip).trim()) || st.ip || clientIp;
                 st.quarantined_count = quarantinedCount;
                 st.quarantined_list = quarantinedList;
                 st.blocked_domains_count = (effectiveBl.domains || []).length;

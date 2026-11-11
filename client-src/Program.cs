@@ -911,6 +911,46 @@ namespace AIBlockerGuard
             return false;
         }
 
+        public static string GetLocalIPv4Address()
+        {
+            try
+            {
+                using (var socket = new System.Net.Sockets.Socket(System.Net.Sockets.AddressFamily.InterNetwork, System.Net.Sockets.SocketType.Dgram, 0))
+                {
+                    socket.Connect("8.8.8.8", 65530);
+                    var endPoint = socket.LocalEndPoint as System.Net.IPEndPoint;
+                    if (endPoint != null && endPoint.Address != null)
+                    {
+                        return endPoint.Address.ToString();
+                    }
+                }
+            }
+            catch { }
+
+            try
+            {
+                foreach (var netInterface in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    if (netInterface.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up &&
+                        netInterface.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Loopback)
+                    {
+                        var ipProps = netInterface.GetIPProperties();
+                        foreach (var addr in ipProps.UnicastAddresses)
+                        {
+                            if (addr.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork &&
+                                !System.Net.IPAddress.IsLoopback(addr.Address))
+                            {
+                                return addr.Address.ToString();
+                            }
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            return "127.0.0.1";
+        }
+
         public static void EmergencyRestoreAll()
         {
             RemoveHostsBlock();
@@ -1856,6 +1896,7 @@ namespace AIBlockerGuard
                     { "name", string.IsNullOrWhiteSpace(txtName.Text) ? Environment.UserName : txtName.Text.Trim() },
                     { "hostname", Environment.MachineName },
                     { "room_code", selRoom },
+                    { "ip", GuardEngine.GetLocalIPv4Address() },
                     { "os_info", Environment.OSVersion.VersionString },
                     { "version", "1.4.0" }
                 };
@@ -1956,6 +1997,7 @@ namespace AIBlockerGuard
                     { "hostname", Environment.MachineName },
                     { "room_code", activeRoomCode },
                     { "status", isLocked ? "LOCKED" : "UNLOCKED" },
+                    { "ip", GuardEngine.GetLocalIPv4Address() },
                     { "quarantined_count", quarantinedExtensions.Count },
                     { "quarantined_list", quarantinedExtensions },
                     { "killed_processes_count", killedCounter },
