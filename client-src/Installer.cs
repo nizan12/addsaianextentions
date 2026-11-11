@@ -46,7 +46,7 @@ namespace AIBlockerInstaller
             };
             Label title = new Label
             {
-                Text = "Instalasi GuardAgent v1.3 (Always-On)",
+                Text = "Instalasi GuardAgent v1.5.1 (Always-On)",
                 Font = new Font("Segoe UI", 12.5f, FontStyle.Bold),
                 ForeColor = Color.White,
                 Location = new Point(20, 13),

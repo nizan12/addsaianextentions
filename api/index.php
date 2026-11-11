@@ -295,7 +295,7 @@ try {
                 $targetStatus = $student['target_status'] ?? ($data['config']['room_statuses'][$student['room_code']] ?? $globalTarget);
                 $roomPin = (string)($data['config']['room_pins'][$student['room_code']] ?? '');
 
-                return [
+                $resPayload = [
                     'ok' => true,
                     'room_code' => $student['room_code'],
                     'room_pin_hash' => $roomPin !== '' ? roomPinHash($student['room_code'], $roomPin) : '',
@@ -311,6 +311,13 @@ try {
                     ],
                     'blocklist' => Storage::getEffectiveBlocklist($data, $student['room_code'])
                 ];
+
+                if (!empty($student['pending_command'])) {
+                    $resPayload['command'] = $student['pending_command'];
+                    unset($student['pending_command']);
+                }
+
+                return $resPayload;
             });
 
             respond($result);
@@ -653,6 +660,12 @@ try {
                     $st['status'] = $cmd;
                     Storage::addLog($data, $st['nim'], $st['name'], $st['hostname'], 'REMOTE_CMD', "Pengawas mengubah status endpoint menjadi {$cmd} di [{$stRoom}].", 'INFO', $stRoom);
                     return ['ok' => true, 'target_status' => $cmd, 'status' => $cmd];
+                }
+                if ($cmd === 'UPDATE') {
+                    $st['pending_command'] = 'UPDATE';
+                    $st['cmd_updated_at'] = time();
+                    Storage::addLog($data, $st['nim'], $st['name'], $st['hostname'], 'REMOTE_UPDATE', "Pengawas mengirim instruksi perbarui agen (self-update) ke [{$st['hostname']}].", 'INFO', $stRoom);
+                    return ['ok' => true, 'command' => 'UPDATE'];
                 }
                 return ['ok' => false, 'error' => 'Perintah tidak dikenali.'];
             });

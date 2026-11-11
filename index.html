@@ -999,7 +999,11 @@
                     <div id="modalIncidentList" class="p-3 rounded-xl border border-slate-200 bg-slate-50 text-[11px] text-slate-700 max-h-44 overflow-y-auto space-y-2"></div>
                 </div>
             </div>
-            <div class="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex justify-end shrink-0">
+            <div class="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
+                <button id="modalBtnUpdate" class="btn-tactile px-3 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold shadow-2xs flex items-center gap-1.5 transition" title="Kirim perintah self-update ke PC ini">
+                    <svg class="w-3.5 h-3.5 text-indigo-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
+                    <span>Perbarui GuardAgent (Update)</span>
+                </button>
                 <button onclick="closeStudentModal()" class="px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition shadow-xs">Tutup</button>
             </div>
         </div>
@@ -2525,6 +2529,15 @@
                 }
             }
 
+            const btnUpdate = document.getElementById('modalBtnUpdate');
+            if (btnUpdate) {
+                btnUpdate.onclick = () => {
+                    if (confirm(`Kirim instruksi pembaruan aplikasi ke PC [${st.hostname}] (${st.nim})?\n\nAplikasi GuardAgent pada PC ini akan otomatis mengunduh versi terbaru dan me-restart dirinya sendiri tanpa perlu download manual dari browser.`)) {
+                        sendStudentCmd(st.id, 'UPDATE');
+                    }
+                };
+            }
+
             document.getElementById('studentModal').classList.remove('hidden');
         }
 
@@ -2815,7 +2828,11 @@
             });
             const data = await res.json();
             if (data.ok) {
-                showToast('Perintah berhasil dikirim ke perangkat peserta');
+                if (command === 'UPDATE') {
+                    showToast('Instruksi pembaruan (self-update) berhasil dikirim ke PC peserta');
+                } else {
+                    showToast('Perintah berhasil dikirim ke perangkat peserta');
+                }
                 fetchDashboard();
             }
         }

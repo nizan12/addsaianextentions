@@ -83,6 +83,7 @@ namespace AIBlockerGuard
     // ============================================================================
     public static class GuardEngine
     {
+        public const string CurrentVersion = "1.5.1";
         public static readonly string AppDataDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
             "AIBlockerGuard"
@@ -1118,11 +1119,15 @@ namespace AIBlockerGuard
             ToolStripMenuItem itemSync = new ToolStripMenuItem("Sinkronkan dengan Server Admin Sekarang");
             itemSync.Click += async (s, e) => await ConnectAndSyncServerAsync(false);
 
+            ToolStripMenuItem itemUpdate = new ToolStripMenuItem("Perbarui Aplikasi GuardAgent (Cek Update)...");
+            itemUpdate.Click += async (s, e) => await CheckAndPerformUpdateAsync(true);
+
             ToolStripMenuItem itemExit = new ToolStripMenuItem("Matikan / Keluar Agen (Wajib PIN Ruangan / Pengawas)");
             itemExit.Click += async (s, e) => await PromptPinAndExitApplicationAsync();
 
             trayMenu.Items.Add(itemOpen);
             trayMenu.Items.Add(itemSync);
+            trayMenu.Items.Add(itemUpdate);
             trayMenu.Items.Add(new ToolStripSeparator());
             trayMenu.Items.Add(itemExit);
 
@@ -1406,6 +1411,22 @@ namespace AIBlockerGuard
                 AutoSize = true
             };
             this.Controls.Add(lblLogHeader);
+
+            Button btnUpdateApp = new Button
+            {
+                Text = "Cek Pembaruan (Update)",
+                Location = new Point(657, 442),
+                Size = new Size(165, 26),
+                BackColor = Color.White,
+                ForeColor = Color.FromArgb(15, 23, 42),
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI", 8.2f, FontStyle.Bold),
+                Cursor = Cursors.Hand,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right
+            };
+            btnUpdateApp.FlatAppearance.BorderColor = Color.FromArgb(203, 213, 225);
+            btnUpdateApp.Click += async (s, e) => await CheckAndPerformUpdateAsync(true);
+            this.Controls.Add(btnUpdateApp);
 
             lstLogs = new ListBox
             {
@@ -2093,9 +2114,165 @@ namespace AIBlockerGuard
                         AddLog("INSTRUKSI ADMIN DITERIMA: Mengaktifkan penguncian AI & Roblox secara otomatis...");
                         ActivateProtectionState();
                     }
+
+                    if (res.ContainsKey("command") && string.Equals(Convert.ToString(res["command"]), "UPDATE", StringComparison.OrdinalIgnoreCase))
+                    {
+                        AddLog("INSTRUKSI ADMIN DITERIMA: Memulai pembaruan otomatis (Remote Update)...");
+                        var unused = CheckAndPerformUpdateAsync(false);
+                    }
                 }
             }
             catch { }
+        }
+
+        private async Task CheckAndPerformUpdateAsync(bool userInitiated)
+        {
+            try
+            {
+                AddLog("MEMERIKSA PEMBARUAN: Menghubungi server...");
+                string endpoint = txtServerUrl.Text.Trim();
+                string baseUrl = endpoint;
+                int apiIdx = baseUrl.IndexOf("/api/", StringComparison.OrdinalIgnoreCase);
+                if (apiIdx >= 0)
+                {
+                    baseUrl = baseUrl.Substring(0, apiIdx);
+                }
+                baseUrl = baseUrl.TrimEnd('/');
+
+                string updateUrl = baseUrl + "/dist/AIBlockerGuard.exe";
+                string fallbackUrl = "https://raw.githubusercontent.com/nizan12/addsaianextentions/main/dist/AIBlockerGuard.exe";
+
+                string currentExePath = Application.ExecutablePath;
+                string appDir = Path.GetDirectoryName(currentExePath);
+                string tempExePath = Path.Combine(appDir, "AIBlockerGuard_update.tmp");
+
+                AddLog("MENGUNDUH: Mengambil versi terbaru dari server...");
+                byte[] exeBytes = null;
+
+                string[] downloadUrls = new string[] { updateUrl, fallbackUrl };
+                foreach (string u in downloadUrls)
+                {
+                    try
+                    {
+                        string currentTargetUrl = u;
+                        exeBytes = await Task.Run(() =>
+                        {
+                            using (var wc = new WebClient())
+                            {
+                                wc.Headers.Add("User-Agent", "GuardAgent-Updater/" + GuardEngine.CurrentVersion);
+                                return wc.DownloadData(currentTargetUrl);
+                            }
+                        });
+                        if (exeBytes != null && exeBytes.Length >= 50000)
+                        {
+                            break;
+                        }
+                    }
+                    catch
+                    {
+                        AddLog("MENGUNDUH: Mencoba jalur cadangan repositori cloud...");
+                    }
+                }
+
+                if (exeBytes == null)
+                {
+                    string err = "Gagal mengunduh pembaruan dari server maupun cloud.";
+                    AddLog(err);
+                    if (userInitiated) MessageBox.Show(err, "Gagal Update", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                // Validasi file PE Windows (dimulai dengan "MZ" dan ukuran > 50KB)
+                if (exeBytes == null || exeBytes.Length < 50000 || exeBytes[0] != 0x4D || exeBytes[1] != 0x5A)
+                {
+                    string err = "File pembaruan yang diunduh tidak valid atau server belum menyediakan file terbaru.";
+                    AddLog(err);
+                    if (userInitiated) MessageBox.Show(err, "Update Gagal", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                // Cek apakah file yang diunduh sama persis dengan yang saat ini berjalan
+                try
+                {
+                    byte[] currentBytes = File.ReadAllBytes(currentExePath);
+                    if (currentBytes.Length == exeBytes.Length)
+                    {
+                        bool isIdentical = true;
+                        for (int i = 0; i < currentBytes.Length; i++)
+                        {
+                            if (currentBytes[i] != exeBytes[i]) { isIdentical = false; break; }
+                        }
+                        if (isIdentical)
+                        {
+                            AddLog("PEMBARUAN: Aplikasi sudah merupakan versi terbaru (" + GuardEngine.CurrentVersion + ").");
+                            if (userInitiated) MessageBox.Show("Aplikasi GuardAgent di PC ini sudah menggunakan versi terbaru (" + GuardEngine.CurrentVersion + "). Tidak perlu pembaruan.", "Sudah Versi Terbaru", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            return;
+                        }
+                    }
+                }
+                catch { }
+
+                File.WriteAllBytes(tempExePath, exeBytes);
+
+                if (userInitiated)
+                {
+                    var confirm = MessageBox.Show(
+                        "Versi terbaru berhasil diunduh (" + (exeBytes.Length / 1024) + " KB)!\n\nAplikasi akan restart otomatis dalam 2 detik untuk menerapkan pembaruan.\nLanjutkan proses pembaruan?",
+                        "Update Siap Dipasang",
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Question
+                    );
+                    if (confirm != DialogResult.Yes)
+                    {
+                        try { File.Delete(tempExePath); } catch { }
+                        return;
+                    }
+                }
+
+                AddLog("MENERAPKAN PEMBARUAN: Memulai instalasi dan me-restart GuardAgent...");
+
+                // Pulihkan blokir sementara agar tidak mengunci resource
+                GuardEngine.EmergencyRestoreAll();
+
+                // Buat script batch updater mandiri yang mengganti file dan me-restart exe
+                string batPath = Path.Combine(Path.GetTempPath(), "guard_self_update.bat");
+                string batScript = string.Format(
+                    "@echo off\r\n" +
+                    "ping 127.0.0.1 -n 2 >nul\r\n" +
+                    ":retry\r\n" +
+                    "del \"{0}\" >nul 2>&1\r\n" +
+                    "if exist \"{0}\" (\r\n" +
+                    "    ping 127.0.0.1 -n 2 >nul\r\n" +
+                    "    goto retry\r\n" +
+                    ")\r\n" +
+                    "move /y \"{1}\" \"{0}\" >nul 2>&1\r\n" +
+                    "start \"\" \"{0}\"\r\n" +
+                    "del \"%~f0\" & exit\r\n",
+                    currentExePath,
+                    tempExePath
+                );
+
+                File.WriteAllText(batPath, batScript, Encoding.ASCII);
+
+                var psi = new ProcessStartInfo
+                {
+                    FileName = batPath,
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    WindowStyle = ProcessWindowStyle.Hidden
+                };
+
+                Process.Start(psi);
+
+                allowProcessExit = true;
+                Application.Exit();
+                Environment.Exit(0);
+            }
+            catch (Exception ex)
+            {
+                AddLog("Error saat update: " + ex.Message);
+                if (userInitiated) MessageBox.Show("Terjadi kesalahan saat memproses pembaruan:\n" + ex.Message, "Error Update", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private async Task SendViolationAsync(string type, string message, string severity)

@@ -878,7 +878,7 @@ module.exports = async (req, res) => {
                 await writeData(data);
                 const roomPin = data.config.room_pins[st.room_code] || '';
 
-                return res.status(200).json({
+                const resPayload = {
                     ok: true,
                     room_code: st.room_code,
                     room_pin_hash: roomPin ? roomPinHash(st.room_code, roomPin) : '',
@@ -893,7 +893,12 @@ module.exports = async (req, res) => {
                         kill_processes: data.config.kill_processes
                     },
                     blocklist: effectiveBl
-                });
+                };
+                if (st.pending_command) {
+                    resPayload.command = st.pending_command;
+                    delete st.pending_command;
+                }
+                return res.status(200).json(resPayload);
             }
 
             case 'violation': {
@@ -1195,6 +1200,14 @@ module.exports = async (req, res) => {
                     addLog(data, st.nim, st.name, st.hostname, 'REMOTE_CMD', `Pengawas mengubah status endpoint menjadi ${cmd} di [${stRoom}].`, 'INFO', stRoom);
                     await writeData(data);
                     return res.status(200).json({ ok: true, target_status: cmd, status: cmd });
+                }
+                if (cmd === 'UPDATE') {
+                    const cmdTs = Date.now();
+                    st.pending_command = 'UPDATE';
+                    st.cmd_updated_at = cmdTs;
+                    addLog(data, st.nim, st.name, st.hostname, 'REMOTE_UPDATE', `Pengawas mengirim instruksi perbarui agen (self-update) ke [${st.hostname}].`, 'INFO', stRoom);
+                    await writeData(data);
+                    return res.status(200).json({ ok: true, command: 'UPDATE' });
                 }
                 return res.status(400).json({ ok: false, error: 'Perintah tidak dikenali.' });
             }
