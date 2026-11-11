@@ -683,7 +683,14 @@
                 </div>
                 <div>
                     <div class="font-semibold text-slate-800 mb-1.5">Daftar Proteksi & Ekstensi IDE yang Dikarantina:</div>
-                    <div id="modalExtList" class="p-3 rounded-lg border border-slate-200 bg-slate-50 font-mono text-[11px] text-slate-700 max-h-40 overflow-y-auto space-y-1"></div>
+                    <div id="modalExtList" class="p-3 rounded-lg border border-slate-200 bg-slate-50 font-mono text-[11px] text-slate-700 max-h-36 overflow-y-auto space-y-1"></div>
+                </div>
+                <div>
+                    <div class="flex items-center justify-between mb-1.5">
+                        <span class="font-semibold text-slate-800">Riwayat Insiden & Aktivitas Terlarang:</span>
+                        <span id="modalIncidentCountBadge" class="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">0 Insiden</span>
+                    </div>
+                    <div id="modalIncidentList" class="p-3 rounded-lg border border-slate-200 bg-slate-50 text-[11px] text-slate-700 max-h-44 overflow-y-auto space-y-2"></div>
                 </div>
             </div>
             <div class="px-5 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
@@ -1810,6 +1817,41 @@
             } else {
                 box.innerHTML = `<div class="text-slate-400 font-sans">Tidak ada ekstensi AI yang terdeteksi pada perangkat ini.</div>`;
             }
+
+            const boxIncidents = document.getElementById('modalIncidentList');
+            const badgeIncidents = document.getElementById('modalIncidentCountBadge');
+            const studentLogs = cachedLogs.filter(l =>
+                (l.nim && String(l.nim).toLowerCase() === String(st.nim).toLowerCase()) ||
+                (l.hostname && String(l.hostname).toLowerCase() === String(st.hostname).toLowerCase())
+            );
+
+            const count = parseInt(st.killed_processes_count || 0, 10);
+            if (badgeIncidents) {
+                badgeIncidents.textContent = `${count} Insiden Terdeteksi`;
+                badgeIncidents.className = count > 0
+                    ? 'px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-rose-50 text-rose-700 border border-rose-200'
+                    : 'px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-emerald-50 text-emerald-700 border border-emerald-200';
+            }
+
+            if (boxIncidents) {
+                if (studentLogs.length) {
+                    boxIncidents.innerHTML = studentLogs.map(l => {
+                        let color = l.severity === 'DANGER' ? 'text-rose-700 font-semibold' : (l.severity === 'WARNING' ? 'text-amber-700' : 'text-slate-600');
+                        return `
+                            <div class="p-2.5 rounded-lg bg-white border border-slate-200/80 shadow-xs">
+                                <div class="flex items-center justify-between gap-2">
+                                    <span class="font-mono text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-200">${escapeHtml(l.type)}</span>
+                                    <span class="font-mono text-[10px] text-slate-400">${escapeHtml(l.timestamp)}</span>
+                                </div>
+                                <div class="mt-1 text-[11px] ${color} leading-relaxed">${escapeHtml(l.message)}</div>
+                            </div>
+                        `;
+                    }).join('');
+                } else {
+                    boxIncidents.innerHTML = `<div class="text-slate-400 font-sans p-1">Bersih — Tidak ada catatan pelanggaran terdeteksi pada perangkat ini.</div>`;
+                }
+            }
+
             document.getElementById('studentModal').classList.remove('hidden');
         }
 
