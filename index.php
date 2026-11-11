@@ -22,19 +22,54 @@
     </script>
     <style>
         body {
-            font-family: 'Inter', '-apple-system', BlinkMacSystemFont, sans-serif;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background-color: #F8FAFC;
+            background-image:
+                radial-gradient(at 100% 0%, rgba(224, 231, 255, 0.4) 0px, transparent 50%),
+                radial-gradient(at 0% 0%, rgba(209, 250, 229, 0.3) 0px, transparent 50%),
+                radial-gradient(at 50% 100%, rgba(241, 245, 249, 0.7) 0px, transparent 50%);
+            background-attachment: fixed;
             color: #0F172A;
             -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            text-rendering: optimizeLegibility;
         }
         .tabular-nums { font-variant-numeric: tabular-nums; }
         .card-surface {
-            background: #FFFFFF;
-            border: 1px solid #E2E8F0;
-            box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.04), 0 1px 2px -1px rgba(15, 23, 42, 0.02);
-            transition: all 0.15s ease-in-out;
+            background: rgba(255, 255, 255, 0.94);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid rgba(226, 232, 240, 0.85);
+            box-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.04), 0 0 0 1px rgba(255, 255, 255, 0.8) inset;
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
         }
-        .status-dot-live { box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.2); }
+        .card-surface:hover {
+            border-color: rgba(203, 213, 225, 0.95);
+            box-shadow: 0 4px 14px -2px rgba(15, 23, 42, 0.05), 0 2px 4px -1px rgba(15, 23, 42, 0.02);
+        }
+        .radar-beacon {
+            position: relative;
+            display: inline-flex;
+        }
+        .radar-beacon::before {
+            content: '';
+            position: absolute;
+            inset: -3px;
+            border-radius: 9999px;
+            background: rgba(16, 185, 129, 0.35);
+            animation: radar-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+        }
+        @keyframes radar-ping {
+            0% { transform: scale(0.9); opacity: 1; }
+            75%, 100% { transform: scale(2.2); opacity: 0; }
+        }
+        .btn-tactile {
+            transition: transform 0.1s ease, box-shadow 0.15s ease, background 0.15s ease;
+        }
+        .btn-tactile:active {
+            transform: scale(0.97);
+        }
+        .status-dot-live { box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.25); }
         .safe-area-pb { padding-bottom: max(0.6rem, env(safe-area-inset-bottom)); }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -43,6 +78,32 @@
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+        .radar-danger {
+            position: relative;
+            display: inline-flex;
+        }
+        .radar-danger::before {
+            content: '';
+            position: absolute;
+            inset: -3px;
+            border-radius: 9999px;
+            background: rgba(225, 29, 72, 0.4);
+            animation: radar-ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+        }
+        @keyframes sonar-sweep {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .sonar-scanner {
+            background: conic-gradient(from 0deg at 50% 50%, rgba(16, 185, 129, 0) 0deg, rgba(16, 185, 129, 0.2) 360deg);
+            animation: sonar-sweep 3s linear infinite;
+        }
+        .toggle-switch-track {
+            transition: background-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
+        }
+        .toggle-switch-thumb {
+            transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
         @media (max-width: 640px) {
             input:not([type="checkbox"]):not([type="radio"]), select, textarea {
                 font-size: 16px !important;
@@ -50,49 +111,63 @@
         }
     </style>
 </head>
-<body class="min-h-screen bg-[#F8FAFC] text-slate-900 flex flex-col lg:flex-row antialiased selection:bg-slate-900 selection:text-white">
+<body class="min-h-screen text-slate-900 flex flex-col lg:flex-row antialiased selection:bg-slate-900 selection:text-white">
 
     <!-- ======================================================================= -->
     <!-- GERBANG OTENTIKASI PENGAWAS / ADMIN                                     -->
     <!-- ======================================================================= -->
-    <div id="authGateOverlay" class="fixed inset-0 z-50 bg-[#0F172A] flex items-center justify-center p-4">
-        <div class="w-full max-w-md bg-white rounded-2xl border border-slate-200 shadow-2xl overflow-hidden">
-            <div class="p-6 bg-slate-900 text-white border-b border-slate-800 flex items-center justify-between">
+    <div id="authGateOverlay" class="fixed inset-0 z-50 bg-[#0B0F19] flex items-center justify-center p-4" style="background-image: radial-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px); background-size: 28px 28px;">
+        <div class="w-full max-w-md bg-white rounded-3xl border border-slate-200/90 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] overflow-hidden">
+            <div class="p-6 bg-gradient-to-b from-slate-900 to-slate-950 text-white border-b border-slate-800/80 flex items-center justify-between">
                 <div class="flex items-center gap-3">
-                    <div class="w-9 h-9 rounded-lg bg-emerald-600 text-white flex items-center justify-center">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center shadow-lg shadow-emerald-950/40 border border-emerald-400/30">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M12 3l7 4v5c0 5-3.5 8.5-7 9-3.5-.5-7-4-7-9V7l7-4z"/>
                         </svg>
                     </div>
                     <div>
-                        <h1 class="text-sm font-semibold tracking-tight">GuardConsole Admin</h1>
-                        <p class="text-[11px] text-slate-400">Otentikasi Konsol Pengawas Ujian</p>
+                        <div class="flex items-center gap-2">
+                            <h1 class="text-sm font-bold tracking-tight text-white">GuardConsole</h1>
+                            <span class="px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">v1.5</span>
+                        </div>
+                        <p class="text-[11px] text-slate-400 mt-0.5 font-medium flex items-center gap-1.5">
+                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                            Konsol Pengawas Ujian Terenkripsi
+                        </p>
                     </div>
                 </div>
             </div>
 
             <form onsubmit="handleAdminLogin(event)" autocomplete="off" class="p-6 space-y-4">
-                <div id="loginErrorBox" class="hidden p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700 font-medium"></div>
+                <div id="loginErrorBox" class="hidden p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 font-semibold flex items-center gap-2"></div>
 
                 <div>
-                    <label class="block text-xs font-semibold text-slate-700 mb-1.5">Email Pengawas / ID Admin</label>
-                    <input type="text" id="loginEmail" name="guard_auth_user" required autocomplete="off" readonly onfocus="this.removeAttribute('readonly')" value="" placeholder="Masukkan email atau ID pengawas" class="w-full rounded-lg bg-slate-50 border border-slate-300 px-3.5 py-2.5 text-xs font-mono text-slate-900 focus:bg-white focus:border-slate-900 focus:outline-none">
+                    <label class="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wider text-[10px]">Email Pengawas / ID Admin</label>
+                    <div class="relative">
+                        <input type="text" id="loginEmail" name="guard_auth_user" required autocomplete="off" readonly onfocus="this.removeAttribute('readonly')" value="" placeholder="Masukkan email atau ID pengawas" class="w-full rounded-xl bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-xs font-mono text-slate-900 focus:bg-white focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10 focus:outline-none transition shadow-2xs">
+                    </div>
                 </div>
 
                 <div>
-                    <label class="block text-xs font-semibold text-slate-700 mb-1.5">Kata Sandi Pengawas</label>
-                    <input type="password" id="loginPassword" name="guard_auth_secret" required autocomplete="new-password" readonly onfocus="this.removeAttribute('readonly')" value="" placeholder="Masukkan kata sandi pengawas" class="w-full rounded-lg bg-slate-50 border border-slate-300 px-3.5 py-2.5 text-xs font-mono text-slate-900 focus:bg-white focus:border-slate-900 focus:outline-none">
+                    <label class="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wider text-[10px]">Kata Sandi Pengawas</label>
+                    <div class="relative">
+                        <input type="password" id="loginPassword" name="guard_auth_secret" required autocomplete="new-password" readonly onfocus="this.removeAttribute('readonly')" value="" placeholder="Masukkan kata sandi pengawas" class="w-full rounded-xl bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-xs font-mono text-slate-900 focus:bg-white focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10 focus:outline-none transition shadow-2xs">
+                    </div>
                 </div>
 
                 <div class="pt-1">
-                    <button type="submit" id="btnLoginSubmit" class="w-full py-2.5 px-4 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition flex items-center justify-center gap-2">
-                        <span>Masuk ke Konsol Pengawas</span>
+                    <button type="submit" id="btnLoginSubmit" class="btn-tactile w-full py-2.5 px-4 rounded-xl bg-gradient-to-b from-slate-900 to-slate-950 hover:from-slate-800 hover:to-slate-900 text-white text-xs font-bold transition shadow-md flex items-center justify-center gap-2">
+                        <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9"/></svg>
+                        <span>Buka Konsol Pengawas</span>
                     </button>
                 </div>
 
-                <div class="pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
-                    <span>Sistem Pengawasan Integritas Akademik</span>
-                    <span>v1.5</span>
+                <div class="pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400 font-medium">
+                    <span class="flex items-center gap-1.5">
+                        <span class="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
+                        Academic Integrity Engine
+                    </span>
+                    <span class="font-mono text-[10px]">TLS 1.3 Active</span>
                 </div>
             </form>
         </div>
@@ -383,63 +458,96 @@
         <div class="flex-1 overflow-y-auto">
             <main class="p-3.5 sm:p-5 lg:p-6 max-w-[1400px] w-full mx-auto space-y-4 sm:space-y-6 pb-24 lg:pb-8">
 
-                <!-- KPI Telemetry Strip -->
+                <!-- KPI Telemetry Strip (Artisan Command Caliber) -->
                 <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-                    <div class="card-surface rounded-xl p-3.5 sm:p-4 border-l-4 border-l-slate-900">
+                    <!-- 1. Perangkat Terhubung -->
+                    <div class="card-surface rounded-2xl p-4 sm:p-5 relative overflow-hidden group">
+                        <div class="absolute -right-6 -bottom-6 w-24 h-24 rounded-full bg-slate-900/[0.03] group-hover:bg-slate-900/[0.06] transition-colors pointer-events-none"></div>
                         <div class="flex items-center justify-between text-xs text-slate-500 font-medium">
-                            <span class="truncate">Perangkat Terhubung</span>
-                            <div class="w-6 h-6 rounded-md bg-slate-100 flex items-center justify-center text-slate-600 shrink-0">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25"/></svg>
-                            </div>
+                            <span class="truncate font-semibold tracking-tight text-slate-600">Perangkat Terhubung</span>
+                            <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-slate-100 text-slate-700 border border-slate-200/80">
+                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                LIVE
+                            </span>
                         </div>
-                        <div class="mt-2 flex flex-wrap items-baseline gap-1.5 tabular-nums">
-                            <span id="statOnline" class="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">0</span>
-                            <span class="text-[11px] sm:text-xs text-slate-500">aktif / <span id="statTotal" class="font-semibold text-slate-700">0</span> total</span>
+                        <div class="mt-3 flex items-baseline gap-2 tabular-nums">
+                            <span id="statOnline" class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight leading-none">0</span>
+                            <span class="text-xs text-slate-400 font-medium">/ <span id="statTotal" class="font-bold text-slate-700">0</span> PC terdaftar</span>
+                        </div>
+                        <div class="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-medium">
+                            <span class="flex items-center gap-1.5">
+                                <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25"/></svg>
+                                <span>Konektivitas Ujian</span>
+                            </span>
+                            <span class="text-[10px] font-mono text-slate-400">Heartbeat 3s</span>
                         </div>
                     </div>
 
-                    <div class="card-surface rounded-xl p-3.5 sm:p-4 border-l-4 border-l-emerald-600">
+                    <!-- 2. Status Terkunci -->
+                    <div class="card-surface rounded-2xl p-4 sm:p-5 relative overflow-hidden group">
+                        <div class="absolute -right-6 -bottom-6 w-24 h-24 rounded-full bg-emerald-500/[0.04] group-hover:bg-emerald-500/[0.08] transition-colors pointer-events-none"></div>
                         <div class="flex items-center justify-between text-xs text-slate-500 font-medium">
-                            <span class="truncate">Status Terkunci</span>
-                            <div class="w-6 h-6 rounded-md bg-emerald-50 flex items-center justify-center text-emerald-600 shrink-0">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>
-                            </div>
+                            <span class="truncate font-semibold tracking-tight text-slate-600">Status Terkunci</span>
+                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                <svg class="w-3 h-3 text-emerald-600" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
+                                ENFORCED
+                            </span>
                         </div>
-                        <div class="mt-2 flex flex-wrap items-baseline gap-1.5 tabular-nums">
-                            <span id="statLocked" class="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">0</span>
-                            <span class="text-[11px] sm:text-xs text-slate-500">terlindungi AI</span>
+                        <div class="mt-3 flex items-baseline gap-2 tabular-nums">
+                            <span id="statLocked" class="text-2xl sm:text-3xl font-extrabold text-emerald-600 tracking-tight leading-none">0</span>
+                            <span class="text-xs text-slate-400 font-medium">endpoint aman</span>
+                        </div>
+                        <div class="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-medium">
+                            <span class="flex items-center gap-1.5">
+                                <svg class="w-3.5 h-3.5 text-emerald-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>
+                                <span>Proteksi AI Aktif</span>
+                            </span>
+                            <span class="text-[10px] font-mono text-emerald-600 font-bold">100% Target</span>
                         </div>
                     </div>
 
-                    <div class="card-surface rounded-xl p-3.5 sm:p-4 border-l-4 border-l-rose-500">
+                    <!-- 3. Intersepsi AI -->
+                    <div class="card-surface rounded-2xl p-4 sm:p-5 relative overflow-hidden group">
+                        <div class="absolute -right-6 -bottom-6 w-24 h-24 rounded-full bg-rose-500/[0.04] group-hover:bg-rose-500/[0.08] transition-colors pointer-events-none"></div>
                         <div class="flex items-center justify-between text-xs text-slate-500 font-medium">
-                            <span class="truncate">Intersepsi AI</span>
-                            <div class="w-6 h-6 rounded-md bg-rose-50 flex items-center justify-center text-rose-600 shrink-0">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
-                            </div>
+                            <span class="truncate font-semibold tracking-tight text-slate-600">Intersepsi AI</span>
+                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                <span class="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span>
+                                SIEM LOG
+                            </span>
                         </div>
-                        <div class="mt-2 flex flex-wrap items-baseline gap-1.5 tabular-nums">
-                            <span id="statViolations" class="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">0</span>
-                            <span class="text-[11px] sm:text-xs text-slate-500">insiden distop</span>
+                        <div class="mt-3 flex items-baseline gap-2 tabular-nums">
+                            <span id="statViolations" class="text-2xl sm:text-3xl font-extrabold text-rose-600 tracking-tight leading-none">0</span>
+                            <span class="text-xs text-slate-400 font-medium">insiden dicegat</span>
+                        </div>
+                        <div class="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-medium">
+                            <span class="flex items-center gap-1.5">
+                                <svg class="w-3.5 h-3.5 text-rose-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+                                <span>Aplikasi / Domain Diblokir</span>
+                            </span>
+                            <span class="text-[10px] font-mono text-slate-400">Zero Trust</span>
                         </div>
                     </div>
 
-                    <div class="card-surface rounded-xl p-3.5 sm:p-4 border-l-4 border-l-indigo-600">
+                    <!-- 4. Cakupan Kebijakan -->
+                    <div class="card-surface rounded-2xl p-4 sm:p-5 relative overflow-hidden group">
+                        <div class="absolute -right-6 -bottom-6 w-24 h-24 rounded-full bg-indigo-500/[0.04] group-hover:bg-indigo-500/[0.08] transition-colors pointer-events-none"></div>
                         <div class="flex items-center justify-between text-xs text-slate-500 font-medium">
-                            <span class="truncate">Cakupan Kebijakan</span>
-                            <div class="w-6 h-6 rounded-md bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12"/></svg>
-                            </div>
+                            <span class="truncate font-semibold tracking-tight text-slate-600">Cakupan Kebijakan</span>
+                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                ACTIVE
+                            </span>
                         </div>
-                        <div class="mt-2 flex flex-wrap items-baseline gap-1.5 tabular-nums text-xs">
-                            <span id="statDomains" class="font-bold text-slate-900 text-sm sm:text-base">0</span>
-                            <span class="text-slate-500">domain</span>
-                            <span class="text-slate-300">·</span>
-                            <span id="statProcs" class="font-bold text-slate-900 text-sm sm:text-base">0</span>
-                            <span class="text-slate-500">proc</span>
-                            <span class="text-slate-300">·</span>
-                            <span id="statExts" class="font-bold text-slate-900 text-sm sm:text-base">0</span>
-                            <span class="text-slate-500">ext</span>
+                        <div class="mt-3 flex items-baseline gap-1.5 tabular-nums">
+                            <span id="statDomains" class="text-2xl sm:text-3xl font-extrabold text-indigo-600 tracking-tight leading-none">0</span>
+                            <span class="text-xs text-slate-400 font-medium">domain AI</span>
+                        </div>
+                        <div class="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-medium">
+                            <div class="flex items-center gap-1 font-mono text-[10px]">
+                                <span class="px-1.5 py-0.2 rounded bg-slate-100 text-slate-700"><span id="statProcs">0</span> proc</span>
+                                <span class="px-1.5 py-0.2 rounded bg-slate-100 text-slate-700"><span id="statExts">0</span> ext</span>
+                            </div>
+                            <span class="text-[10px] text-indigo-600 font-bold hover:underline cursor-pointer" onclick="switchTab('rules')">Atur &rarr;</span>
                         </div>
                     </div>
                 </div>
@@ -1276,6 +1384,17 @@
             renderDomainChecklist();
         }
 
+        const GROUP_BRAND_ICONS = {
+            chatgpt: `<svg class="w-5 h-5 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 0 1 10 10c0 5.523-4.477 10-10 10S2 17.523 2 12A10 10 0 0 1 12 2Z"/><path d="m9 12 2 2 4-4"/></svg>`,
+            claude: `<svg class="w-5 h-5 text-amber-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3m-3.05-6.95-2.12 2.12M7.17 16.83l-2.12 2.12m13.9 0-2.12-2.12M7.17 7.17 5.05 5.05"/></svg>`,
+            gemini: `<svg class="w-5 h-5 text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M4.93 19.07 19.07 4.93"/></svg>`,
+            copilot: `<svg class="w-5 h-5 text-sky-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 15h.01M17 15h.01M9 10h6"/></svg>`,
+            deepseek: `<svg class="w-5 h-5 text-blue-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c-4.97 0-9 3.582-9 8 0 2.923 1.774 5.485 4.45 6.84L7 21l3.37-1.123C10.79 19.957 11.385 20 12 20c4.97 0 9-3.582 9-8s-4.03-9-9-9Z"/></svg>`,
+            ide_ai: `<svg class="w-5 h-5 text-purple-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/><line x1="12" y1="2" x2="12" y2="22"/></svg>`,
+            api_llm: `<svg class="w-5 h-5 text-teal-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="8" rx="2"/><rect x="2" y="13" width="20" height="8" rx="2"/><line x1="6" y1="7" x2="6.01" y2="7"/><line x1="6" y1="17" x2="6.01" y2="17"/></svg>`,
+            roblox: `<svg class="w-5 h-5 text-rose-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" transform="rotate(15 12 12)"/><circle cx="12" cy="12" r="2"/></svg>`
+        };
+
         function renderDomainCategoryCards() {
             const box = document.getElementById('domainCategoryCards');
             if (!box) return;
@@ -1285,23 +1404,57 @@
                 const isAllActive = activeCount === total;
                 const isPartial = activeCount > 0 && activeCount < total;
 
-                const borderClass = isAllActive
-                    ? 'border-slate-900 bg-slate-900 text-white'
-                    : (isPartial ? 'border-amber-500 bg-amber-50/60 text-slate-900' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50');
-                const badgeClass = isAllActive
-                    ? 'bg-emerald-500/20 text-emerald-200 border-emerald-400/30'
-                    : (isPartial ? 'bg-amber-100 text-amber-800 border-amber-300' : 'bg-slate-100 text-slate-500 border-slate-200');
-                const statusText = isAllActive ? 'Diblokir' : (isPartial ? `${activeCount}/${total}` : 'Diizinkan');
+                const icon = GROUP_BRAND_ICONS[g.id] || `<svg class="w-5 h-5 text-slate-700" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>`;
+
+                const thumbTranslate = isAllActive ? 'translate-x-4' : (isPartial ? 'translate-x-2' : 'translate-x-0');
+                const trackBg = isAllActive
+                    ? 'bg-slate-900 border-slate-800'
+                    : (isPartial ? 'bg-amber-500 border-amber-600' : 'bg-slate-200 border-slate-300');
+
+                const statusBadge = isAllActive
+                    ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                        Semua Diblokir
+                       </span>`
+                    : (isPartial
+                        ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                            <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                            ${activeCount}/${total} Diblokir
+                           </span>`
+                        : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 text-slate-500 border border-slate-200">
+                            Diizinkan
+                           </span>`);
+
+                const cardBorder = isAllActive
+                    ? 'border-slate-900/40 bg-gradient-to-b from-white to-slate-50/70 shadow-sm'
+                    : (isPartial ? 'border-amber-400/50 bg-gradient-to-b from-white to-amber-50/30' : 'border-slate-200 bg-white hover:border-slate-300');
 
                 return `
-                    <div onclick="toggleDomainGroup('${g.id}')" class="cursor-pointer rounded-xl border p-3.5 transition flex flex-col justify-between ${borderClass}">
-                        <div class="flex items-start justify-between gap-2">
-                            <div class="font-semibold text-xs">${escapeHtml(g.title)}</div>
-                            <span class="px-1.5 py-0.5 rounded text-[10px] font-mono border shrink-0 ${badgeClass}">${statusText}</span>
+                    <div onclick="toggleDomainGroup('${g.id}')" class="btn-tactile cursor-pointer rounded-2xl border p-4 transition flex flex-col justify-between ${cardBorder} select-none">
+                        <div>
+                            <div class="flex items-start justify-between gap-2.5">
+                                <div class="flex items-center gap-2.5 min-w-0">
+                                    <div class="w-9 h-9 rounded-xl bg-slate-100 border border-slate-200/80 flex items-center justify-center shrink-0 shadow-2xs">
+                                        ${icon}
+                                    </div>
+                                    <div class="min-w-0">
+                                        <div class="font-bold text-xs text-slate-900 truncate">${escapeHtml(g.title)}</div>
+                                        <div class="text-[11px] text-slate-500 truncate mt-0.5">${escapeHtml(g.desc)}</div>
+                                    </div>
+                                </div>
+
+                                <!-- iOS-Style Toggle Switch -->
+                                <div class="relative inline-flex items-center shrink-0">
+                                    <div class="toggle-switch-track w-9 h-5 rounded-full border ${trackBg} p-0.5">
+                                        <div class="toggle-switch-thumb w-3.5 h-3.5 rounded-full bg-white shadow-xs transform ${thumbTranslate}"></div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <div class="mt-2 flex items-center justify-between text-[11px] ${isAllActive ? 'text-slate-300' : 'text-slate-500'}">
-                            <span>${escapeHtml(g.desc)}</span>
-                            <span class="font-mono">${total} host</span>
+
+                        <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                            ${statusBadge}
+                            <span class="text-[11px] font-mono text-slate-400 font-medium">${total} host</span>
                         </div>
                     </div>
                 `;
@@ -1943,6 +2096,33 @@
             });
         }
 
+        function getStudentInitials(name) {
+            if (!name) return 'ST';
+            const parts = String(name).trim().split(/\s+/).filter(Boolean);
+            if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+            return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+        }
+
+        const AVATAR_PALETTES = [
+            { bg: 'from-blue-600 to-indigo-700', text: 'text-white' },
+            { bg: 'from-emerald-600 to-teal-700', text: 'text-white' },
+            { bg: 'from-violet-600 to-purple-700', text: 'text-white' },
+            { bg: 'from-amber-500 to-orange-600', text: 'text-white' },
+            { bg: 'from-rose-500 to-pink-600', text: 'text-white' },
+            { bg: 'from-cyan-600 to-blue-700', text: 'text-white' },
+            { bg: 'from-slate-700 to-slate-900', text: 'text-white' }
+        ];
+
+        function getAvatarPalette(str) {
+            let hash = 0;
+            const s = String(str || 'default');
+            for (let i = 0; i < s.length; i++) {
+                hash = s.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const idx = Math.abs(hash) % AVATAR_PALETTES.length;
+            return AVATAR_PALETTES[idx];
+        }
+
         function renderCurrentStudents() {
             const list = getFilteredStudents();
             const tbody = document.getElementById('studentTableBody');
@@ -1950,66 +2130,152 @@
 
             if (!list.length) {
                 const emptyMsg = selectedRoom === 'ALL'
-                    ? `Belum ada perangkat mahasiswa yang terhubung.`
+                    ? 'Belum ada perangkat mahasiswa yang terhubung di seluruh ruangan.'
                     : `Belum ada perangkat mahasiswa yang terhubung di ruangan [${escapeHtml(selectedRoom)}].`;
-                tbody.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-slate-400 text-xs">${emptyMsg}</td></tr>`;
-                grid.innerHTML = `<div class="col-span-full card-surface rounded-xl py-12 text-center text-slate-400 text-xs">${emptyMsg}</div>`;
+
+                const endpointUrl = window.location.origin + window.location.pathname.replace(/\/index\.(php|html)$/, '').replace(/\/$/, '') + '/api/index.php';
+
+                const emptyStateHtml = `
+                    <div class="py-14 px-4 text-center max-w-md mx-auto flex flex-col items-center">
+                        <div class="relative w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-200/80 flex items-center justify-center text-emerald-600 shadow-sm mb-4">
+                            <div class="sonar-scanner absolute inset-0 rounded-2xl opacity-40"></div>
+                            <svg class="w-7 h-7 relative z-10" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M8.288 15.038a5.25 5.25 0 017.424 0M5.106 11.856c3.807-3.808 9.98-3.808 13.788 0M1.924 8.674c5.565-5.565 14.587-5.565 20.152 0M12.53 18.22l-.53.53-.53-.53a.75.75 0 011.06 0z"/>
+                            </svg>
+                        </div>
+                        <h3 class="text-sm font-bold text-slate-900">Menunggu Sambungan Agen Peserta</h3>
+                        <p class="text-xs text-slate-500 mt-1.5 leading-relaxed">${emptyMsg} Jalankan aplikasi <code class="font-mono bg-slate-100 px-1 py-0.5 rounded text-slate-700">GuardAgent.exe</code> di workstation ujian untuk mulai memantau.</p>
+                        <div class="mt-4 flex flex-wrap items-center justify-center gap-2">
+                            <button onclick="copyText('${endpointUrl}', 'URL Endpoint Server disalin')" class="btn-tactile px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold shadow-xs flex items-center gap-1.5">
+                                <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 7.5V6.108c0-1.135.845-2.098 1.976-2.192.373-.03.748-.057 1.124-.08M15.75 18H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08M15.75 18.75v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5A3.375 3.375 0 006.375 7.5H5.25m11.25 11.25H9.75M5.25 7.5v9a2.25 2.25 0 002.25 2.25h2.25"/></svg>
+                                <span>Salin URL Server</span>
+                            </button>
+                            <button onclick="switchTab('download')" class="btn-tactile px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-2xs flex items-center gap-1.5">
+                                <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                                <span>Distribusi Agen (.exe)</span>
+                            </button>
+                        </div>
+                    </div>
+                `;
+
+                tbody.innerHTML = `<tr><td colspan="8" class="p-0">${emptyStateHtml}</td></tr>`;
+                grid.innerHTML = `<div class="col-span-full card-surface rounded-2xl">${emptyStateHtml}</div>`;
                 return;
             }
 
             tbody.innerHTML = list.map(st => {
                 const stRoom = (st.room_code || currentRoomCode || '-').toUpperCase();
-                const connBadge = st.is_online
-                    ? `<span class="inline-flex items-center gap-1.5 text-slate-700 font-medium"><span class="w-2 h-2 rounded-full bg-emerald-600 status-dot-live"></span>Terhubung</span>`
-                    : `<span class="inline-flex items-center gap-1.5 text-slate-400"><span class="w-2 h-2 rounded-full bg-slate-300"></span>Terputus (${st.seconds_ago}d)</span>`;
-
+                const initials = getStudentInitials(st.name);
+                const palette = getAvatarPalette(st.name + st.nim);
                 const isLocked = st.status === 'LOCKED';
+
+                const connBadge = st.is_online
+                    ? `<div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200/80 font-medium text-[11px] shadow-2xs">
+                        <span class="radar-beacon"><span class="w-2 h-2 rounded-full bg-emerald-600"></span></span>
+                        <span>Aktif (${st.seconds_ago}s)</span>
+                      </div>`
+                    : `<div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 text-slate-500 border border-slate-200 font-medium text-[11px]">
+                        <span class="w-2 h-2 rounded-full bg-slate-400"></span>
+                        <span>Terputus (${st.seconds_ago}s)</span>
+                      </div>`;
+
                 let stateBadge = isLocked
-                    ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-50 text-emerald-800 border border-emerald-200">Terkunci</span>`
-                    : `<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200">Terbuka</span>`;
+                    ? `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200/90 shadow-2xs">
+                        <svg class="w-3.5 h-3.5 text-emerald-600 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
+                        <span>Terkunci</span>
+                      </span>`
+                    : `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200/90 shadow-2xs">
+                        <svg class="w-3.5 h-3.5 text-amber-600 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5V6.75a4.5 4.5 0 119 0v3.75M3.75 21.75h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
+                        <span>Bypass</span>
+                      </span>`;
 
                 if (st.vpn_detected) {
-                    stateBadge += ` <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-200 ml-1">VPN</span>`;
+                    stateBadge += ` <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-300 ml-1 shadow-2xs animate-pulse" title="Peringatan: Perangkat menggunakan koneksi proxy atau VPN!">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>
+                        <span>VPN</span>
+                    </span>`;
                 }
 
                 const extCount = st.quarantined_count || 0;
                 const extSummary = extCount > 0
-                    ? `<button onclick="openStudentModal('${escapeHtml(st.id)}')" class="text-slate-700 hover:text-slate-900 font-medium underline decoration-slate-300">${extCount} modul dikunci</button>`
-                    : `<span class="text-slate-400">Bersih</span>`;
+                    ? `<button onclick="openStudentModal('${escapeHtml(st.id)}')" class="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-indigo-50/80 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/70 font-mono text-[11px] font-semibold transition" title="Lihat modul ekstensi yang dikarantina">
+                        <svg class="w-3.5 h-3.5 text-indigo-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14.25 9.75L16.5 12l-2.25 2.25m-4.5 0L7.5 12l2.25-2.25M6 20.25h12A2.25 2.25 0 0020.25 18V6A2.25 2.25 0 0018 3.75H6A2.25 2.25 0 003.75 6v12A2.25 2.25 0 006 20.25z"/></svg>
+                        <span>${extCount} modul</span>
+                      </button>`
+                    : `<span class="inline-flex items-center gap-1 text-slate-400 font-medium text-[11px]">
+                        <svg class="w-3.5 h-3.5 text-emerald-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
+                        <span>Bersih</span>
+                      </span>`;
 
                 const incidents = st.killed_processes_count || 0;
                 const incidentCell = incidents > 0
-                    ? `<span class="inline-flex items-center px-2 py-0.5 rounded font-mono text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-200 tabular-nums">${incidents}x</span>`
-                    : `<span class="text-slate-400 font-mono">0</span>`;
-
-                const lockBtnClass = isLocked
-                    ? 'px-2.5 py-1 rounded border border-slate-900 bg-slate-900 text-white font-medium transition'
-                    : 'px-2.5 py-1 rounded border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 font-medium transition';
-                const unlockBtnClass = !isLocked
-                    ? 'px-2.5 py-1 rounded border border-amber-600 bg-amber-600 text-white font-medium transition'
-                    : 'px-2.5 py-1 rounded border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 font-medium transition';
+                    ? `<button onclick="openStudentModal('${escapeHtml(st.id)}')" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-mono text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200/80 hover:bg-rose-100 transition shadow-2xs" title="Lihat riwayat proses yang dicegat">
+                        <span class="radar-danger"><span class="w-1.5 h-1.5 rounded-full bg-rose-600"></span></span>
+                        <span>${incidents}x dicegat</span>
+                      </button>`
+                    : `<span class="text-slate-400 font-mono text-[11px]">0</span>`;
 
                 return `
-                    <tr class="hover:bg-slate-50/80 transition">
+                    <tr class="hover:bg-slate-50/90 transition group">
                         <td class="py-3 px-4">
-                            <div class="font-semibold text-slate-900">${escapeHtml(st.name)}</div>
-                            <div class="text-[11px] text-slate-500 font-mono mt-0.5">${escapeHtml(st.nim)}</div>
+                            <div class="flex items-center gap-3">
+                                <div class="relative shrink-0">
+                                    <div class="w-9 h-9 rounded-xl bg-gradient-to-tr ${palette.bg} ${palette.text} flex items-center justify-center font-bold text-xs shadow-xs border border-white/60">
+                                        ${initials}
+                                    </div>
+                                    <span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${st.is_online ? 'bg-emerald-500' : 'bg-slate-300'}" title="${st.is_online ? 'Aktif Terhubung' : 'Terputus'}"></span>
+                                </div>
+                                <div class="min-w-0">
+                                    <div class="flex items-center gap-1.5 font-bold text-slate-900 truncate">
+                                        <span>${escapeHtml(st.name)}</span>
+                                        ${isLocked ? '<svg class="w-3.5 h-3.5 text-emerald-600 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" title="Terkunci Terlindungi"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z"/></svg>' : ''}
+                                    </div>
+                                    <div class="text-[11px] font-mono text-slate-500 mt-0.5">
+                                        ${escapeHtml(st.nim)}
+                                    </div>
+                                </div>
+                            </div>
                         </td>
                         <td class="py-3 px-3">
-                            <button onclick="onSelectRoom('${escapeHtml(stRoom)}')" class="inline-flex items-center px-2 py-0.5 rounded font-mono text-[11px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 transition">${escapeHtml(stRoom)}</button>
+                            <button onclick="onSelectRoom('${escapeHtml(stRoom)}')" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg font-mono text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200/80 transition" title="Filter ruangan ${escapeHtml(stRoom)}">
+                                <span>${escapeHtml(stRoom)}</span>
+                            </button>
                         </td>
-                        <td class="py-3 px-4 font-mono text-[11px] text-slate-600">
-                            <div>${escapeHtml(st.hostname)}</div>
-                            <div class="text-slate-400">${escapeHtml(st.ip || '127.0.0.1')}</div>
+                        <td class="py-3 px-4">
+                            <div class="flex items-center gap-2">
+                                <div class="w-7 h-7 rounded-lg bg-slate-100 border border-slate-200/70 text-slate-500 flex items-center justify-center shrink-0">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25"/></svg>
+                                </div>
+                                <div class="min-w-0 font-mono text-xs">
+                                    <div class="font-semibold text-slate-800 truncate">${escapeHtml(st.hostname)}</div>
+                                    <button onclick="copyText('${escapeHtml(st.ip || '127.0.0.1')}', 'IP [${escapeHtml(st.ip || '127.0.0.1')}] disalin')" class="text-[11px] text-slate-400 hover:text-slate-700 flex items-center gap-1 group/ip transition" title="Klik untuk salin IP">
+                                        <span>${escapeHtml(st.ip || '127.0.0.1')}</span>
+                                        <svg class="w-3 h-3 opacity-0 group-hover/ip:opacity-100 transition-opacity" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                                    </button>
+                                </div>
+                            </div>
                         </td>
                         <td class="py-3 px-3">${connBadge}</td>
                         <td class="py-3 px-3">${stateBadge}</td>
                         <td class="py-3 px-3">${extSummary}</td>
                         <td class="py-3 px-3">${incidentCell}</td>
-                        <td class="py-3 px-4 text-right whitespace-nowrap space-x-1">
-                            <button onclick="sendStudentCmd('${escapeHtml(st.id)}', 'LOCKED')" class="${lockBtnClass}">Kunci</button>
-                            <button onclick="sendStudentCmd('${escapeHtml(st.id)}', 'UNLOCKED')" class="${unlockBtnClass}">Buka</button>
-                            <button onclick="sendStudentCmd('${escapeHtml(st.id)}', 'REMOVE')" class="px-2 py-1 rounded text-slate-400 hover:text-rose-600 transition" title="Hapus sesi">✕</button>
+                        <td class="py-3 px-4 text-right whitespace-nowrap">
+                            <div class="inline-flex items-center gap-1 rounded-xl bg-slate-100 p-0.5 border border-slate-200/70 shadow-2xs">
+                                <button onclick="sendStudentCmd('${escapeHtml(st.id)}', 'LOCKED')" class="btn-tactile px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 ${isLocked ? 'bg-slate-900 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}" title="Kunci perangkat ini">
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                                    <span>Kunci</span>
+                                </button>
+                                <button onclick="sendStudentCmd('${escapeHtml(st.id)}', 'UNLOCKED')" class="btn-tactile px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 ${!isLocked ? 'bg-amber-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}" title="Buka kunci perangkat ini">
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 019.9-1"/></svg>
+                                    <span>Buka</span>
+                                </button>
+                                <button onclick="openStudentModal('${escapeHtml(st.id)}')" class="btn-tactile p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-white transition" title="Detail perangkat">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/></svg>
+                                </button>
+                                <button onclick="sendStudentCmd('${escapeHtml(st.id)}', 'REMOVE')" class="btn-tactile p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-white transition" title="Hapus sesi">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                                </button>
+                            </div>
                         </td>
                     </tr>
                 `;
@@ -2017,47 +2283,68 @@
 
             grid.innerHTML = list.map(st => {
                 const stRoom = (st.room_code || currentRoomCode || '-').toUpperCase();
+                const initials = getStudentInitials(st.name);
+                const palette = getAvatarPalette(st.name + st.nim);
                 const isLocked = st.status === 'LOCKED';
-                const topBorder = !st.is_online
-                    ? 'border-t-4 border-t-slate-300'
-                    : (isLocked ? 'border-t-4 border-t-emerald-600' : 'border-t-4 border-t-amber-500');
-                const statusLabel = isLocked ? 'Terkunci' : 'Terbuka';
+                const incidents = st.killed_processes_count || 0;
+                const extCount = st.quarantined_count || 0;
 
                 return `
-                    <div class="card-surface rounded-xl p-4 flex flex-col justify-between ${topBorder}">
+                    <div class="card-surface rounded-2xl p-4 flex flex-col justify-between border-t-4 ${isLocked ? 'border-t-emerald-600' : 'border-t-amber-500'} hover:shadow-lg transition">
                         <div>
-                            <div class="flex items-start justify-between gap-2">
-                                <div>
-                                    <div class="font-semibold text-xs text-slate-900">${escapeHtml(st.name)}</div>
-                                    <div class="text-[11px] font-mono text-slate-500">${escapeHtml(st.nim)}</div>
+                            <!-- Node Top Header -->
+                            <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                                <div class="flex items-center gap-2">
+                                    <div class="w-7 h-7 rounded-lg bg-slate-900 text-white flex items-center justify-center font-mono text-[10px] font-bold shadow-xs">
+                                        WS
+                                    </div>
+                                    <div class="font-mono text-xs font-bold text-slate-900 truncate max-w-[120px]">${escapeHtml(st.hostname)}</div>
                                 </div>
-                                <span class="px-1.5 py-0.5 rounded font-mono text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">${escapeHtml(stRoom)}</span>
+                                <div class="flex items-center gap-1.5">
+                                    <span class="px-2 py-0.5 rounded-md font-mono text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">${escapeHtml(stRoom)}</span>
+                                    <span class="w-2.5 h-2.5 rounded-full ${st.is_online ? 'bg-emerald-500 status-dot-live' : 'bg-slate-300'}" title="${st.is_online ? 'Online' : 'Offline'}"></span>
+                                </div>
                             </div>
 
-                            <div class="mt-3 pt-3 border-t border-slate-100 space-y-1 text-[11px] text-slate-600">
-                                <div class="flex justify-between">
-                                    <span class="text-slate-400">Host:</span>
-                                    <span class="font-mono">${escapeHtml(st.hostname)}</span>
+                            <!-- Student Profile -->
+                            <div class="flex items-center gap-3 pt-3">
+                                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr ${palette.bg} ${palette.text} flex items-center justify-center font-bold text-sm shadow-xs border border-white/60 shrink-0">
+                                    ${initials}
                                 </div>
-                                <div class="flex justify-between">
-                                    <span class="text-slate-400">Status Endpoint:</span>
-                                    <span class="font-semibold ${isLocked ? 'text-emerald-700' : 'text-amber-700'}">${statusLabel}</span>
+                                <div class="min-w-0 flex-1">
+                                    <div class="font-bold text-sm text-slate-900 truncate">${escapeHtml(st.name)}</div>
+                                    <div class="text-[11px] font-mono text-slate-500">${escapeHtml(st.nim)}</div>
                                 </div>
-                                <div class="flex justify-between">
-                                    <span class="text-slate-400">Proteksi IDE:</span>
-                                    <span class="font-mono">${st.quarantined_count || 0} modul</span>
+                            </div>
+
+                            <!-- Spec Telemetry -->
+                            <div class="mt-3.5 p-2.5 rounded-xl bg-slate-50/80 border border-slate-200/60 space-y-2 text-xs">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-slate-400 text-[11px]">Endpoint IP</span>
+                                    <span class="font-mono font-medium text-slate-700 text-[11px]">${escapeHtml(st.ip || '127.0.0.1')}</span>
                                 </div>
-                                <div class="flex justify-between">
-                                    <span class="text-slate-400">Insiden AI:</span>
-                                    <span class="font-mono ${(st.killed_processes_count || 0) > 0 ? 'text-rose-600 font-semibold' : ''}">${st.killed_processes_count || 0}x</span>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-slate-400 text-[11px]">Proteksi AI</span>
+                                    <span class="font-bold text-[11px] ${isLocked ? 'text-emerald-700' : 'text-amber-700'}">${isLocked ? 'Terkunci Aktif' : 'Bypass / Terbuka'}</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-slate-400 text-[11px]">Modul Ekstensi</span>
+                                    <span class="font-mono text-[11px] ${extCount > 0 ? 'text-indigo-700 font-semibold' : 'text-slate-500'}">${extCount > 0 ? extCount + ' dikunci' : 'Bersih'}</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-slate-400 text-[11px]">Intersepsi AI</span>
+                                    <span class="font-mono text-[11px] ${incidents > 0 ? 'text-rose-600 font-bold' : 'text-slate-500'}">${incidents > 0 ? incidents + 'x dicegat' : '0'}</span>
                                 </div>
                             </div>
                         </div>
 
-                        <div class="mt-4 pt-2.5 border-t border-slate-100 flex items-center justify-between gap-1.5 text-[11px]">
-                            <button onclick="sendStudentCmd('${escapeHtml(st.id)}', 'LOCKED')" class="flex-1 py-1 rounded border ${isLocked ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 hover:bg-slate-50 text-slate-700'} font-medium">Kunci</button>
-                            <button onclick="sendStudentCmd('${escapeHtml(st.id)}', 'UNLOCKED')" class="flex-1 py-1 rounded border ${!isLocked ? 'border-amber-600 bg-amber-600 text-white' : 'border-slate-200 hover:bg-slate-50 text-slate-700'} font-medium">Buka</button>
-                            <button onclick="openStudentModal('${escapeHtml(st.id)}')" class="px-2 py-1 rounded border border-slate-200 hover:bg-slate-50 text-slate-500">Detail</button>
+                        <!-- Node Actions -->
+                        <div class="mt-4 pt-3 border-t border-slate-100 flex items-center gap-1.5">
+                            <button onclick="sendStudentCmd('${escapeHtml(st.id)}', 'LOCKED')" class="btn-tactile flex-1 py-1.5 rounded-xl font-bold text-xs transition ${isLocked ? 'bg-slate-900 text-white shadow-xs' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}">Kunci</button>
+                            <button onclick="sendStudentCmd('${escapeHtml(st.id)}', 'UNLOCKED')" class="btn-tactile flex-1 py-1.5 rounded-xl font-bold text-xs transition ${!isLocked ? 'bg-amber-600 text-white shadow-xs' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}">Buka</button>
+                            <button onclick="openStudentModal('${escapeHtml(st.id)}')" class="btn-tactile p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600" title="Detail Perangkat">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/></svg>
+                            </button>
                         </div>
                     </div>
                 `;
@@ -2106,12 +2393,12 @@
                             <span class="text-slate-500">${count} PC</span>
                         </div>
                         <div class="flex flex-wrap items-center gap-1.5">
-                            <button onclick="onSelectRoom('${escapeHtml(r)}'); switchTab('monitor');" class="px-2.5 py-1 rounded border border-slate-200 hover:bg-slate-100 text-slate-700 font-medium">Pantau</button>
-                            <button onclick="openRoomRulesEditor('${escapeHtml(r)}')" class="px-2.5 py-1 rounded border border-slate-200 hover:bg-slate-100 text-slate-700 font-medium">Atur Blokir</button>
-                            <button onclick="openEditRoomModal('${escapeHtml(r)}')" class="px-2.5 py-1 rounded border border-slate-200 hover:bg-slate-100 text-slate-700 font-medium">Edit & PIN</button>
-                            <button onclick="setRoomStatusDirect('${escapeHtml(r)}', 'LOCKED')" class="px-2.5 py-1 rounded border ${status === 'LOCKED' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 hover:bg-slate-100 text-slate-700'} font-medium">Kunci</button>
-                            <button onclick="setRoomStatusDirect('${escapeHtml(r)}', 'UNLOCKED')" class="px-2.5 py-1 rounded border ${status === 'UNLOCKED' ? 'border-amber-600 bg-amber-600 text-white' : 'border-slate-200 hover:bg-slate-100 text-slate-700'} font-medium">Buka</button>
-                            <button onclick="deleteRoom('${escapeHtml(r)}')" class="px-2 py-1 rounded text-slate-400 hover:text-rose-600" title="Hapus ruangan">✕</button>
+                            <button onclick="onSelectRoom('${escapeHtml(r)}'); switchTab('monitor');" class="btn-tactile px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold shadow-2xs">Pantau</button>
+                            <button onclick="openRoomRulesEditor('${escapeHtml(r)}')" class="btn-tactile px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold shadow-2xs">Atur Blokir</button>
+                            <button onclick="openEditRoomModal('${escapeHtml(r)}')" class="btn-tactile px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold shadow-2xs">Edit & PIN</button>
+                            <button onclick="setRoomStatusDirect('${escapeHtml(r)}', 'LOCKED')" class="btn-tactile px-2.5 py-1 rounded-lg border ${status === 'LOCKED' ? 'border-slate-900 bg-slate-900 text-white shadow-xs' : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'} font-semibold">Kunci</button>
+                            <button onclick="setRoomStatusDirect('${escapeHtml(r)}', 'UNLOCKED')" class="btn-tactile px-2.5 py-1 rounded-lg border ${status === 'UNLOCKED' ? 'border-amber-600 bg-amber-600 text-white shadow-xs' : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'} font-semibold">Buka</button>
+                            <button onclick="deleteRoom('${escapeHtml(r)}')" class="btn-tactile p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition" title="Hapus ruangan">✕</button>
                         </div>
                     </div>
                 `;
@@ -2176,39 +2463,66 @@
 
         function renderLogs(logs) {
             const box = document.getElementById('logListContainer');
+            if (!box) return;
             const filtered = selectedRoom === 'ALL'
                 ? logs
                 : logs.filter(l => !l.room_code || l.room_code === 'ALL' || l.room_code.toUpperCase() === selectedRoom);
 
             if (!filtered.length) {
-                box.innerHTML = `<div class="py-12 text-center text-xs text-slate-400">Belum ada catatan insiden.</div>`;
+                box.innerHTML = `
+                    <div class="py-14 text-center max-w-sm mx-auto flex flex-col items-center">
+                        <div class="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-200/80 flex items-center justify-center text-emerald-600 shadow-sm mb-3">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>
+                        </div>
+                        <h4 class="text-xs font-bold text-slate-900">Jurnal Audit Bersih & Terlindungi</h4>
+                        <p class="text-[11px] text-slate-500 mt-1">Belum ada intersepsi proses atau insiden pelanggaran yang tercatat pada sesi ini.</p>
+                    </div>
+                `;
                 return;
             }
+
             box.innerHTML = filtered.map(l => {
-                let badge = `<span class="px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-slate-100 text-slate-700">${escapeHtml(l.type)}</span>`;
-                if (l.severity === 'DANGER') {
-                    badge = `<span class="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-rose-50 text-rose-700 border border-rose-200">${escapeHtml(l.type)}</span>`;
-                } else if (l.severity === 'WARNING') {
-                    badge = `<span class="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-amber-50 text-amber-800 border border-amber-200">${escapeHtml(l.type)}</span>`;
+                let badge = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-slate-100 text-slate-700 border border-slate-200">${escapeHtml(l.type)}</span>`;
+                let iconBg = 'bg-slate-100 text-slate-600';
+
+                if (l.type === 'KILL_PROCESS' || l.severity === 'DANGER') {
+                    badge = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-rose-50 text-rose-700 border border-rose-200"><span class="w-1.5 h-1.5 rounded-full bg-rose-600"></span>${escapeHtml(l.type)}</span>`;
+                    iconBg = 'bg-rose-50 text-rose-600 border border-rose-200/80';
+                } else if (l.type === 'IDE_QUARANTINE') {
+                    badge = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-purple-50 text-purple-700 border border-purple-200"><span class="w-1.5 h-1.5 rounded-full bg-purple-600"></span>${escapeHtml(l.type)}</span>`;
+                    iconBg = 'bg-purple-50 text-purple-600 border border-purple-200/80';
+                } else if (l.type === 'ROOM_LOCK' || l.type === 'GLOBAL_LOCK') {
+                    badge = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200"><span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>${escapeHtml(l.type)}</span>`;
+                    iconBg = 'bg-emerald-50 text-emerald-600 border border-emerald-200/80';
+                } else if (l.type === 'ROOM_UNLOCK' || l.type === 'GLOBAL_UNLOCK' || l.severity === 'WARNING') {
+                    badge = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-amber-50 text-amber-800 border border-amber-200"><span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>${escapeHtml(l.type)}</span>`;
+                    iconBg = 'bg-amber-50 text-amber-600 border border-amber-200/80';
                 }
+
                 const roomTag = l.room_code && l.room_code !== 'ALL'
-                    ? `<span class="px-1.5 py-0.5 rounded font-mono text-[10px] bg-slate-100 text-slate-600 border border-slate-200">${escapeHtml(l.room_code)}</span>`
+                    ? `<span class="px-1.5 py-0.5 rounded-md font-mono text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">${escapeHtml(l.room_code)}</span>`
                     : '';
 
+                // Format process or domain in message as code badge
+                let formattedMsg = escapeHtml(l.message);
+                formattedMsg = formattedMsg.replace(/\[([^\]]+)\]/g, '<code class="px-1.5 py-0.5 rounded bg-slate-100 font-mono text-[11px] font-semibold text-slate-800 border border-slate-200">$1</code>');
+
                 return `
-                    <div class="p-3.5 sm:px-5 sm:py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 hover:bg-slate-50/70 transition text-xs border-b border-slate-100 last:border-0">
-                        <div class="flex flex-col sm:flex-row sm:items-center gap-2 min-w-0 flex-1">
+                    <div class="p-3.5 sm:px-5 sm:py-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 hover:bg-slate-50/90 transition text-xs border-b border-slate-100 last:border-0 group">
+                        <div class="flex flex-col sm:flex-row sm:items-center gap-2.5 min-w-0 flex-1">
                             <div class="flex items-center gap-2 shrink-0 flex-wrap">
                                 ${badge}
                                 ${roomTag}
-                                <span class="font-semibold text-slate-900">${escapeHtml(l.name)}</span>
-                                <span class="font-mono text-[11px] text-slate-400">(${escapeHtml(l.nim || '')} · ${escapeHtml(l.hostname || '')})</span>
+                                <span class="font-bold text-slate-900">${escapeHtml(l.name)}</span>
+                                <span class="font-mono text-[11px] text-slate-400">(${escapeHtml(l.nim || '')}${l.hostname ? ' · ' + escapeHtml(l.hostname) : ''})</span>
                             </div>
-                            <div class="text-slate-600 sm:truncate font-mono sm:font-sans text-[11px] sm:text-xs bg-slate-50 sm:bg-transparent px-2.5 py-1.5 sm:p-0 rounded-lg sm:rounded-none border sm:border-0 border-slate-200/60 sm:border-transparent leading-relaxed">
-                                ${escapeHtml(l.message)}
+                            <div class="text-slate-600 sm:truncate font-mono sm:font-sans text-[11px] sm:text-xs bg-slate-50 sm:bg-transparent px-3 py-2 sm:p-0 rounded-xl sm:rounded-none border sm:border-0 border-slate-200/60 sm:border-transparent leading-relaxed">
+                                ${formattedMsg}
                             </div>
                         </div>
-                        <span class="font-mono text-[11px] text-slate-400 tabular-nums shrink-0 self-end sm:self-auto">${escapeHtml(l.timestamp)}</span>
+                        <div class="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                            <span class="font-mono text-[11px] text-slate-400 tabular-nums">${escapeHtml(l.timestamp)}</span>
+                        </div>
                     </div>
                 `;
             }).join('');
