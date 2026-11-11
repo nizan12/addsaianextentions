@@ -31,16 +31,26 @@
         .card-surface {
             background: #FFFFFF;
             border: 1px solid #E2E8F0;
-            box-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.03);
+            box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.04), 0 1px 2px -1px rgba(15, 23, 42, 0.02);
+            transition: all 0.15s ease-in-out;
         }
-        .status-dot-live { box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15); }
+        .status-dot-live { box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.2); }
+        .safe-area-pb { padding-bottom: max(0.6rem, env(safe-area-inset-bottom)); }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .shadow-2xs { box-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.05); }
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+        @media (max-width: 640px) {
+            input:not([type="checkbox"]):not([type="radio"]), select, textarea {
+                font-size: 16px !important;
+            }
+        }
     </style>
 </head>
-<body class="h-screen overflow-hidden flex bg-[#F8FAFC] text-slate-900">
+<body class="min-h-screen bg-[#F8FAFC] text-slate-900 flex flex-col lg:flex-row antialiased selection:bg-slate-900 selection:text-white">
 
     <!-- ======================================================================= -->
     <!-- GERBANG OTENTIKASI PENGAWAS / ADMIN                                     -->
@@ -88,13 +98,133 @@
         </div>
     </div>
 
-    <!-- Left Navigation Rail (Fixed Full-Height) -->
-    <aside class="w-64 h-screen bg-white border-r border-slate-200 flex flex-col justify-between shrink-0 select-none overflow-hidden">
+    <!-- Mobile Top Header Bar (Visible on < lg screens) -->
+    <header id="mobileTopBar" class="lg:hidden sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 px-3.5 py-2.5 flex items-center justify-between shadow-2xs">
+        <div class="flex items-center gap-2.5">
+            <button type="button" onclick="toggleMobileSidebar()" class="p-1.5 -ml-1 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 active:bg-slate-200 transition focus:outline-none" aria-label="Buka Menu Drawer">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"/>
+                </svg>
+            </button>
+            <div class="flex items-center gap-2">
+                <div class="w-7 h-7 rounded-lg bg-slate-900 text-white flex items-center justify-center shadow-xs">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 3l7 4v5c0 5-3.5 8.5-7 9-3.5-.5-7-4-7-9V7l7-4z"/>
+                    </svg>
+                </div>
+                <div>
+                    <span class="font-bold text-sm tracking-tight text-slate-900 leading-tight">GuardConsole</span>
+                    <span class="text-[9px] font-mono px-1 py-0.2 rounded bg-slate-100 text-slate-600 border border-slate-200 ml-1">v1.5</span>
+                </div>
+            </div>
+        </div>
+        <div class="flex items-center gap-2">
+            <select id="mobileHeaderRoomSelect" onchange="onSelectRoom(this.value)" class="rounded-lg border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-mono font-semibold text-slate-900 focus:outline-none max-w-[140px] truncate">
+                <option value="ALL">Semua Ruangan</option>
+            </select>
+            <div id="mobileGlobalStateDot" class="w-2.5 h-2.5 rounded-full bg-emerald-600 shrink-0" title="Status Proteksi Ruangan"></div>
+        </div>
+    </header>
+
+    <!-- Mobile Drawer Backdrop -->
+    <div id="mobileNavBackdrop" onclick="toggleMobileSidebar(false)" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs transition-opacity duration-300 opacity-0 pointer-events-none lg:hidden hidden"></div>
+
+    <!-- Mobile Off-Canvas Navigation Drawer -->
+    <aside id="mobileNavDrawer" class="fixed inset-y-0 left-0 z-50 w-[290px] max-w-[85vw] bg-white shadow-2xl flex flex-col justify-between transform -translate-x-full transition-transform duration-300 ease-in-out lg:hidden select-none">
+        <div class="flex flex-col flex-1 min-h-0">
+            <!-- Brand Header inside Drawer -->
+            <div class="h-16 shrink-0 px-5 flex items-center justify-between border-b border-slate-200 bg-slate-50/50">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center shadow-xs">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 3l7 4v5c0 5-3.5 8.5-7 9-3.5-.5-7-4-7-9V7l7-4z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <div class="text-sm font-bold tracking-tight text-slate-900 leading-none">GuardConsole</div>
+                        <div class="text-[11px] text-slate-500 mt-1 font-medium">Exam Endpoint Control</div>
+                    </div>
+                </div>
+                <button onclick="toggleMobileSidebar(false)" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition" aria-label="Tutup Menu">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+
+            <!-- Primary Navigation inside Drawer -->
+            <div class="flex-1 overflow-y-auto p-3.5 space-y-1.5">
+                <div class="px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Pengawasan Kelas</div>
+                <button onclick="switchTab('monitor')" id="mob-drawer-nav-monitor" class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold bg-slate-900 text-white transition shadow-2xs">
+                    <span class="flex items-center gap-2.5">
+                        <svg class="w-4 h-4 shrink-0 opacity-80" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
+                            <rect x="2" y="3" width="20" height="14" rx="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M8 21h8M12 17v4" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <span>Perangkat Mahasiswa</span>
+                    </span>
+                    <span id="mobDrawerBadgeOnline" class="px-2 py-0.5 text-[10px] font-mono font-semibold rounded bg-white/20 text-white tabular-nums">0</span>
+                </button>
+
+                <button onclick="switchTab('logs')" id="mob-drawer-nav-logs" class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition">
+                    <span class="flex items-center gap-2.5">
+                        <svg class="w-4 h-4 shrink-0 opacity-80" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>
+                        </svg>
+                        <span>Log Audit & Insiden</span>
+                    </span>
+                    <span id="mobDrawerBadgeViolations" class="px-2 py-0.5 text-[10px] font-mono font-semibold rounded bg-rose-50 text-rose-700 border border-rose-200 tabular-nums">0</span>
+                </button>
+
+                <div class="pt-4 pb-1 px-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Konfigurasi & Distribusi</div>
+                <button onclick="switchTab('rules')" id="mob-drawer-nav-rules" class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition">
+                    <span class="flex items-center gap-2.5">
+                        <svg class="w-4 h-4 shrink-0 opacity-80" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
+                        </svg>
+                        <span>Kebijakan Blokir Fleksibel</span>
+                    </span>
+                </button>
+
+                <button onclick="switchTab('settings')" id="mob-drawer-nav-settings" class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition">
+                    <span class="flex items-center gap-2.5">
+                        <svg class="w-4 h-4 shrink-0 opacity-80" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                        </svg>
+                        <span>Ruangan & PIN Pengawas</span>
+                    </span>
+                </button>
+
+                <button onclick="switchTab('download')" id="mob-drawer-nav-download" class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition">
+                    <span class="flex items-center gap-2.5">
+                        <svg class="w-4 h-4 shrink-0 opacity-80" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                        </svg>
+                        <span>Distribusi Agen (.exe)</span>
+                    </span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Drawer Footer -->
+        <div class="shrink-0 p-4 border-t border-slate-200 bg-slate-50/80 space-y-3">
+            <div class="flex items-center justify-between">
+                <span class="text-[11px] text-slate-500">PIN Master / Ruangan</span>
+                <button onclick="copyActiveRoomPin()" class="text-xs text-slate-800 hover:text-slate-900 font-semibold underline decoration-slate-300">Salin PIN</button>
+            </div>
+            <div class="flex items-center justify-between text-xs pt-1 border-t border-slate-200/80">
+                <span id="mobDrawerAdminEmail" class="truncate font-mono text-[11px] text-slate-600">Pengawas</span>
+                <button onclick="handleAdminLogout()" class="text-rose-600 hover:text-rose-700 font-semibold px-2 py-1 rounded hover:bg-rose-50 transition">Keluar</button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Left Navigation Rail (Desktop: Visible only on lg screens) -->
+    <aside class="hidden lg:flex lg:w-64 lg:h-screen lg:sticky lg:top-0 bg-white border-r border-slate-200 flex-col justify-between shrink-0 select-none overflow-hidden">
         <div class="flex flex-col flex-1 min-h-0">
             <!-- Brand Header (Exact 64px / h-16 shrink-0) -->
             <div class="h-16 shrink-0 px-5 flex items-center justify-between border-b border-slate-200">
                 <div class="flex items-center gap-2.5">
-                    <div class="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center">
+                    <div class="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center shadow-xs">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M12 3l7 4v5c0 5-3.5 8.5-7 9-3.5-.5-7-4-7-9V7l7-4z"/>
                         </svg>
@@ -202,25 +332,25 @@
     </aside>
 
     <!-- Main Content Area -->
-    <div class="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+    <div class="flex-1 flex flex-col min-w-0 lg:h-screen lg:overflow-hidden">
 
-        <!-- Top Institutional Action Bar (Exact 64px / h-16 shrink-0) -->
-        <header class="h-16 shrink-0 bg-white border-b border-slate-200 px-6 flex items-center justify-between gap-4 z-20">
-            <div class="flex items-center gap-3 min-w-0">
-                <div class="flex items-center gap-1.5">
+        <!-- Top Institutional Action Bar (Clean, Responsive, Command-Center Polish) -->
+        <header class="min-h-16 py-2.5 sm:py-0 shrink-0 bg-white border-b border-slate-200 px-3.5 sm:px-6 flex flex-wrap lg:flex-nowrap items-center justify-between gap-3 z-20">
+            <div class="flex flex-wrap items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                <div class="flex items-center gap-1.5 flex-wrap sm:flex-nowrap">
                     <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 hidden sm:inline">Ruangan:</span>
-                    <select id="headerRoomSelect" onchange="onSelectRoom(this.value)" class="rounded-lg border border-slate-300 bg-slate-50 hover:bg-white px-3 py-1.5 text-xs font-mono font-semibold text-slate-900 focus:outline-none focus:border-slate-500 transition">
+                    <select id="headerRoomSelect" onchange="onSelectRoom(this.value)" class="rounded-lg border border-slate-300 bg-slate-50 hover:bg-white px-2.5 sm:px-3 py-1.5 text-xs font-mono font-semibold text-slate-900 focus:outline-none focus:border-slate-500 transition shadow-2xs">
                         <option value="ALL">Semua Ruangan</option>
                     </select>
-                    <button onclick="promptNewRoom()" class="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 transition flex items-center gap-1" title="Tambah Kode Ruangan Baru">
+                    <button onclick="promptNewRoom()" class="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 transition flex items-center gap-1 shadow-2xs" title="Tambah Kode Ruangan Baru">
                         <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
                         <span class="hidden md:inline">Tambah</span>
                     </button>
-                    <button onclick="promptEditSelectedRoom()" id="btnHeaderEditRoom" class="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 transition flex items-center gap-1" title="Ubah Nama / Edit Ruangan">
+                    <button onclick="promptEditSelectedRoom()" id="btnHeaderEditRoom" class="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 transition flex items-center gap-1 shadow-2xs" title="Ubah Nama / Edit Ruangan">
                         <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125"/></svg>
                         <span class="hidden md:inline">Edit</span>
                     </button>
-                    <button onclick="switchTab('settings')" class="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 transition flex items-center gap-1" title="Buka Menu Manajemen Multi-Ruangan & PIN">
+                    <button onclick="switchTab('settings')" class="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 transition flex items-center gap-1 shadow-2xs" title="Buka Menu Manajemen Multi-Ruangan & PIN">
                         <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75"/></svg>
                         <span class="hidden lg:inline">Kelola</span>
                     </button>
@@ -228,21 +358,21 @@
 
                 <div class="h-4 w-px bg-slate-200 hidden sm:block"></div>
 
-                <span id="globalStateBadge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-emerald-50 text-emerald-800 border border-emerald-200">
+                <span id="globalStateBadge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-emerald-50 text-emerald-800 border border-emerald-200 whitespace-nowrap shadow-2xs">
                     <span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
                     Proteksi AI Aktif
                 </span>
             </div>
 
             <!-- Global / Per-Room Classroom Controls -->
-            <div class="flex items-center gap-2.5 shrink-0">
-                <div class="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5">
-                    <button onclick="setGlobalStatus('LOCKED')" id="btnGlobalLock" class="px-3 py-1.5 rounded-md text-xs font-medium transition flex items-center gap-1.5 bg-slate-900 text-white shadow-sm">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+            <div class="flex items-center gap-2 shrink-0">
+                <div class="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 shadow-2xs">
+                    <button onclick="setGlobalStatus('LOCKED')" id="btnGlobalLock" class="px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-semibold transition flex items-center gap-1.5 bg-slate-900 text-white shadow-xs">
+                        <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
                         <span id="lblBtnLock">Kunci Semua Ruangan</span>
                     </button>
-                    <button onclick="setGlobalStatus('UNLOCKED')" id="btnGlobalUnlock" class="px-3 py-1.5 rounded-md text-xs font-medium transition flex items-center gap-1.5 text-slate-600 hover:text-slate-900">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 019.9-1"/></svg>
+                    <button onclick="setGlobalStatus('UNLOCKED')" id="btnGlobalUnlock" class="px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-medium transition flex items-center gap-1.5 text-slate-600 hover:text-slate-900">
+                        <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 019.9-1"/></svg>
                         <span id="lblBtnUnlock">Buka Kunci & Pulihkan</span>
                     </button>
                 </div>
@@ -251,98 +381,108 @@
 
         <!-- Scrollable Workspace Body -->
         <div class="flex-1 overflow-y-auto">
-            <main class="p-6 max-w-[1400px] w-full mx-auto space-y-6">
+            <main class="p-3.5 sm:p-5 lg:p-6 max-w-[1400px] w-full mx-auto space-y-4 sm:space-y-6 pb-24 lg:pb-8">
 
                 <!-- KPI Telemetry Strip -->
-                <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div class="card-surface rounded-xl p-4">
+                <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                    <div class="card-surface rounded-xl p-3.5 sm:p-4 border-l-4 border-l-slate-900">
                         <div class="flex items-center justify-between text-xs text-slate-500 font-medium">
-                            <span>Perangkat Terhubung</span>
-                            <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25"/></svg>
+                            <span class="truncate">Perangkat Terhubung</span>
+                            <div class="w-6 h-6 rounded-md bg-slate-100 flex items-center justify-center text-slate-600 shrink-0">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25"/></svg>
+                            </div>
                         </div>
-                        <div class="mt-2 flex items-baseline gap-2 tabular-nums">
-                            <span id="statOnline" class="text-2xl font-semibold text-slate-900 tracking-tight">0</span>
-                            <span class="text-xs text-slate-500">aktif dari <span id="statTotal" class="font-medium text-slate-700">0</span> perangkat</span>
+                        <div class="mt-2 flex flex-wrap items-baseline gap-1.5 tabular-nums">
+                            <span id="statOnline" class="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">0</span>
+                            <span class="text-[11px] sm:text-xs text-slate-500">aktif / <span id="statTotal" class="font-semibold text-slate-700">0</span> total</span>
                         </div>
                     </div>
 
-                    <div class="card-surface rounded-xl p-4">
+                    <div class="card-surface rounded-xl p-3.5 sm:p-4 border-l-4 border-l-emerald-600">
                         <div class="flex items-center justify-between text-xs text-slate-500 font-medium">
-                            <span>Status Terkunci (AI Blocked)</span>
-                            <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>
+                            <span class="truncate">Status Terkunci</span>
+                            <div class="w-6 h-6 rounded-md bg-emerald-50 flex items-center justify-center text-emerald-600 shrink-0">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>
+                            </div>
                         </div>
-                        <div class="mt-2 flex items-baseline gap-2 tabular-nums">
-                            <span id="statLocked" class="text-2xl font-semibold text-slate-900 tracking-tight">0</span>
-                            <span class="text-xs text-slate-500">perangkat terlindungi</span>
+                        <div class="mt-2 flex flex-wrap items-baseline gap-1.5 tabular-nums">
+                            <span id="statLocked" class="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">0</span>
+                            <span class="text-[11px] sm:text-xs text-slate-500">terlindungi AI</span>
                         </div>
                     </div>
 
-                    <div class="card-surface rounded-xl p-4">
+                    <div class="card-surface rounded-xl p-3.5 sm:p-4 border-l-4 border-l-rose-500">
                         <div class="flex items-center justify-between text-xs text-slate-500 font-medium">
-                            <span>Intersepsi Proses & Port AI</span>
-                            <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+                            <span class="truncate">Intersepsi AI</span>
+                            <div class="w-6 h-6 rounded-md bg-rose-50 flex items-center justify-center text-rose-600 shrink-0">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+                            </div>
                         </div>
-                        <div class="mt-2 flex items-baseline gap-2 tabular-nums">
-                            <span id="statViolations" class="text-2xl font-semibold text-slate-900 tracking-tight">0</span>
-                            <span class="text-xs text-slate-500">percobaan dihentikan</span>
+                        <div class="mt-2 flex flex-wrap items-baseline gap-1.5 tabular-nums">
+                            <span id="statViolations" class="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">0</span>
+                            <span class="text-[11px] sm:text-xs text-slate-500">insiden distop</span>
                         </div>
                     </div>
 
-                    <div class="card-surface rounded-xl p-4">
+                    <div class="card-surface rounded-xl p-3.5 sm:p-4 border-l-4 border-l-indigo-600">
                         <div class="flex items-center justify-between text-xs text-slate-500 font-medium">
-                            <span>Cakupan Kebijakan Aktif</span>
-                            <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12"/></svg>
+                            <span class="truncate">Cakupan Kebijakan</span>
+                            <div class="w-6 h-6 rounded-md bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12"/></svg>
+                            </div>
                         </div>
-                        <div class="mt-2 flex items-baseline gap-1.5 tabular-nums">
-                            <span id="statDomains" class="text-lg font-semibold text-slate-900">0</span>
-                            <span class="text-xs text-slate-500">domain</span>
+                        <div class="mt-2 flex flex-wrap items-baseline gap-1.5 tabular-nums text-xs">
+                            <span id="statDomains" class="font-bold text-slate-900 text-sm sm:text-base">0</span>
+                            <span class="text-slate-500">domain</span>
                             <span class="text-slate-300">·</span>
-                            <span id="statProcs" class="text-lg font-semibold text-slate-900">0</span>
-                            <span class="text-xs text-slate-500">proses</span>
+                            <span id="statProcs" class="font-bold text-slate-900 text-sm sm:text-base">0</span>
+                            <span class="text-slate-500">proc</span>
                             <span class="text-slate-300">·</span>
-                            <span id="statExts" class="text-lg font-semibold text-slate-900">0</span>
-                            <span class="text-xs text-slate-500">ekstensi</span>
+                            <span id="statExts" class="font-bold text-slate-900 text-sm sm:text-base">0</span>
+                            <span class="text-slate-500">ext</span>
                         </div>
                     </div>
                 </div>
 
                 <!-- VIEW 1: PERANGKAT MAHASISWA -->
                 <section id="view-monitor" class="space-y-4">
-                    <div class="card-surface rounded-xl p-3 flex flex-wrap items-center justify-between gap-3">
-                        <div class="flex flex-wrap items-center gap-2">
-                            <div class="relative">
+                    <div class="card-surface rounded-xl p-3 sm:p-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                        <div class="flex flex-col sm:flex-row sm:items-center gap-2.5 flex-1 min-w-0">
+                            <div class="relative w-full sm:w-72 lg:w-80 shrink-0">
                                 <svg class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>
-                                <input type="search" id="searchStudent" name="guard_student_search_filter" autocomplete="off" readonly onfocus="this.removeAttribute('readonly'); if(this.value.includes('@')){this.value='';renderCurrentStudents();}" spellcheck="false" oninput="renderCurrentStudents()" placeholder="Cari NIM, nama, ruangan, atau hostname..." class="pl-9 pr-3 py-1.5 rounded-lg border border-slate-200 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-slate-400 w-64 bg-white">
+                                <input type="search" id="searchStudent" name="guard_student_search_filter" autocomplete="off" readonly onfocus="this.removeAttribute('readonly'); if(this.value.includes('@')){this.value='';renderCurrentStudents();}" spellcheck="false" oninput="renderCurrentStudents()" placeholder="Cari NIM, nama, ruangan, host..." class="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-slate-500 bg-white shadow-2xs">
                             </div>
 
-                            <div class="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 text-xs">
-                                <button onclick="setFilter('ALL')" id="filter-ALL" class="filter-pill px-2.5 py-1 rounded-md font-medium bg-white text-slate-900 shadow-sm">Semua</button>
-                                <button onclick="setFilter('ONLINE')" id="filter-ONLINE" class="filter-pill px-2.5 py-1 rounded-md font-medium text-slate-600 hover:text-slate-900">Online</button>
-                                <button onclick="setFilter('UNLOCKED')" id="filter-UNLOCKED" class="filter-pill px-2.5 py-1 rounded-md font-medium text-slate-600 hover:text-slate-900">Terbuka</button>
-                                <button onclick="setFilter('VIOLATION')" id="filter-VIOLATION" class="filter-pill px-2.5 py-1 rounded-md font-medium text-slate-600 hover:text-slate-900">Ada Insiden</button>
+                            <div class="overflow-x-auto no-scrollbar py-0.5 flex items-center">
+                                <div class="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 text-xs shrink-0">
+                                    <button onclick="setFilter('ALL')" id="filter-ALL" class="filter-pill px-3 py-1.5 rounded-md font-semibold bg-white text-slate-900 shadow-2xs whitespace-nowrap">Semua</button>
+                                    <button onclick="setFilter('ONLINE')" id="filter-ONLINE" class="filter-pill px-3 py-1.5 rounded-md font-medium text-slate-600 hover:text-slate-900 whitespace-nowrap">Online</button>
+                                    <button onclick="setFilter('UNLOCKED')" id="filter-UNLOCKED" class="filter-pill px-3 py-1.5 rounded-md font-medium text-slate-600 hover:text-slate-900 whitespace-nowrap">Terbuka</button>
+                                    <button onclick="setFilter('VIOLATION')" id="filter-VIOLATION" class="filter-pill px-3 py-1.5 rounded-md font-medium text-slate-600 hover:text-slate-900 whitespace-nowrap">Ada Insiden</button>
+                                </div>
                             </div>
                         </div>
 
-                        <div class="flex items-center gap-2">
-                            <span class="text-xs text-slate-500">Tampilan:</span>
-                            <div class="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 text-xs">
-                                <button onclick="setViewMode('table')" id="viewMode-table" class="px-2.5 py-1 rounded-md font-medium bg-white text-slate-900 shadow-sm flex items-center gap-1.5">
+                        <div class="flex items-center justify-between sm:justify-end gap-2 border-t md:border-t-0 pt-2 md:pt-0 border-slate-100">
+                            <span class="text-xs text-slate-500 font-medium">Tampilan:</span>
+                            <div class="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 text-xs shrink-0">
+                                <button onclick="setViewMode('table')" id="viewMode-table" class="px-2.5 py-1.5 rounded-md font-medium bg-white text-slate-900 shadow-2xs flex items-center gap-1.5">
                                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 5.25h16.5m-16.5 4.5h16.5m-16.5 4.5h16.5m-16.5 4.5h16.5"/></svg>
-                                    Tabel
+                                    <span>Tabel</span>
                                 </button>
-                                <button onclick="setViewMode('grid')" id="viewMode-grid" class="px-2.5 py-1 rounded-md font-medium text-slate-600 hover:text-slate-900 flex items-center gap-1.5">
+                                <button onclick="setViewMode('grid')" id="viewMode-grid" class="px-2.5 py-1.5 rounded-md font-medium text-slate-600 hover:text-slate-900 flex items-center gap-1.5">
                                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
-                                    Denah Kelas
+                                    <span>Denah Kelas</span>
                                 </button>
                             </div>
                         </div>
                     </div>
 
-                    <div id="studentTableContainer" class="card-surface rounded-xl overflow-hidden">
+                    <div id="studentTableContainer" class="card-surface rounded-xl overflow-hidden shadow-xs">
                         <div class="overflow-x-auto">
                             <table class="w-full text-left border-collapse">
                                 <thead>
-                                    <tr class="border-b border-slate-200 bg-slate-50/70 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                                    <tr class="border-b border-slate-200 bg-slate-50/70 text-[11px] font-semibold uppercase tracking-wider text-slate-500 whitespace-nowrap">
                                         <th class="py-3 px-4">Peserta</th>
                                         <th class="py-3 px-3">Ruangan</th>
                                         <th class="py-3 px-4">Perangkat & IP</th>
@@ -362,7 +502,7 @@
                         </div>
                     </div>
 
-                    <div id="studentGridContainer" class="hidden grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4"></div>
+                    <div id="studentGridContainer" class="hidden grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5 sm:gap-4"></div>
                 </section>
 
                 <!-- VIEW 2: LOG AUDIT & INSIDEN -->
@@ -436,12 +576,12 @@
 
                         <!-- Tambah Domain Fleksibel & Daftar Chip Domain -->
                         <div class="pt-4 border-t border-slate-200 space-y-3">
-                            <div class="flex flex-wrap items-center justify-between gap-2">
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                                 <label class="text-xs font-semibold text-slate-800">2. Daftar Domain Individual & Tambah Domain Kustom</label>
-                                <div class="flex items-center gap-2">
-                                    <input type="text" id="customDomainInput" placeholder="Tambah domain (misal: notion.so, discord.com)..." class="w-64 rounded-lg bg-white border border-slate-300 px-3 py-1.5 text-xs font-mono text-slate-900 focus:border-slate-600 focus:outline-none">
-                                    <button onclick="addCustomDomain()" class="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium transition">
-                                        + Tambah Domain
+                                <div class="flex items-center gap-2 w-full sm:w-auto">
+                                    <input type="text" id="customDomainInput" placeholder="Tambah domain (misal: notion.so, discord.com)..." class="flex-1 sm:w-64 rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono text-slate-900 focus:border-slate-600 focus:outline-none shadow-2xs">
+                                    <button onclick="addCustomDomain()" class="px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition shrink-0 shadow-xs">
+                                        + Tambah
                                     </button>
                                 </div>
                             </div>
@@ -502,10 +642,10 @@
                                 </div>
                             </div>
 
-                            <div class="grid grid-cols-1 sm:grid-cols-12 gap-2">
-                                <input type="text" id="newRoomInput" placeholder="Kode Ruangan baru (misal: LAB-04)..." class="sm:col-span-5 rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono uppercase text-slate-900 focus:border-slate-500 focus:outline-none">
-                                <input type="text" id="newRoomPinInput" placeholder="PIN Keluar Ruangan (opsional, 6 digit)" class="sm:col-span-4 rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono text-slate-900 focus:border-slate-500 focus:outline-none">
-                                <button onclick="addRoomFromInput()" class="sm:col-span-3 px-3 py-2 rounded-lg text-xs font-medium bg-slate-900 hover:bg-slate-800 text-white transition shrink-0">
+                            <div class="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+                                <input type="text" id="newRoomInput" placeholder="Kode Ruangan baru (misal: LAB-04)..." class="sm:col-span-5 rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono uppercase font-semibold text-slate-900 focus:border-slate-500 focus:outline-none shadow-2xs">
+                                <input type="text" id="newRoomPinInput" placeholder="PIN Keluar Ruangan (opsional, 6 digit)" class="sm:col-span-4 rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono text-slate-900 focus:border-slate-500 focus:outline-none shadow-2xs">
+                                <button onclick="addRoomFromInput()" class="sm:col-span-3 px-3 py-2 rounded-lg text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white transition shrink-0 shadow-xs">
                                     + Tambah Ruangan
                                 </button>
                             </div>
@@ -660,18 +800,66 @@
         </div>
     </div>
 
+    <!-- Mobile Bottom Navigation Bar (Thumb-Zone Navigation on < lg screens) -->
+    <nav id="mobileBottomNav" class="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 safe-area-pb shadow-lg flex items-center justify-around px-1 py-1 select-none">
+        <button onclick="switchTab('monitor')" id="mob-nav-monitor" class="flex-1 py-1.5 px-1 flex flex-col items-center justify-center gap-1 text-slate-900 transition relative">
+            <div class="relative">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <rect x="2" y="3" width="20" height="14" rx="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M8 21h8M12 17v4" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span id="mobBadgeOnline" class="absolute -top-1.5 -right-2.5 px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold bg-slate-900 text-white tabular-nums">0</span>
+            </div>
+            <span class="text-[10px] font-bold tracking-tight leading-none">Pantau</span>
+        </button>
+
+        <button onclick="switchTab('logs')" id="mob-nav-logs" class="flex-1 py-1.5 px-1 flex flex-col items-center justify-center gap-1 text-slate-400 hover:text-slate-700 transition relative">
+            <div class="relative">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>
+                </svg>
+                <span id="mobBadgeViolations" class="absolute -top-1.5 -right-2.5 px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold bg-rose-600 text-white tabular-nums">0</span>
+            </div>
+            <span class="text-[10px] font-medium tracking-tight leading-none">Log</span>
+        </button>
+
+        <button onclick="switchTab('rules')" id="mob-nav-rules" class="flex-1 py-1.5 px-1 flex flex-col items-center justify-center gap-1 text-slate-400 hover:text-slate-700 transition">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
+            </svg>
+            <span class="text-[10px] font-medium tracking-tight leading-none">Kebijakan</span>
+        </button>
+
+        <button onclick="switchTab('settings')" id="mob-nav-settings" class="flex-1 py-1.5 px-1 flex flex-col items-center justify-center gap-1 text-slate-400 hover:text-slate-700 transition">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+            </svg>
+            <span class="text-[10px] font-medium tracking-tight leading-none">Ruangan</span>
+        </button>
+
+        <button onclick="switchTab('download')" id="mob-nav-download" class="flex-1 py-1.5 px-1 flex flex-col items-center justify-center gap-1 text-slate-400 hover:text-slate-700 transition">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+            </svg>
+            <span class="text-[10px] font-medium tracking-tight leading-none">Unduh</span>
+        </button>
+    </nav>
+
     <!-- Modal Detail Perangkat Mahasiswa -->
-    <div id="studentModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-[1px] hidden z-50 flex items-center justify-center p-4">
-        <div class="bg-white rounded-xl border border-slate-200 shadow-xl max-w-lg w-full overflow-hidden">
-            <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+    <div id="studentModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs hidden z-50 flex items-center justify-center p-3 sm:p-4">
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden">
+            <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between shrink-0 bg-white">
                 <div>
                     <h3 id="modalStudentName" class="text-sm font-semibold text-slate-900">Detail Perangkat Peserta</h3>
                     <p id="modalStudentSub" class="text-xs text-slate-500 font-mono mt-0.5"></p>
                 </div>
-                <button onclick="closeStudentModal()" class="text-slate-400 hover:text-slate-700 text-sm font-medium px-2 py-1">✕</button>
+                <button onclick="closeStudentModal()" class="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition" aria-label="Tutup Dialog">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
             </div>
-            <div class="p-5 space-y-4 text-xs">
-                <div class="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200/80">
+            <div class="p-4 sm:p-5 space-y-4 text-xs overflow-y-auto flex-1">
+                <div class="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200/80">
                     <div>
                         <span class="text-slate-500">Sistem Operasi:</span>
                         <div id="modalOs" class="font-medium text-slate-900 mt-0.5">-</div>
@@ -683,53 +871,55 @@
                 </div>
                 <div>
                     <div class="font-semibold text-slate-800 mb-1.5">Daftar Proteksi & Ekstensi IDE yang Dikarantina:</div>
-                    <div id="modalExtList" class="p-3 rounded-lg border border-slate-200 bg-slate-50 font-mono text-[11px] text-slate-700 max-h-36 overflow-y-auto space-y-1"></div>
+                    <div id="modalExtList" class="p-3 rounded-xl border border-slate-200 bg-slate-50 font-mono text-[11px] text-slate-700 max-h-36 overflow-y-auto space-y-1"></div>
                 </div>
                 <div>
                     <div class="flex items-center justify-between mb-1.5">
                         <span class="font-semibold text-slate-800">Riwayat Insiden & Aktivitas Terlarang:</span>
                         <span id="modalIncidentCountBadge" class="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">0 Insiden</span>
                     </div>
-                    <div id="modalIncidentList" class="p-3 rounded-lg border border-slate-200 bg-slate-50 text-[11px] text-slate-700 max-h-44 overflow-y-auto space-y-2"></div>
+                    <div id="modalIncidentList" class="p-3 rounded-xl border border-slate-200 bg-slate-50 text-[11px] text-slate-700 max-h-44 overflow-y-auto space-y-2"></div>
                 </div>
             </div>
-            <div class="px-5 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
-                <button onclick="closeStudentModal()" class="px-3.5 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-medium">Tutup</button>
+            <div class="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex justify-end shrink-0">
+                <button onclick="closeStudentModal()" class="px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition shadow-xs">Tutup</button>
             </div>
         </div>
     </div>
 
     <!-- Modal Tambah / Edit Ruangan & PIN Otorisasi -->
-    <div id="roomModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-[1px] hidden z-50 flex items-center justify-center p-4">
-        <div class="bg-white rounded-xl border border-slate-200 shadow-xl max-w-md w-full overflow-hidden">
-            <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+    <div id="roomModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs hidden z-50 flex items-center justify-center p-3 sm:p-4">
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full max-h-[90vh] flex flex-col overflow-hidden">
+            <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between shrink-0 bg-white">
                 <div>
                     <h3 id="roomModalTitle" class="text-sm font-semibold text-slate-900">Edit Ruangan & PIN Otorisasi</h3>
                     <p id="roomModalSub" class="text-xs text-slate-500 mt-0.5">Atur Kode Ruangan dan PIN Otorisasi untuk keluar/membuka kunci ruangan ini.</p>
                 </div>
-                <button onclick="closeRoomModal()" class="text-slate-400 hover:text-slate-700 text-sm font-medium px-2 py-1">✕</button>
+                <button onclick="closeRoomModal()" class="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition" aria-label="Tutup Dialog">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
             </div>
-            <div class="p-5 space-y-4 text-xs">
+            <div class="p-4 sm:p-5 space-y-4 text-xs overflow-y-auto flex-1">
                 <input type="hidden" id="modalOldRoomCode" value="">
                 <div>
-                    <label class="block text-xs font-medium text-slate-700 mb-1.5">Kode Ruangan</label>
-                    <input type="text" id="modalRoomCodeInput" placeholder="Contoh: LAB-01, RUANG-UJIAN-A" class="w-full rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono uppercase font-semibold text-slate-900 focus:border-slate-500 focus:outline-none">
+                    <label class="block text-xs font-semibold text-slate-700 mb-1.5">Kode Ruangan</label>
+                    <input type="text" id="modalRoomCodeInput" placeholder="Contoh: LAB-01, RUANG-UJIAN-A" class="w-full rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono uppercase font-semibold text-slate-900 focus:border-slate-500 focus:outline-none shadow-2xs">
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-slate-700 mb-1.5">PIN Otorisasi Keluar / Buka Kunci Ruangan</label>
-                    <input type="text" id="modalRoomPinInput" placeholder="Contoh: 202601 (4-12 karakter)" class="w-full rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono font-semibold text-slate-900 focus:border-slate-500 focus:outline-none">
+                    <label class="block text-xs font-semibold text-slate-700 mb-1.5">PIN Otorisasi Keluar / Buka Kunci Ruangan</label>
+                    <input type="text" id="modalRoomPinInput" placeholder="Contoh: 202601 (4-12 karakter)" class="w-full rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono font-semibold text-slate-900 focus:border-slate-500 focus:outline-none shadow-2xs">
                     <p class="text-[11px] text-slate-400 mt-1">Digunakan pada PC di ruangan ini ketika pengawas ingin membuka kunci manual atau menghentikan agen.</p>
                 </div>
             </div>
-            <div class="px-5 py-3 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
-                <button onclick="closeRoomModal()" class="px-3.5 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium">Batal</button>
-                <button onclick="submitRoomModal()" class="px-4 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium">Simpan Ruangan</button>
+            <div class="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex justify-end gap-2.5 shrink-0">
+                <button onclick="closeRoomModal()" class="px-3.5 py-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium transition">Batal</button>
+                <button onclick="submitRoomModal()" class="px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition shadow-xs">Simpan Ruangan</button>
             </div>
         </div>
     </div>
 
     <!-- Subtle Notification Toast -->
-    <div id="toast" class="fixed bottom-5 right-5 hidden z-50 px-4 py-2.5 rounded-lg bg-slate-900 text-white text-xs font-medium shadow-lg"></div>
+    <div id="toast" class="fixed bottom-20 lg:bottom-5 right-4 sm:right-5 hidden z-50 px-4 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-semibold shadow-xl border border-slate-800 transition"></div>
 
     <!-- ======================================================================= -->
     <!-- FIREBASE SDK INITIALIZATION (blockai-ba569)                             -->
@@ -976,6 +1166,8 @@
             if (gate) gate.classList.add('hidden');
             const emailEl = document.getElementById('sidebarAdminEmail');
             if (emailEl) emailEl.textContent = email;
+            const mobEmailEl = document.getElementById('mobDrawerAdminEmail');
+            if (mobEmailEl) mobEmailEl.textContent = email;
             const searchInp = document.getElementById('searchStudent');
             if (searchInp && (searchInp.value.includes('@') || searchInp.value.toLowerCase() === String(email || '').toLowerCase())) {
                 searchInp.value = '';
@@ -1195,12 +1387,39 @@
         // ====================================================================
         function showToast(msg, isError = false) {
             const t = document.getElementById('toast');
+            if (!t) return;
             t.textContent = msg;
-            t.className = `fixed bottom-5 right-5 z-50 px-4 py-2.5 rounded-lg text-xs font-medium shadow-lg transition ${
-                isError ? 'bg-rose-700 text-white' : 'bg-slate-900 text-white'
+            t.className = `fixed bottom-20 lg:bottom-5 right-4 sm:right-5 z-50 px-4 py-2.5 rounded-xl text-xs font-semibold shadow-xl border transition ${
+                isError ? 'bg-rose-700 text-white border-rose-800' : 'bg-slate-900 text-white border-slate-800'
             }`;
             t.classList.remove('hidden');
             setTimeout(() => t.classList.add('hidden'), 3000);
+        }
+
+        function toggleMobileSidebar(forceState) {
+            const drawer = document.getElementById('mobileNavDrawer');
+            const backdrop = document.getElementById('mobileNavBackdrop');
+            if (!drawer || !backdrop) return;
+            const isCurrentlyOpen = drawer.classList.contains('translate-x-0');
+            const targetState = typeof forceState === 'boolean' ? forceState : !isCurrentlyOpen;
+
+            if (targetState) {
+                backdrop.classList.remove('hidden');
+                requestAnimationFrame(() => {
+                    backdrop.classList.remove('opacity-0', 'pointer-events-none');
+                    backdrop.classList.add('opacity-100');
+                    drawer.classList.remove('-translate-x-full');
+                    drawer.classList.add('translate-x-0');
+                });
+            } else {
+                backdrop.classList.remove('opacity-100');
+                backdrop.classList.add('opacity-0', 'pointer-events-none');
+                drawer.classList.remove('translate-x-0');
+                drawer.classList.add('-translate-x-full');
+                setTimeout(() => {
+                    backdrop.classList.add('hidden');
+                }, 300);
+            }
         }
 
         function copyText(text, msg) {
@@ -1244,28 +1463,76 @@
         function switchTab(tab) {
             currentTab = tab;
             ['monitor', 'logs', 'rules', 'settings', 'download'].forEach(id => {
-                document.getElementById('view-' + id).classList.toggle('hidden', id !== tab);
+                const viewEl = document.getElementById('view-' + id);
+                if (viewEl) viewEl.classList.toggle('hidden', id !== tab);
+
+                // Desktop sidebar button
                 const btn = document.getElementById('nav-' + id);
-                if (id === tab) {
-                    btn.className = 'nav-item w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium bg-slate-900 text-white transition';
-                } else {
-                    btn.className = 'nav-item w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition';
+                if (btn) {
+                    btn.className = id === tab
+                        ? 'nav-item w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold bg-slate-900 text-white transition shadow-2xs'
+                        : 'nav-item w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition';
+                }
+
+                // Mobile drawer button
+                const mobDrawerBtn = document.getElementById('mob-drawer-nav-' + id);
+                if (mobDrawerBtn) {
+                    mobDrawerBtn.className = id === tab
+                        ? 'w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold bg-slate-900 text-white transition shadow-2xs'
+                        : 'w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition';
+                }
+
+                // Mobile bottom nav button
+                const mobBottomBtn = document.getElementById('mob-nav-' + id);
+                if (mobBottomBtn) {
+                    mobBottomBtn.className = id === tab
+                        ? 'flex-1 py-1.5 px-1 flex flex-col items-center justify-center gap-1 text-slate-900 transition relative font-bold'
+                        : 'flex-1 py-1.5 px-1 flex flex-col items-center justify-center gap-1 text-slate-400 hover:text-slate-700 transition relative font-medium';
                 }
             });
 
+            // Badge online indicator styling
             const badgeOnline = document.getElementById('navBadgeOnline');
+            const drawerBadgeOnline = document.getElementById('mobDrawerBadgeOnline');
+            const bottomBadgeOnline = document.getElementById('mobBadgeOnline');
             if (badgeOnline) {
                 badgeOnline.className = tab === 'monitor'
                     ? 'px-1.5 py-0.5 text-[10px] font-mono font-semibold rounded bg-white/20 text-white tabular-nums'
                     : 'px-1.5 py-0.5 text-[10px] font-mono font-semibold rounded bg-slate-200/80 text-slate-700 tabular-nums';
             }
+            if (drawerBadgeOnline) {
+                drawerBadgeOnline.className = tab === 'monitor'
+                    ? 'px-2 py-0.5 text-[10px] font-mono font-semibold rounded bg-white/20 text-white tabular-nums'
+                    : 'px-2 py-0.5 text-[10px] font-mono font-semibold rounded bg-slate-200/80 text-slate-700 tabular-nums';
+            }
+            if (bottomBadgeOnline) {
+                bottomBadgeOnline.className = tab === 'monitor'
+                    ? 'absolute -top-1.5 -right-2.5 px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold bg-slate-900 text-white tabular-nums'
+                    : 'absolute -top-1.5 -right-2.5 px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold bg-slate-400 text-white tabular-nums';
+            }
 
+            // Badge violations indicator styling
             const badgeViolations = document.getElementById('navBadgeViolations');
+            const drawerBadgeViolations = document.getElementById('mobDrawerBadgeViolations');
+            const bottomBadgeViolations = document.getElementById('mobBadgeViolations');
             if (badgeViolations) {
                 badgeViolations.className = tab === 'logs'
                     ? 'px-1.5 py-0.5 text-[10px] font-mono font-semibold rounded bg-rose-500 text-white tabular-nums'
                     : 'px-1.5 py-0.5 text-[10px] font-mono font-semibold rounded bg-rose-50 text-rose-700 border border-rose-200 tabular-nums';
             }
+            if (drawerBadgeViolations) {
+                drawerBadgeViolations.className = tab === 'logs'
+                    ? 'px-2 py-0.5 text-[10px] font-mono font-semibold rounded bg-rose-500 text-white tabular-nums'
+                    : 'px-2 py-0.5 text-[10px] font-mono font-semibold rounded bg-rose-50 text-rose-700 border border-rose-200 tabular-nums';
+            }
+
+            // Auto-close mobile drawer on tab tap
+            toggleMobileSidebar(false);
+
+            // Scroll workspace smoothly to top on tab switch
+            const scrollArea = document.querySelector('.overflow-y-auto');
+            if (scrollArea) scrollArea.scrollTop = 0;
+            window.scrollTo({top: 0, behavior: 'smooth'});
         }
 
         function getEffectiveBlocklistForRoom(roomCode) {
@@ -1355,6 +1622,8 @@
             document.getElementById('sidebarRoomCode').textContent = selectedRoom === 'ALL' ? 'SEMUA RUANGAN' : selectedRoom;
             const hdrSel = document.getElementById('headerRoomSelect');
             if (hdrSel) hdrSel.value = selectedRoom;
+            const mobSel = document.getElementById('mobileHeaderRoomSelect');
+            if (mobSel) mobSel.value = selectedRoom;
             loadBlocklistIntoEditorForRoom(selectedRoom);
             updateSidebarPinUI();
             updateHeaderStatusUI();
@@ -1365,6 +1634,10 @@
         function onSelectRoom(room) {
             selectedRoom = room || 'ALL';
             document.getElementById('sidebarRoomCode').textContent = selectedRoom === 'ALL' ? 'SEMUA RUANGAN' : selectedRoom;
+            const hdrSel = document.getElementById('headerRoomSelect');
+            if (hdrSel) hdrSel.value = selectedRoom;
+            const mobSel = document.getElementById('mobileHeaderRoomSelect');
+            if (mobSel) mobSel.value = selectedRoom;
             loadBlocklistIntoEditorForRoom(selectedRoom);
             updateSidebarPinUI();
             updateHeaderStatusUI();
@@ -1378,10 +1651,10 @@
             currentFilter = filter;
             ['ALL', 'ONLINE', 'UNLOCKED', 'VIOLATION'].forEach(f => {
                 const el = document.getElementById('filter-' + f);
-                if (f === filter) {
-                    el.className = 'filter-pill px-2.5 py-1 rounded-md font-medium bg-white text-slate-900 shadow-sm';
-                } else {
-                    el.className = 'filter-pill px-2.5 py-1 rounded-md font-medium text-slate-600 hover:text-slate-900';
+                if (el) {
+                    el.className = f === filter
+                        ? 'filter-pill px-3 py-1.5 rounded-md font-semibold bg-white text-slate-900 shadow-2xs whitespace-nowrap'
+                        : 'filter-pill px-3 py-1.5 rounded-md font-medium text-slate-600 hover:text-slate-900 whitespace-nowrap';
                 }
             });
             renderCurrentStudents();
@@ -1392,17 +1665,18 @@
             document.getElementById('studentTableContainer').classList.toggle('hidden', mode !== 'table');
             document.getElementById('studentGridContainer').classList.toggle('hidden', mode !== 'grid');
             document.getElementById('viewMode-table').className = mode === 'table'
-                ? 'px-2.5 py-1 rounded-md font-medium bg-white text-slate-900 shadow-sm flex items-center gap-1.5'
-                : 'px-2.5 py-1 rounded-md font-medium text-slate-600 hover:text-slate-900 flex items-center gap-1.5';
+                ? 'px-2.5 py-1.5 rounded-md font-semibold bg-white text-slate-900 shadow-2xs flex items-center gap-1.5'
+                : 'px-2.5 py-1.5 rounded-md font-medium text-slate-600 hover:text-slate-900 flex items-center gap-1.5';
             document.getElementById('viewMode-grid').className = mode === 'grid'
-                ? 'px-2.5 py-1 rounded-md font-medium bg-white text-slate-900 shadow-sm flex items-center gap-1.5'
-                : 'px-2.5 py-1 rounded-md font-medium text-slate-600 hover:text-slate-900 flex items-center gap-1.5';
+                ? 'px-2.5 py-1.5 rounded-md font-semibold bg-white text-slate-900 shadow-2xs flex items-center gap-1.5'
+                : 'px-2.5 py-1.5 rounded-md font-medium text-slate-600 hover:text-slate-900 flex items-center gap-1.5';
             renderCurrentStudents();
         }
 
         function updateRoomSelectorOptions() {
             const sel = document.getElementById('headerRoomSelect');
-            if (!sel) return;
+            const mobSel = document.getElementById('mobileHeaderRoomSelect');
+            if (!sel && !mobSel) return;
             const counts = {};
             cachedStudents.forEach(st => {
                 const r = (st.room_code || currentRoomCode || '-').toUpperCase();
@@ -1418,11 +1692,18 @@
                 const st = (cachedRoomStatuses[r] || cachedGlobalStatus) === 'LOCKED' ? 'Terkunci' : 'Terbuka';
                 html += `<option value="${escapeHtml(r)}">${escapeHtml(r)} (${c} PC · ${st})</option>`;
             });
-            sel.innerHTML = html;
-            if (selectedRoom !== 'ALL' && !allRooms.includes(selectedRoom)) {
-                selectedRoom = 'ALL';
+
+            if (sel) {
+                sel.innerHTML = html;
+                if (selectedRoom !== 'ALL' && !allRooms.includes(selectedRoom)) {
+                    selectedRoom = 'ALL';
+                }
+                sel.value = selectedRoom;
             }
-            sel.value = selectedRoom;
+            if (mobSel) {
+                mobSel.innerHTML = html;
+                mobSel.value = selectedRoom;
+            }
             document.getElementById('sidebarRoomCode').textContent = selectedRoom === 'ALL' ? 'SEMUA RUANGAN' : selectedRoom;
             updateRulesRoomSelectorUI();
         }
@@ -1433,24 +1714,37 @@
             const btnUnlock = document.getElementById('btnGlobalUnlock');
             const lblLock = document.getElementById('lblBtnLock');
             const lblUnlock = document.getElementById('lblBtnUnlock');
+            const mobDot = document.getElementById('mobileGlobalStateDot');
 
             const activeStatus = selectedRoom === 'ALL'
                 ? cachedGlobalStatus
                 : (cachedRoomStatuses[selectedRoom] || cachedGlobalStatus);
 
-            lblLock.textContent = selectedRoom === 'ALL' ? 'Kunci Semua Ruangan' : `Kunci ${selectedRoom}`;
-            lblUnlock.textContent = selectedRoom === 'ALL' ? 'Buka Semua & Pulihkan' : `Buka ${selectedRoom}`;
+            if (lblLock) lblLock.textContent = selectedRoom === 'ALL' ? 'Kunci Semua Ruangan' : `Kunci ${selectedRoom}`;
+            if (lblUnlock) lblUnlock.textContent = selectedRoom === 'ALL' ? 'Buka Semua & Pulihkan' : `Buka ${selectedRoom}`;
 
             if (activeStatus === 'LOCKED') {
-                gBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-emerald-50 text-emerald-800 border border-emerald-200';
-                gBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span> ${selectedRoom === 'ALL' ? 'Semua Ruangan Terkunci' : 'Ruangan ' + escapeHtml(selectedRoom) + ' Terkunci'}`;
-                btnLock.className = 'px-3 py-1.5 rounded-md text-xs font-medium transition flex items-center gap-1.5 bg-slate-900 text-white shadow-sm';
-                btnUnlock.className = 'px-3 py-1.5 rounded-md text-xs font-medium transition flex items-center gap-1.5 text-slate-600 hover:text-slate-900';
+                if (gBadge) {
+                    gBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-emerald-50 text-emerald-800 border border-emerald-200 whitespace-nowrap shadow-2xs';
+                    gBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span> ${selectedRoom === 'ALL' ? 'Semua Ruangan Terkunci' : 'Ruangan ' + escapeHtml(selectedRoom) + ' Terkunci'}`;
+                }
+                if (btnLock) btnLock.className = 'px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-semibold transition flex items-center gap-1.5 bg-slate-900 text-white shadow-xs';
+                if (btnUnlock) btnUnlock.className = 'px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-medium transition flex items-center gap-1.5 text-slate-600 hover:text-slate-900';
+                if (mobDot) {
+                    mobDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-600 shrink-0';
+                    mobDot.title = 'Proteksi AI Aktif';
+                }
             } else {
-                gBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200';
-                gBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> ${selectedRoom === 'ALL' ? 'Semua Ruangan Terbuka' : 'Ruangan ' + escapeHtml(selectedRoom) + ' Terbuka'}`;
-                btnUnlock.className = 'px-3 py-1.5 rounded-md text-xs font-medium transition flex items-center gap-1.5 bg-slate-900 text-white shadow-sm';
-                btnLock.className = 'px-3 py-1.5 rounded-md text-xs font-medium transition flex items-center gap-1.5 text-slate-600 hover:text-slate-900';
+                if (gBadge) {
+                    gBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap shadow-2xs';
+                    gBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> ${selectedRoom === 'ALL' ? 'Semua Ruangan Terbuka' : 'Ruangan ' + escapeHtml(selectedRoom) + ' Terbuka'}`;
+                }
+                if (btnUnlock) btnUnlock.className = 'px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-semibold transition flex items-center gap-1.5 bg-slate-900 text-white shadow-xs';
+                if (btnLock) btnLock.className = 'px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-medium transition flex items-center gap-1.5 text-slate-600 hover:text-slate-900';
+                if (mobDot) {
+                    mobDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0';
+                    mobDot.title = 'Ruangan Terbuka';
+                }
             }
         }
 
@@ -1463,18 +1757,39 @@
             const lockedCount = scoped.filter(st => st.status === 'LOCKED').length;
             const violationCount = scoped.reduce((acc, st) => acc + parseInt(st.killed_processes_count || 0, 10), 0);
 
-            document.getElementById('statOnline').textContent = onlineCount;
-            document.getElementById('statTotal').textContent = scoped.length;
-            document.getElementById('statLocked').textContent = lockedCount;
-            document.getElementById('statViolations').textContent = violationCount;
+            const statOnlineEl = document.getElementById('statOnline');
+            if (statOnlineEl) statOnlineEl.textContent = onlineCount;
+            const statTotalEl = document.getElementById('statTotal');
+            if (statTotalEl) statTotalEl.textContent = scoped.length;
+            const statLockedEl = document.getElementById('statLocked');
+            if (statLockedEl) statLockedEl.textContent = lockedCount;
+            const statViolationsEl = document.getElementById('statViolations');
+            if (statViolationsEl) statViolationsEl.textContent = violationCount;
 
             const effBl = getEffectiveBlocklistForRoom(selectedRoom);
-            document.getElementById('statDomains').textContent = (effBl.domains || []).length;
-            document.getElementById('statProcs').textContent = (effBl.processes || []).length;
-            document.getElementById('statExts').textContent = (effBl.ide_extensions || []).length;
+            const statDomainsEl = document.getElementById('statDomains');
+            if (statDomainsEl) statDomainsEl.textContent = (effBl.domains || []).length;
+            const statProcsEl = document.getElementById('statProcs');
+            if (statProcsEl) statProcsEl.textContent = (effBl.processes || []).length;
+            const statExtsEl = document.getElementById('statExts');
+            if (statExtsEl) statExtsEl.textContent = (effBl.ide_extensions || []).length;
 
-            document.getElementById('navBadgeOnline').textContent = onlineCount;
-            document.getElementById('navBadgeViolations').textContent = violationCount;
+            // Desktop badge
+            const badgeOnline = document.getElementById('navBadgeOnline');
+            if (badgeOnline) badgeOnline.textContent = onlineCount;
+            const badgeViolations = document.getElementById('navBadgeViolations');
+            if (badgeViolations) badgeViolations.textContent = violationCount;
+
+            // Mobile badges
+            const mobBadgeOnline = document.getElementById('mobBadgeOnline');
+            if (mobBadgeOnline) mobBadgeOnline.textContent = onlineCount;
+            const mobDrawerBadgeOnline = document.getElementById('mobDrawerBadgeOnline');
+            if (mobDrawerBadgeOnline) mobDrawerBadgeOnline.textContent = onlineCount;
+
+            const mobBadgeViolations = document.getElementById('mobBadgeViolations');
+            if (mobBadgeViolations) mobBadgeViolations.textContent = violationCount;
+            const mobDrawerBadgeViolations = document.getElementById('mobDrawerBadgeViolations');
+            if (mobDrawerBadgeViolations) mobDrawerBadgeViolations.textContent = violationCount;
         }
 
         async function syncStateToFirebaseIfAvailable(configObj, blocklistObj) {
@@ -1881,15 +2196,19 @@
                     : '';
 
                 return `
-                    <div class="px-5 py-3 flex flex-wrap items-center justify-between gap-4 hover:bg-slate-50/70 text-xs">
-                        <div class="flex items-center gap-2.5 min-w-0">
-                            ${badge}
-                            ${roomTag}
-                            <span class="font-medium text-slate-900">${escapeHtml(l.name)}</span>
-                            <span class="font-mono text-[11px] text-slate-400">(${escapeHtml(l.nim)} · ${escapeHtml(l.hostname)})</span>
-                            <span class="text-slate-600 truncate">${escapeHtml(l.message)}</span>
+                    <div class="p-3.5 sm:px-5 sm:py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 hover:bg-slate-50/70 transition text-xs border-b border-slate-100 last:border-0">
+                        <div class="flex flex-col sm:flex-row sm:items-center gap-2 min-w-0 flex-1">
+                            <div class="flex items-center gap-2 shrink-0 flex-wrap">
+                                ${badge}
+                                ${roomTag}
+                                <span class="font-semibold text-slate-900">${escapeHtml(l.name)}</span>
+                                <span class="font-mono text-[11px] text-slate-400">(${escapeHtml(l.nim || '')} · ${escapeHtml(l.hostname || '')})</span>
+                            </div>
+                            <div class="text-slate-600 sm:truncate font-mono sm:font-sans text-[11px] sm:text-xs bg-slate-50 sm:bg-transparent px-2.5 py-1.5 sm:p-0 rounded-lg sm:rounded-none border sm:border-0 border-slate-200/60 sm:border-transparent leading-relaxed">
+                                ${escapeHtml(l.message)}
+                            </div>
                         </div>
-                        <span class="font-mono text-[11px] text-slate-400 tabular-nums shrink-0">${escapeHtml(l.timestamp)}</span>
+                        <span class="font-mono text-[11px] text-slate-400 tabular-nums shrink-0 self-end sm:self-auto">${escapeHtml(l.timestamp)}</span>
                     </div>
                 `;
             }).join('');
