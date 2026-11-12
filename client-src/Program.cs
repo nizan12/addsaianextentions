@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.IO.Pipes;
 using System.Linq;
 using System.Net;
 using System.Net.NetworkInformation;
@@ -79,19 +80,65 @@ namespace AIBlockerGuard
     }
 
     // ============================================================================
+    // NAMED PIPE CLIENT TO AIBlockerGuardService (SYSTEM SERVICE)
+    // ============================================================================
+    public static class ServicePipeClient
+    {
+        public const string PipeName = "AIBlockerGuardPipe";
+
+        public static Dictionary<string, object> SendCommand(Dictionary<string, object> payload, int timeoutMs = 2000)
+        {
+            try
+            {
+                JavaScriptSerializer ser = new JavaScriptSerializer { MaxJsonLength = 8 * 1024 * 1024 };
+                using (NamedPipeClientStream client = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut))
+                {
+                    client.Connect(timeoutMs);
+                    using (StreamWriter writer = new StreamWriter(client, Encoding.UTF8, 4096, true))
+                    {
+                        writer.WriteLine(ser.Serialize(payload));
+                        writer.Flush();
+                    }
+                    using (StreamReader reader = new StreamReader(client, Encoding.UTF8, false, 4096, true))
+                    {
+                        string respLine = reader.ReadLine();
+                        if (!string.IsNullOrWhiteSpace(respLine))
+                        {
+                            return ser.Deserialize<Dictionary<string, object>>(respLine);
+                        }
+                    }
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        public static bool IsServiceAvailable()
+        {
+            var res = SendCommand(new Dictionary<string, object> { { "cmd", "PING" } }, 700);
+            return res != null && res.ContainsKey("ok") && Convert.ToBoolean(res["ok"]);
+        }
+    }
+
+    // ============================================================================
     // 4-LAYER AI BLOCKER ENGINE
     // ============================================================================
     public static class GuardEngine
     {
-        public const string CurrentVersion = "1.5.2";
+        public const string CurrentVersion = "1.6.0";
         public static readonly string AppDataDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
             "AIBlockerGuard"
         );
-        public static readonly string QuarantineDir = Path.Combine(AppDataDir, "Quarantine");
-        public static readonly string ManifestFile = Path.Combine(AppDataDir, "quarantine_manifest.json");
-        public static readonly string VsCodeBackupFile = Path.Combine(AppDataDir, "vscode_settings_backup.json");
+        public static readonly string UserDataDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "AIBlockerGuard"
+        );
+        public static readonly string QuarantineDir = Path.Combine(UserDataDir, "Quarantine");
+        public static readonly string ManifestFile = Path.Combine(UserDataDir, "quarantine_manifest.json");
+        public static readonly string VsCodeBackupFile = Path.Combine(UserDataDir, "vscode_settings_backup.json");
         public static readonly string AgentConfigFile = Path.Combine(AppDataDir, "agent_config.json");
+        public static readonly string UserAgentConfigFile = Path.Combine(UserDataDir, "agent_config.json");
         public static readonly string HostsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), @"drivers\etc\hosts");
         public static readonly string HostsStartMarker = "# >>> AI-BLOCKER-GUARD START >>>";
         public static readonly string HostsEndMarker = "# <<< AI-BLOCKER-GUARD END <<<";
@@ -209,8 +256,9 @@ namespace AIBlockerGuard
 
         public static void EnsureDirectories()
         {
-            if (!Directory.Exists(AppDataDir)) Directory.CreateDirectory(AppDataDir);
-            if (!Directory.Exists(QuarantineDir)) Directory.CreateDirectory(QuarantineDir);
+            try { if (!Directory.Exists(AppDataDir)) Directory.CreateDirectory(AppDataDir); } catch { }
+            try { if (!Directory.Exists(UserDataDir)) Directory.CreateDirectory(UserDataDir); } catch { }
+            try { if (!Directory.Exists(QuarantineDir)) Directory.CreateDirectory(QuarantineDir); } catch { }
         }
 
         // --------------------------------------------------------------------
@@ -223,6 +271,24 @@ namespace AIBlockerGuard
             {
                 statusMessage = string.Format("[SIMULASI] {0} domain Web AI & API IDE disiapkan untuk diblokir.", BlockedDomains.Count);
                 return true;
+            }
+
+            if (!IsAdministrator())
+            {
+                var res = ServicePipeClient.SendCommand(new Dictionary<string, object>
+                {
+                    { "cmd", "APPLY_SYSTEM_LOCK" },
+                    { "domains", BlockedDomains },
+                    { "block_doh", true }
+                });
+                if (res != null && res.ContainsKey("ok") && Convert.ToBoolean(res["ok"]))
+                {
+                    FlushDns();
+                    statusMessage = res.ContainsKey("message") ? Convert.ToString(res["message"]) : "Layer 1 Aktif via System Service.";
+                    return true;
+                }
+                statusMessage = "Mode Standard User (Service belum terpasang): Proteksi IDE & Proses tetap aktif.";
+                return false;
             }
 
             try
@@ -272,6 +338,20 @@ namespace AIBlockerGuard
 
         public static bool IsHostsBlockIntact()
         {
+            if (!IsAdministrator())
+            {
+                var res = ServicePipeClient.SendCommand(new Dictionary<string, object>
+                {
+                    { "cmd", "CHECK_HOSTS" },
+                    { "domains", BlockedDomains }
+                }, 1000);
+                if (res != null && res.ContainsKey("intact"))
+                {
+                    return Convert.ToBoolean(res["intact"]);
+                }
+                return true;
+            }
+
             try
             {
                 if (BlockedDomains == null || BlockedDomains.Count == 0) return true;
@@ -307,6 +387,13 @@ namespace AIBlockerGuard
 
         public static void RemoveHostsBlock()
         {
+            if (!IsAdministrator())
+            {
+                ServicePipeClient.SendCommand(new Dictionary<string, object> { { "cmd", "RESTORE_SYSTEM" } });
+                FlushDns();
+                return;
+            }
+
             try
             {
                 if (!File.Exists(HostsPath)) return;
@@ -961,17 +1048,21 @@ namespace AIBlockerGuard
 
         public static AgentConfig LoadAgentConfig()
         {
-            try
+            string[] candidates = new string[] { AgentConfigFile, UserAgentConfigFile };
+            foreach (string path in candidates)
             {
-                if (File.Exists(AgentConfigFile))
+                try
                 {
-                    string json = File.ReadAllText(AgentConfigFile, Encoding.UTF8);
-                    JavaScriptSerializer ser = new JavaScriptSerializer();
-                    AgentConfig cfg = ser.Deserialize<AgentConfig>(json);
-                    if (cfg != null) return cfg;
+                    if (File.Exists(path))
+                    {
+                        string json = File.ReadAllText(path, Encoding.UTF8);
+                        JavaScriptSerializer ser = new JavaScriptSerializer();
+                        AgentConfig cfg = ser.Deserialize<AgentConfig>(json);
+                        if (cfg != null) return cfg;
+                    }
                 }
+                catch { }
             }
-            catch { }
 
             return new AgentConfig
             {
@@ -986,22 +1077,19 @@ namespace AIBlockerGuard
 
         public static void SaveAgentConfig(AgentConfig cfg)
         {
-            try
-            {
-                EnsureDirectories();
-                JavaScriptSerializer ser = new JavaScriptSerializer();
-                File.WriteAllText(AgentConfigFile, ser.Serialize(cfg), Encoding.UTF8);
-            }
-            catch { }
+            EnsureDirectories();
+            JavaScriptSerializer ser = new JavaScriptSerializer();
+            string json = ser.Serialize(cfg);
+            try { File.WriteAllText(AgentConfigFile, json, Encoding.UTF8); } catch { }
+            try { File.WriteAllText(UserAgentConfigFile, json, Encoding.UTF8); } catch { }
         }
 
         public static void EnsureAutoStartRegistered(bool enable, string customExePath = null)
         {
             string exePath = !string.IsNullOrEmpty(customExePath) ? customExePath : Application.ExecutablePath;
-            string exeDir = Path.GetDirectoryName(exePath);
             string runVal = "\"" + exePath + "\" --autostart";
 
-            // 1. Registry CurrentUser & LocalMachine Run
+            // 1. Registry CurrentUser & LocalMachine Run (berjalan langsung untuk semua user tanpa UAC karena asInvoker)
             try
             {
                 using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true))
@@ -1028,73 +1116,10 @@ namespace AIBlockerGuard
             }
             catch { }
 
-            // 2. Windows Task Scheduler via XML (ONLOGON untuk semua user dengan RL HIGHEST / HighestAvailable tanpa UAC prompt)
-            try
+            // 2. Bersihkan Task Scheduler lama (jika ada) agar tidak memicu konflik/elevasi ganda
+            if (IsAdministrator())
             {
-                if (enable)
-                {
-                    string xmlTask =
-                        "<?xml version=\"1.0\" encoding=\"UTF-16\"?>\r\n" +
-                        "<Task version=\"1.2\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">\r\n" +
-                        "  <RegistrationInfo>\r\n" +
-                        "    <Description>GuardAgent - Always-On System Security Agent</Description>\r\n" +
-                        "  </RegistrationInfo>\r\n" +
-                        "  <Triggers>\r\n" +
-                        "    <LogonTrigger>\r\n" +
-                        "      <Enabled>true</Enabled>\r\n" +
-                        "      <Delay>PT2S</Delay>\r\n" +
-                        "    </LogonTrigger>\r\n" +
-                        "  </Triggers>\r\n" +
-                        "  <Principals>\r\n" +
-                        "    <Principal id=\"Author\">\r\n" +
-                        "      <GroupId>S-1-5-32-544</GroupId>\r\n" +
-                        "      <RunLevel>HighestAvailable</RunLevel>\r\n" +
-                        "    </Principal>\r\n" +
-                        "  </Principals>\r\n" +
-                        "  <Settings>\r\n" +
-                        "    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>\r\n" +
-                        "    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>\r\n" +
-                        "    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>\r\n" +
-                        "    <AllowHardTerminate>true</AllowHardTerminate>\r\n" +
-                        "    <StartWhenAvailable>true</StartWhenAvailable>\r\n" +
-                        "    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>\r\n" +
-                        "    <IdleSettings>\r\n" +
-                        "      <StopOnIdleEnd>false</StopOnIdleEnd>\r\n" +
-                        "      <RestartOnIdle>false</RestartOnIdle>\r\n" +
-                        "    </IdleSettings>\r\n" +
-                        "    <AllowStartOnDemand>true</AllowStartOnDemand>\r\n" +
-                        "    <Enabled>true</Enabled>\r\n" +
-                        "    <Hidden>false</Hidden>\r\n" +
-                        "    <RunOnlyIfIdle>false</RunOnlyIfIdle>\r\n" +
-                        "    <WakeToRun>false</WakeToRun>\r\n" +
-                        "    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>\r\n" +
-                        "    <Priority>4</Priority>\r\n" +
-                        "  </Settings>\r\n" +
-                        "  <Actions Context=\"Author\">\r\n" +
-                        "    <Exec>\r\n" +
-                        "      <Command>" + exePath.Replace("&", "&amp;") + "</Command>\r\n" +
-                        "      <Arguments>--autostart</Arguments>\r\n" +
-                        "      <WorkingDirectory>" + exeDir.Replace("&", "&amp;") + "</WorkingDirectory>\r\n" +
-                        "    </Exec>\r\n" +
-                        "  </Actions>\r\n" +
-                        "</Task>";
-
-                    string tempXml = Path.Combine(Path.GetTempPath(), "guardagent_task.xml");
-                    File.WriteAllText(tempXml, xmlTask, Encoding.Unicode);
-
-                    ProcessStartInfo psiXml = new ProcessStartInfo("schtasks.exe", "/Create /XML \"" + tempXml + "\" /TN \"AIBlockerGuardAgent\" /F")
-                    {
-                        CreateNoWindow = true,
-                        UseShellExecute = false,
-                        WindowStyle = ProcessWindowStyle.Hidden
-                    };
-                    using (Process p = Process.Start(psiXml))
-                    {
-                        if (p != null) p.WaitForExit(3000);
-                    }
-                    try { File.Delete(tempXml); } catch { }
-                }
-                else
+                try
                 {
                     ProcessStartInfo psiDel = new ProcessStartInfo("schtasks.exe", "/Delete /TN \"AIBlockerGuardAgent\" /F")
                     {
@@ -1104,13 +1129,13 @@ namespace AIBlockerGuard
                     };
                     using (Process p = Process.Start(psiDel))
                     {
-                        if (p != null) p.WaitForExit(2500);
+                        if (p != null) p.WaitForExit(2000);
                     }
                 }
+                catch { }
             }
-            catch { }
 
-            // 3. Folder Startup Windows (CommonStartup & User Startup) via VBS background launcher
+            // 3. Folder Startup Windows (CommonStartup & User Startup) via VBS background launcher (tanpa console & tanpa UAC)
             try
             {
                 string[] startupDirs = new string[]
@@ -1132,10 +1157,7 @@ namespace AIBlockerGuard
                         string vbsCode =
                             "On Error Resume Next\r\n" +
                             "Set WshShell = CreateObject(\"WScript.Shell\")\r\n" +
-                            "ret = WshShell.Run(\"schtasks /Run /TN \"\"AIBlockerGuardAgent\"\"\", 0, True)\r\n" +
-                            "If ret <> 0 Then\r\n" +
-                            "    WshShell.Run \"\"\"" + exePath.Replace("\"", "\"\"") + "\"\" --autostart\", 0, False\r\n" +
-                            "End If\r\n";
+                            "WshShell.Run \"\"\"" + exePath.Replace("\"", "\"\"") + "\"\" --autostart\", 0, False\r\n";
 
                         File.WriteAllText(vbsPath, vbsCode, Encoding.ASCII);
                     }
@@ -1347,11 +1369,13 @@ namespace AIBlockerGuard
                 Location = new Point(22, 44)
             };
 
+            bool isAdminNow = GuardEngine.IsAdministrator();
+            bool hasServiceNow = !isAdminNow && ServicePipeClient.IsServiceAvailable();
             lblAdminBadge = new Label
             {
-                Text = GuardEngine.IsAdministrator() ? "SYSTEM ADMIN" : "STANDARD USER",
+                Text = isAdminNow ? "SYSTEM ADMIN" : (hasServiceNow ? "SERVICE + USER" : "STANDARD USER"),
                 Font = new Font("Consolas", 8.5f, FontStyle.Bold),
-                ForeColor = GuardEngine.IsAdministrator() ? Color.FromArgb(167, 243, 208) : Color.FromArgb(253, 230, 138),
+                ForeColor = (isAdminNow || hasServiceNow) ? Color.FromArgb(167, 243, 208) : Color.FromArgb(253, 230, 138),
                 BackColor = Color.FromArgb(30, 41, 59),
                 AutoSize = true,
                 Padding = new Padding(8, 4, 8, 4),
@@ -2327,8 +2351,7 @@ namespace AIBlockerGuard
                 string fallbackUrl = "https://raw.githubusercontent.com/nizan12/addsaianextentions/main/dist/AIBlockerGuard.exe";
 
                 string currentExePath = Application.ExecutablePath;
-                string appDir = Path.GetDirectoryName(currentExePath);
-                string tempExePath = Path.Combine(appDir, "AIBlockerGuard_update.tmp");
+                string tempExePath = Path.Combine(Path.GetTempPath(), "AIBlockerGuard_update.tmp");
 
                 AddLog("MENGUNDUH: Mengambil versi terbaru dari server...");
                 byte[] exeBytes = null;
@@ -2417,6 +2440,39 @@ namespace AIBlockerGuard
 
                 // Pulihkan blokir sementara agar tidak mengunci resource
                 GuardEngine.EmergencyRestoreAll();
+
+                if (!GuardEngine.IsAdministrator() && ServicePipeClient.IsServiceAvailable())
+                {
+                    var svcRes = ServicePipeClient.SendCommand(new Dictionary<string, object>
+                    {
+                        { "cmd", "REPLACE_CLIENT_EXE" },
+                        { "tempPath", tempExePath },
+                        { "targetPath", currentExePath }
+                    });
+                    if (svcRes != null && svcRes.ContainsKey("ok") && Convert.ToBoolean(svcRes["ok"]))
+                    {
+                        string restartBat = Path.Combine(Path.GetTempPath(), "guard_user_restart.bat");
+                        string restartScript = string.Format(
+                            "@echo off\r\n" +
+                            "ping 127.0.0.1 -n 5 >nul\r\n" +
+                            "start \"\" \"{0}\"\r\n" +
+                            "del \"%~f0\" & exit\r\n",
+                            currentExePath
+                        );
+                        File.WriteAllText(restartBat, restartScript, Encoding.ASCII);
+                        Process.Start(new ProcessStartInfo
+                        {
+                            FileName = restartBat,
+                            CreateNoWindow = true,
+                            UseShellExecute = false,
+                            WindowStyle = ProcessWindowStyle.Hidden
+                        });
+                        allowProcessExit = true;
+                        Application.Exit();
+                        Environment.Exit(0);
+                        return;
+                    }
+                }
 
                 // Buat script batch updater mandiri yang mengganti file dan me-restart exe
                 string batPath = Path.Combine(Path.GetTempPath(), "guard_self_update.bat");

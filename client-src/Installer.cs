@@ -48,7 +48,7 @@ namespace AIBlockerInstaller
             };
             Label title = new Label
             {
-                Text = "Instalasi GuardAgent v1.5.2 (Always-On)",
+                Text = "Instalasi GuardAgent v1.6.0 (Service + Always-On)",
                 Font = new Font("Segoe UI", 12.5f, FontStyle.Bold),
                 ForeColor = Color.White,
                 Location = new Point(20, 13),
@@ -157,22 +157,21 @@ namespace AIBlockerInstaller
                 }
 
                 string targetExe = Path.Combine(targetDir, "AIBlockerGuard.exe");
+                string serviceExe = Path.Combine(targetDir, "AIBlockerService.exe");
 
-                // Hentikan proses AIBlockerGuard yang sedang berjalan agar executable dapat diperbarui tanpa konflik "Akses ditolak"
-                try
+                // Hentikan service & proses yang sedang berjalan agar executable dapat diperbarui tanpa konflik "Akses ditolak"
+                RunHiddenProcess("sc.exe", "stop AIBlockerGuardService", 4000);
+                foreach (string procName in new string[] { "AIBlockerGuard", "AIBlockerService" })
                 {
-                    Process[] running = Process.GetProcessesByName("AIBlockerGuard");
-                    foreach (Process p in running)
+                    try
                     {
-                        try
+                        foreach (Process p in Process.GetProcessesByName(procName))
                         {
-                            p.Kill();
-                            p.WaitForExit(3000);
+                            try { p.Kill(); p.WaitForExit(3000); } catch { }
                         }
-                        catch { }
                     }
+                    catch { }
                 }
-                catch { }
 
                 Assembly asm = Assembly.GetExecutingAssembly();
                 using (Stream resStream = asm.GetManifestResourceStream("AIBlockerGuard.exe"))
@@ -187,6 +186,36 @@ namespace AIBlockerInstaller
                     {
                         resStream.CopyTo(fs);
                     }
+                }
+
+                using (Stream svcStream = asm.GetManifestResourceStream("AIBlockerService.exe"))
+                {
+                    if (svcStream != null)
+                    {
+                        using (FileStream fs = new FileStream(serviceExe, FileMode.Create, FileAccess.Write))
+                        {
+                            svcStream.CopyTo(fs);
+                        }
+                    }
+                }
+
+                // Pastikan folder C:\ProgramData\AIBlockerGuard dapat ditulis oleh user standar (mhs)
+                try
+                {
+                    string appDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "AIBlockerGuard");
+                    if (!Directory.Exists(appDataDir)) Directory.CreateDirectory(appDataDir);
+                    RunHiddenProcess("icacls.exe", "\"" + appDataDir + "\" /grant *S-1-5-32-545:(OI)(CI)M /T /Q", 3000);
+                }
+                catch { }
+
+                // Daftarkan & jalankan Windows Service (berjalan sebagai LocalSystem tanpa pop-up UAC di akun mahasiswa)
+                if (File.Exists(serviceExe))
+                {
+                    RunHiddenProcess("sc.exe", "delete AIBlockerGuardService", 3000);
+                    RunHiddenProcess("sc.exe", "create AIBlockerGuardService binPath= \"\\\"" + serviceExe + "\\\"\" start= auto DisplayName= \"AI-Blocker Guard System Service\"", 4000);
+                    RunHiddenProcess("sc.exe", "description AIBlockerGuardService \"Layanan sistem untuk proteksi Hosts, DNS DoH, dan keamanan ujian AI-Blocker Guard.\"", 2500);
+                    RunHiddenProcess("sc.exe", "failure AIBlockerGuardService reset= 86400 actions= restart/5000/restart/5000/restart/5000", 2500);
+                    RunHiddenProcess("sc.exe", "start AIBlockerGuardService", 4000);
                 }
 
                 string restoreBat = Path.Combine(targetDir, "Restore-Normal.bat");
@@ -243,14 +272,31 @@ namespace AIBlockerInstaller
             catch { }
         }
 
+        private static void RunHiddenProcess(string fileName, string args, int timeoutMs)
+        {
+            try
+            {
+                ProcessStartInfo psi = new ProcessStartInfo(fileName, args)
+                {
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    WindowStyle = ProcessWindowStyle.Hidden
+                };
+                using (Process p = Process.Start(psi))
+                {
+                    if (p != null) p.WaitForExit(timeoutMs);
+                }
+            }
+            catch { }
+        }
+
         private void ConfigureAutoStart(string targetExe)
         {
             try
             {
-                string targetDir = Path.GetDirectoryName(targetExe);
                 string runVal = "\"" + targetExe + "\" --autostart";
 
-                // 1. Registry Run Key (HKCU & HKLM)
+                // 1. Registry Run Key (HKCU & HKLM) — berjalan untuk semua user (termasuk mhs) tanpa pop-up UAC karena asInvoker
                 try
                 {
                     using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true))
@@ -269,71 +315,8 @@ namespace AIBlockerInstaller
                 }
                 catch { }
 
-                // 2. Windows Task Scheduler via XML (ONLOGON untuk semua user dengan hak Administrator / HighestAvailable)
-                try
-                {
-                    string xmlTask =
-                        "<?xml version=\"1.0\" encoding=\"UTF-16\"?>\r\n" +
-                        "<Task version=\"1.2\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">\r\n" +
-                        "  <RegistrationInfo>\r\n" +
-                        "    <Description>GuardAgent - Always-On System Security Agent</Description>\r\n" +
-                        "  </RegistrationInfo>\r\n" +
-                        "  <Triggers>\r\n" +
-                        "    <LogonTrigger>\r\n" +
-                        "      <Enabled>true</Enabled>\r\n" +
-                        "      <Delay>PT2S</Delay>\r\n" +
-                        "    </LogonTrigger>\r\n" +
-                        "  </Triggers>\r\n" +
-                        "  <Principals>\r\n" +
-                        "    <Principal id=\"Author\">\r\n" +
-                        "      <GroupId>S-1-5-32-544</GroupId>\r\n" +
-                        "      <RunLevel>HighestAvailable</RunLevel>\r\n" +
-                        "    </Principal>\r\n" +
-                        "  </Principals>\r\n" +
-                        "  <Settings>\r\n" +
-                        "    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>\r\n" +
-                        "    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>\r\n" +
-                        "    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>\r\n" +
-                        "    <AllowHardTerminate>true</AllowHardTerminate>\r\n" +
-                        "    <StartWhenAvailable>true</StartWhenAvailable>\r\n" +
-                        "    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>\r\n" +
-                        "    <IdleSettings>\r\n" +
-                        "      <StopOnIdleEnd>false</StopOnIdleEnd>\r\n" +
-                        "      <RestartOnIdle>false</RestartOnIdle>\r\n" +
-                        "    </IdleSettings>\r\n" +
-                        "    <AllowStartOnDemand>true</AllowStartOnDemand>\r\n" +
-                        "    <Enabled>true</Enabled>\r\n" +
-                        "    <Hidden>false</Hidden>\r\n" +
-                        "    <RunOnlyIfIdle>false</RunOnlyIfIdle>\r\n" +
-                        "    <WakeToRun>false</WakeToRun>\r\n" +
-                        "    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>\r\n" +
-                        "    <Priority>4</Priority>\r\n" +
-                        "  </Settings>\r\n" +
-                        "  <Actions Context=\"Author\">\r\n" +
-                        "    <Exec>\r\n" +
-                        "      <Command>" + targetExe.Replace("&", "&amp;") + "</Command>\r\n" +
-                        "      <Arguments>--autostart</Arguments>\r\n" +
-                        "      <WorkingDirectory>" + targetDir.Replace("&", "&amp;") + "</WorkingDirectory>\r\n" +
-                        "    </Exec>\r\n" +
-                        "  </Actions>\r\n" +
-                        "</Task>";
-
-                    string tempXml = Path.Combine(Path.GetTempPath(), "guardagent_setup_task.xml");
-                    File.WriteAllText(tempXml, xmlTask, Encoding.Unicode);
-
-                    ProcessStartInfo psiXml = new ProcessStartInfo("schtasks.exe", "/Create /XML \"" + tempXml + "\" /TN \"AIBlockerGuardAgent\" /F")
-                    {
-                        CreateNoWindow = true,
-                        UseShellExecute = false,
-                        WindowStyle = ProcessWindowStyle.Hidden
-                    };
-                    using (Process p = Process.Start(psiXml))
-                    {
-                        if (p != null) p.WaitForExit(3000);
-                    }
-                    try { File.Delete(tempXml); } catch { }
-                }
-                catch { }
+                // 2. Hapus Task Scheduler lama (jika ada) agar tidak terjadi elevasi ganda
+                RunHiddenProcess("schtasks.exe", "/Delete /TN \"AIBlockerGuardAgent\" /F", 2500);
 
                 // 3. Folder Startup Windows (CommonStartup & User Startup) via VBS background launcher
                 try
@@ -352,10 +335,7 @@ namespace AIBlockerInstaller
                         string vbsCode =
                             "On Error Resume Next\r\n" +
                             "Set WshShell = CreateObject(\"WScript.Shell\")\r\n" +
-                            "ret = WshShell.Run(\"schtasks /Run /TN \"\"AIBlockerGuardAgent\"\"\", 0, True)\r\n" +
-                            "If ret <> 0 Then\r\n" +
-                            "    WshShell.Run \"\"\"" + targetExe.Replace("\"", "\"\"") + "\"\" --autostart\", 0, False\r\n" +
-                            "End If\r\n";
+                            "WshShell.Run \"\"\"" + targetExe.Replace("\"", "\"\"") + "\"\" --autostart\", 0, False\r\n";
 
                         File.WriteAllText(vbsPath, vbsCode, Encoding.ASCII);
                     }

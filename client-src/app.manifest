@@ -4,8 +4,8 @@
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
     <security>
       <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
-        <!-- Meminta akses Administrator agar dapat memodifikasi Hosts, Firewall, Registry DoH, dan menghentikan proses AI -->
-        <requestedExecutionLevel level="requireAdministrator" uiAccess="false" />
+        <!-- Berjalan sebagai asInvoker agar user mahasiswa (non-admin) tidak terkena pop-up UAC; aksi sistem didelegasikan ke AIBlockerGuardService -->
+        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
       </requestedPrivileges>
     </security>
   </trustInfo>
