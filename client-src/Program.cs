@@ -1252,6 +1252,17 @@ namespace AIBlockerGuard
             base.WndProc(ref m);
         }
 
+        private bool lifecycleStarted = false;
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            if (!lifecycleStarted)
+            {
+                this.BeginInvoke(new Action(StartAgentLifecycle));
+            }
+        }
+
         public MainForm(bool startInTray = false)
         {
             this.startMinimizedInTray = startInTray;
@@ -1264,7 +1275,6 @@ namespace AIBlockerGuard
             InitializeUi();
             InitializeTrayIcon();
             CheckInitialEnvironment();
-            this.Shown += MainForm_Shown;
         }
 
         private void InitializeTrayIcon()
@@ -1620,8 +1630,11 @@ namespace AIBlockerGuard
             return val.ToUpperInvariant();
         }
 
-        private void MainForm_Shown(object sender, EventArgs e)
+        private void StartAgentLifecycle()
         {
+            if (lifecycleStarted) return;
+            lifecycleStarted = true;
+
             GuardEngine.EnsureAutoStartRegistered(chkAutoStart.Checked);
 
             if (startMinimizedInTray)
