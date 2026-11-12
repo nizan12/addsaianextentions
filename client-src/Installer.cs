@@ -3,7 +3,9 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Reflection;
+using System.Text;
 using System.Windows.Forms;
+using Microsoft.Win32;
 
 namespace AIBlockerInstaller
 {
@@ -46,7 +48,7 @@ namespace AIBlockerInstaller
             };
             Label title = new Label
             {
-                Text = "Instalasi GuardAgent v1.5.1 (Always-On)",
+                Text = "Instalasi GuardAgent v1.5.2 (Always-On)",
                 Font = new Font("Segoe UI", 12.5f, FontStyle.Bold),
                 ForeColor = Color.White,
                 Location = new Point(20, 13),
@@ -192,13 +194,7 @@ namespace AIBlockerInstaller
 
                 if (chkAutoStart.Checked)
                 {
-                    try
-                    {
-                        string args = "/Create /TN \"AIBlockerGuardAgent\" /TR \"\\\"" + targetExe + "\\\" --autostart\" /SC ONLOGON /RL HIGHEST /F";
-                        Process pTask = Process.Start(new ProcessStartInfo("schtasks.exe", args) { CreateNoWindow = true, UseShellExecute = false });
-                        if (pTask != null) pTask.WaitForExit(2500);
-                    }
-                    catch { }
+                    ConfigureAutoStart(targetExe);
                 }
 
                 if (chkDesktopShortcut.Checked)
@@ -243,6 +239,128 @@ namespace AIBlockerInstaller
                 Process p = Process.Start(new ProcessStartInfo("wscript.exe", "\"" + vbsPath + "\"") { CreateNoWindow = true, UseShellExecute = false });
                 if (p != null) p.WaitForExit(3000);
                 File.Delete(vbsPath);
+            }
+            catch { }
+        }
+
+        private void ConfigureAutoStart(string targetExe)
+        {
+            try
+            {
+                string targetDir = Path.GetDirectoryName(targetExe);
+                string runVal = "\"" + targetExe + "\" --autostart";
+
+                // 1. Registry Run Key (HKCU & HKLM)
+                try
+                {
+                    using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true))
+                    {
+                        if (key != null) key.SetValue("AIBlockerGuard", runVal, RegistryValueKind.String);
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    using (RegistryKey key = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true))
+                    {
+                        if (key != null) key.SetValue("AIBlockerGuard", runVal, RegistryValueKind.String);
+                    }
+                }
+                catch { }
+
+                // 2. Windows Task Scheduler via XML (ONLOGON untuk semua user dengan hak Administrator / HighestAvailable)
+                try
+                {
+                    string xmlTask =
+                        "<?xml version=\"1.0\" encoding=\"UTF-16\"?>\r\n" +
+                        "<Task version=\"1.2\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">\r\n" +
+                        "  <RegistrationInfo>\r\n" +
+                        "    <Description>GuardAgent - Always-On System Security Agent</Description>\r\n" +
+                        "  </RegistrationInfo>\r\n" +
+                        "  <Triggers>\r\n" +
+                        "    <LogonTrigger>\r\n" +
+                        "      <Enabled>true</Enabled>\r\n" +
+                        "      <Delay>PT2S</Delay>\r\n" +
+                        "    </LogonTrigger>\r\n" +
+                        "  </Triggers>\r\n" +
+                        "  <Principals>\r\n" +
+                        "    <Principal id=\"Author\">\r\n" +
+                        "      <GroupId>S-1-5-32-544</GroupId>\r\n" +
+                        "      <RunLevel>HighestAvailable</RunLevel>\r\n" +
+                        "    </Principal>\r\n" +
+                        "  </Principals>\r\n" +
+                        "  <Settings>\r\n" +
+                        "    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>\r\n" +
+                        "    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>\r\n" +
+                        "    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>\r\n" +
+                        "    <AllowHardTerminate>true</AllowHardTerminate>\r\n" +
+                        "    <StartWhenAvailable>true</StartWhenAvailable>\r\n" +
+                        "    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>\r\n" +
+                        "    <IdleSettings>\r\n" +
+                        "      <StopOnIdleEnd>false</StopOnIdleEnd>\r\n" +
+                        "      <RestartOnIdle>false</RestartOnIdle>\r\n" +
+                        "    </IdleSettings>\r\n" +
+                        "    <AllowStartOnDemand>true</AllowStartOnDemand>\r\n" +
+                        "    <Enabled>true</Enabled>\r\n" +
+                        "    <Hidden>false</Hidden>\r\n" +
+                        "    <RunOnlyIfIdle>false</RunOnlyIfIdle>\r\n" +
+                        "    <WakeToRun>false</WakeToRun>\r\n" +
+                        "    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>\r\n" +
+                        "    <Priority>4</Priority>\r\n" +
+                        "  </Settings>\r\n" +
+                        "  <Actions Context=\"Author\">\r\n" +
+                        "    <Exec>\r\n" +
+                        "      <Command>" + targetExe.Replace("&", "&amp;") + "</Command>\r\n" +
+                        "      <Arguments>--autostart</Arguments>\r\n" +
+                        "      <WorkingDirectory>" + targetDir.Replace("&", "&amp;") + "</WorkingDirectory>\r\n" +
+                        "    </Exec>\r\n" +
+                        "  </Actions>\r\n" +
+                        "</Task>";
+
+                    string tempXml = Path.Combine(Path.GetTempPath(), "guardagent_setup_task.xml");
+                    File.WriteAllText(tempXml, xmlTask, Encoding.Unicode);
+
+                    ProcessStartInfo psiXml = new ProcessStartInfo("schtasks.exe", "/Create /XML \"" + tempXml + "\" /TN \"AIBlockerGuardAgent\" /F")
+                    {
+                        CreateNoWindow = true,
+                        UseShellExecute = false,
+                        WindowStyle = ProcessWindowStyle.Hidden
+                    };
+                    using (Process p = Process.Start(psiXml))
+                    {
+                        if (p != null) p.WaitForExit(3000);
+                    }
+                    try { File.Delete(tempXml); } catch { }
+                }
+                catch { }
+
+                // 3. Folder Startup Windows (CommonStartup & User Startup) via VBS background launcher
+                try
+                {
+                    string[] startupDirs = new string[]
+                    {
+                        Environment.GetFolderPath(Environment.SpecialFolder.Startup),
+                        Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup)
+                    };
+
+                    foreach (string dir in startupDirs)
+                    {
+                        if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) continue;
+
+                        string vbsPath = Path.Combine(dir, "GuardAgent-Startup.vbs");
+                        string vbsCode =
+                            "On Error Resume Next\r\n" +
+                            "Set WshShell = CreateObject(\"WScript.Shell\")\r\n" +
+                            "ret = WshShell.Run(\"schtasks /Run /TN \"\"AIBlockerGuardAgent\"\"\", 0, True)\r\n" +
+                            "If ret <> 0 Then\r\n" +
+                            "    WshShell.Run \"\"\"" + targetExe.Replace("\"", "\"\"") + "\"\" --autostart\", 0, False\r\n" +
+                            "End If\r\n";
+
+                        File.WriteAllText(vbsPath, vbsCode, Encoding.ASCII);
+                    }
+                }
+                catch { }
             }
             catch { }
         }

@@ -83,7 +83,7 @@ namespace AIBlockerGuard
     // ============================================================================
     public static class GuardEngine
     {
-        public const string CurrentVersion = "1.5.1";
+        public const string CurrentVersion = "1.5.2";
         public static readonly string AppDataDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
             "AIBlockerGuard"
@@ -995,9 +995,10 @@ namespace AIBlockerGuard
             catch { }
         }
 
-        public static void EnsureAutoStartRegistered(bool enable)
+        public static void EnsureAutoStartRegistered(bool enable, string customExePath = null)
         {
-            string exePath = Application.ExecutablePath;
+            string exePath = !string.IsNullOrEmpty(customExePath) ? customExePath : Application.ExecutablePath;
+            string exeDir = Path.GetDirectoryName(exePath);
             string runVal = "\"" + exePath + "\" --autostart";
 
             // 1. Registry CurrentUser & LocalMachine Run
@@ -1027,21 +1028,121 @@ namespace AIBlockerGuard
             }
             catch { }
 
-            // 2. Windows Task Scheduler (ONLOGON dengan RL HIGHEST agar selalu berjalan sebagai Administrator tanpa UAC)
+            // 2. Windows Task Scheduler via XML (ONLOGON untuk semua user dengan RL HIGHEST / HighestAvailable tanpa UAC prompt)
             try
             {
-                string args = enable
-                    ? "/Create /TN \"AIBlockerGuardAgent\" /TR \"\\\"" + exePath + "\\\" --autostart\" /SC ONLOGON /RL HIGHEST /F"
-                    : "/Delete /TN \"AIBlockerGuardAgent\" /F";
-                ProcessStartInfo psi = new ProcessStartInfo("schtasks.exe", args)
+                if (enable)
                 {
-                    CreateNoWindow = true,
-                    UseShellExecute = false,
-                    WindowStyle = ProcessWindowStyle.Hidden
+                    string xmlTask =
+                        "<?xml version=\"1.0\" encoding=\"UTF-16\"?>\r\n" +
+                        "<Task version=\"1.2\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">\r\n" +
+                        "  <RegistrationInfo>\r\n" +
+                        "    <Description>GuardAgent - Always-On System Security Agent</Description>\r\n" +
+                        "  </RegistrationInfo>\r\n" +
+                        "  <Triggers>\r\n" +
+                        "    <LogonTrigger>\r\n" +
+                        "      <Enabled>true</Enabled>\r\n" +
+                        "      <Delay>PT2S</Delay>\r\n" +
+                        "    </LogonTrigger>\r\n" +
+                        "  </Triggers>\r\n" +
+                        "  <Principals>\r\n" +
+                        "    <Principal id=\"Author\">\r\n" +
+                        "      <GroupId>S-1-5-32-544</GroupId>\r\n" +
+                        "      <RunLevel>HighestAvailable</RunLevel>\r\n" +
+                        "    </Principal>\r\n" +
+                        "  </Principals>\r\n" +
+                        "  <Settings>\r\n" +
+                        "    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>\r\n" +
+                        "    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>\r\n" +
+                        "    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>\r\n" +
+                        "    <AllowHardTerminate>true</AllowHardTerminate>\r\n" +
+                        "    <StartWhenAvailable>true</StartWhenAvailable>\r\n" +
+                        "    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>\r\n" +
+                        "    <IdleSettings>\r\n" +
+                        "      <StopOnIdleEnd>false</StopOnIdleEnd>\r\n" +
+                        "      <RestartOnIdle>false</RestartOnIdle>\r\n" +
+                        "    </IdleSettings>\r\n" +
+                        "    <AllowStartOnDemand>true</AllowStartOnDemand>\r\n" +
+                        "    <Enabled>true</Enabled>\r\n" +
+                        "    <Hidden>false</Hidden>\r\n" +
+                        "    <RunOnlyIfIdle>false</RunOnlyIfIdle>\r\n" +
+                        "    <WakeToRun>false</WakeToRun>\r\n" +
+                        "    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>\r\n" +
+                        "    <Priority>4</Priority>\r\n" +
+                        "  </Settings>\r\n" +
+                        "  <Actions Context=\"Author\">\r\n" +
+                        "    <Exec>\r\n" +
+                        "      <Command>" + exePath.Replace("&", "&amp;") + "</Command>\r\n" +
+                        "      <Arguments>--autostart</Arguments>\r\n" +
+                        "      <WorkingDirectory>" + exeDir.Replace("&", "&amp;") + "</WorkingDirectory>\r\n" +
+                        "    </Exec>\r\n" +
+                        "  </Actions>\r\n" +
+                        "</Task>";
+
+                    string tempXml = Path.Combine(Path.GetTempPath(), "guardagent_task.xml");
+                    File.WriteAllText(tempXml, xmlTask, Encoding.Unicode);
+
+                    ProcessStartInfo psiXml = new ProcessStartInfo("schtasks.exe", "/Create /XML \"" + tempXml + "\" /TN \"AIBlockerGuardAgent\" /F")
+                    {
+                        CreateNoWindow = true,
+                        UseShellExecute = false,
+                        WindowStyle = ProcessWindowStyle.Hidden
+                    };
+                    using (Process p = Process.Start(psiXml))
+                    {
+                        if (p != null) p.WaitForExit(3000);
+                    }
+                    try { File.Delete(tempXml); } catch { }
+                }
+                else
+                {
+                    ProcessStartInfo psiDel = new ProcessStartInfo("schtasks.exe", "/Delete /TN \"AIBlockerGuardAgent\" /F")
+                    {
+                        CreateNoWindow = true,
+                        UseShellExecute = false,
+                        WindowStyle = ProcessWindowStyle.Hidden
+                    };
+                    using (Process p = Process.Start(psiDel))
+                    {
+                        if (p != null) p.WaitForExit(2500);
+                    }
+                }
+            }
+            catch { }
+
+            // 3. Folder Startup Windows (CommonStartup & User Startup) via VBS background launcher
+            try
+            {
+                string[] startupDirs = new string[]
+                {
+                    Environment.GetFolderPath(Environment.SpecialFolder.Startup),
+                    Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup)
                 };
-                using (Process p = Process.Start(psi))
+
+                foreach (string dir in startupDirs)
                 {
-                    if (p != null) p.WaitForExit(2500);
+                    if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) continue;
+
+                    string vbsPath = Path.Combine(dir, "GuardAgent-Startup.vbs");
+                    string batPath = Path.Combine(dir, "GuardAgent-Startup.bat");
+                    try { if (File.Exists(batPath)) File.Delete(batPath); } catch { }
+
+                    if (enable)
+                    {
+                        string vbsCode =
+                            "On Error Resume Next\r\n" +
+                            "Set WshShell = CreateObject(\"WScript.Shell\")\r\n" +
+                            "ret = WshShell.Run(\"schtasks /Run /TN \"\"AIBlockerGuardAgent\"\"\", 0, True)\r\n" +
+                            "If ret <> 0 Then\r\n" +
+                            "    WshShell.Run \"\"\"" + exePath.Replace("\"", "\"\"") + "\"\" --autostart\", 0, False\r\n" +
+                            "End If\r\n";
+
+                        File.WriteAllText(vbsPath, vbsCode, Encoding.ASCII);
+                    }
+                    else
+                    {
+                        try { if (File.Exists(vbsPath)) File.Delete(vbsPath); } catch { }
+                    }
                 }
             }
             catch { }
@@ -1100,9 +1201,44 @@ namespace AIBlockerGuard
         private Label lblStatVpn;
         private ListBox lstLogs;
 
+        [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Auto)]
+        private static extern int RegisterWindowMessage(string lpString);
+
+        private int msgTaskbarCreated = 0;
+        private bool allowShowForm = true;
+
+        protected override void SetVisibleCore(bool value)
+        {
+            if (!allowShowForm)
+            {
+                value = false;
+                if (!this.IsHandleCreated) CreateHandle();
+            }
+            base.SetVisibleCore(value);
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            if (msgTaskbarCreated != 0 && m.Msg == msgTaskbarCreated)
+            {
+                if (trayIcon != null)
+                {
+                    trayIcon.Visible = false;
+                    trayIcon.Visible = true;
+                }
+            }
+            base.WndProc(ref m);
+        }
+
         public MainForm(bool startInTray = false)
         {
             this.startMinimizedInTray = startInTray;
+            if (startInTray)
+            {
+                this.allowShowForm = false;
+                this.WindowState = FormWindowState.Minimized;
+                this.ShowInTaskbar = false;
+            }
             InitializeUi();
             InitializeTrayIcon();
             CheckInitialEnvironment();
@@ -1111,6 +1247,8 @@ namespace AIBlockerGuard
 
         private void InitializeTrayIcon()
         {
+            msgTaskbarCreated = RegisterWindowMessage("TaskbarCreated");
+
             trayMenu = new ContextMenuStrip();
             ToolStripMenuItem itemOpen = new ToolStripMenuItem("Buka Jendela Status GuardAgent");
             itemOpen.Font = new Font("Segoe UI", 9f, FontStyle.Bold);
@@ -1143,6 +1281,7 @@ namespace AIBlockerGuard
 
         private void ShowFromTray()
         {
+            this.allowShowForm = true;
             this.Show();
             this.ShowInTaskbar = true;
             this.WindowState = FormWindowState.Normal;
@@ -1152,6 +1291,7 @@ namespace AIBlockerGuard
 
         private void HideToTray(bool showBalloon = true)
         {
+            this.allowShowForm = false;
             this.Hide();
             this.ShowInTaskbar = false;
             if (showBalloon && trayIcon != null)
@@ -1456,28 +1596,60 @@ namespace AIBlockerGuard
             return val.ToUpperInvariant();
         }
 
-        private async void MainForm_Shown(object sender, EventArgs e)
+        private void MainForm_Shown(object sender, EventArgs e)
         {
             GuardEngine.EnsureAutoStartRegistered(chkAutoStart.Checked);
 
-            // Ambil daftar ruangan resmi dari server terlebih dahulu tanpa membuat ruangan baru!
-            await FetchAvailableRoomsAsync(false);
-
-            // Hanya langsung terhubung otomatis apabila PC ini sebelumnya sudah dikonfirmasi ruangannya
-            // dan ruangan tersebut masih terdaftar di server
-            string selected = GetSelectedRoomCode();
-            if (isRoomConfirmed && !string.IsNullOrEmpty(selected))
+            if (startMinimizedInTray)
             {
-                if (startMinimizedInTray)
-                {
-                    HideToTray(false);
-                }
-                heartbeatTimer.Start();
-                await ConnectAndSyncServerAsync(false);
+                HideToTray(false);
             }
-            else
+
+            var unused = InitializeConnectionWithRetryAsync();
+        }
+
+        private async Task InitializeConnectionWithRetryAsync()
+        {
+            if (isRoomConfirmed && !string.IsNullOrEmpty(activeRoomCode))
             {
-                isRoomConfirmed = false;
+                heartbeatTimer.Start();
+                AddLog("MENYAMBUNG: Menghubungkan ke server untuk ruangan [" + activeRoomCode + "]...");
+            }
+
+            int attempts = 0;
+            const int maxRetries = 15;
+            bool connected = false;
+
+            while (!connected && attempts < maxRetries)
+            {
+                attempts++;
+                try
+                {
+                    await FetchAvailableRoomsAsync(false);
+                    string selected = GetSelectedRoomCode();
+                    if (string.IsNullOrEmpty(selected) && !string.IsNullOrEmpty(activeRoomCode))
+                    {
+                        selected = activeRoomCode;
+                    }
+
+                    if (isRoomConfirmed && !string.IsNullOrEmpty(selected))
+                    {
+                        await ConnectAndSyncServerAsync(false);
+                        connected = true;
+                        AddLog("TERHUBUNG: Agen berhasil tersambung ke konsol ruangan [" + selected + "].");
+                        break;
+                    }
+                }
+                catch { }
+
+                if (!connected)
+                {
+                    await Task.Delay(attempts <= 3 ? 3000 : 5000);
+                }
+            }
+
+            if (!connected && !isRoomConfirmed)
+            {
                 lblStatVpn.Text = "Pilih Ruangan";
                 lblStatVpn.ForeColor = Color.FromArgb(180, 83, 9);
                 AddLog("Silakan pilih Ruangan pada dropdown di atas, lalu klik 'Hubungkan ke Ruangan'.");
@@ -1532,13 +1704,25 @@ namespace AIBlockerGuard
                 cmbRoomCode.Items.Add(r);
             }
 
-            if (isRoomConfirmed && !string.IsNullOrEmpty(currentSel) && serverRooms.Contains(currentSel, StringComparer.OrdinalIgnoreCase))
+            if (!string.IsNullOrEmpty(currentSel))
             {
-                cmbRoomCode.SelectedItem = serverRooms.First(x => x.Equals(currentSel, StringComparison.OrdinalIgnoreCase));
+                if (serverRooms.Contains(currentSel, StringComparer.OrdinalIgnoreCase))
+                {
+                    cmbRoomCode.SelectedItem = serverRooms.First(x => x.Equals(currentSel, StringComparison.OrdinalIgnoreCase));
+                }
+                else if (isRoomConfirmed)
+                {
+                    // Tetap pertahankan ruangan yang sudah dikonfirmasi agar tidak ter-reset jika koneksi server sedang refresh
+                    cmbRoomCode.Items.Add(currentSel);
+                    cmbRoomCode.SelectedItem = currentSel;
+                }
+                else
+                {
+                    cmbRoomCode.SelectedIndex = 0;
+                }
             }
             else
             {
-                isRoomConfirmed = false;
                 cmbRoomCode.SelectedIndex = 0;
             }
         }
