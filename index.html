@@ -2247,11 +2247,11 @@
                 const connBadge = st.is_online
                     ? `<div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200/80 font-medium text-[11px] shadow-2xs">
                         <span class="radar-beacon"><span class="w-2 h-2 rounded-full bg-emerald-600"></span></span>
-                        <span>Aktif (${st.seconds_ago}s)</span>
+                        <span>Aktif</span>
                       </div>`
                     : `<div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 text-slate-500 border border-slate-200 font-medium text-[11px]">
                         <span class="w-2 h-2 rounded-full bg-slate-400"></span>
-                        <span>Terputus (${st.seconds_ago}s)</span>
+                        <span>Terputus</span>
                       </div>`;
 
                 let stateBadge = isLocked
