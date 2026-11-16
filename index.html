@@ -419,61 +419,62 @@
     <!-- Main Content Area -->
     <div class="flex-1 flex flex-col min-w-0 lg:h-screen lg:overflow-hidden">
 
-        <!-- Top Institutional Action Bar (Clean, Responsive, Command-Center Polish) -->
-        <header class="min-h-16 py-2.5 sm:py-0 shrink-0 bg-white border-b border-slate-200 px-3.5 sm:px-6 flex flex-wrap lg:flex-nowrap items-center justify-between gap-3 z-20">
-            <div class="flex flex-wrap items-center gap-2 sm:gap-3 min-w-0 flex-1">
-                <div class="flex items-center gap-1.5 flex-wrap sm:flex-nowrap">
-                    <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 hidden sm:inline">Ruangan:</span>
-                    <select id="headerRoomSelect" onchange="onSelectRoom(this.value)" class="rounded-lg border border-slate-300 bg-slate-50 hover:bg-white px-2.5 sm:px-3 py-1.5 text-xs font-mono font-semibold text-slate-900 focus:outline-none focus:border-slate-500 transition shadow-2xs">
-                        <option value="ALL">Semua Ruangan</option>
-                    </select>
-                    <button onclick="promptNewRoom()" class="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 transition flex items-center gap-1 shadow-2xs" title="Tambah Kode Ruangan Baru">
-                        <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
-                        <span class="hidden md:inline">Tambah</span>
-                    </button>
-                    <button onclick="promptEditSelectedRoom()" id="btnHeaderEditRoom" class="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 transition flex items-center gap-1 shadow-2xs" title="Ubah Nama / Edit Ruangan">
-                        <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125"/></svg>
-                        <span class="hidden md:inline">Edit</span>
-                    </button>
-                    <button onclick="switchTab('settings')" class="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 transition flex items-center gap-1 shadow-2xs" title="Buka Menu Manajemen Multi-Ruangan & PIN">
-                        <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75"/></svg>
-                        <span class="hidden lg:inline">Kelola</span>
-                    </button>
+        <!-- Top Institutional Action Bar (Clean, Responsive, Non-Overlapping) -->
+        <header class="shrink-0 bg-white border-b border-slate-200 px-3.5 sm:px-6 py-2.5 z-20">
+            <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                <div class="flex flex-wrap items-center gap-2 max-w-full">
+                    <div class="flex flex-wrap items-center gap-1.5 max-w-full">
+                        <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 hidden sm:inline shrink-0">Ruangan:</span>
+                        <select id="headerRoomSelect" onchange="onSelectRoom(this.value)" class="rounded-lg border border-slate-300 bg-slate-50 hover:bg-white px-2.5 sm:px-3 py-1.5 text-xs font-mono font-semibold text-slate-900 focus:outline-none focus:border-slate-500 transition shadow-2xs max-w-[180px] sm:max-w-[220px] truncate">
+                            <option value="ALL">Semua Ruangan</option>
+                        </select>
+                        <button onclick="promptNewRoom()" class="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 transition flex items-center gap-1 shadow-2xs whitespace-nowrap shrink-0" title="Tambah Kode Ruangan Baru">
+                            <svg class="w-3.5 h-3.5 text-slate-500 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+                            <span class="hidden md:inline">Tambah</span>
+                        </button>
+                        <button onclick="promptEditSelectedRoom()" id="btnHeaderEditRoom" class="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 transition flex items-center gap-1 shadow-2xs whitespace-nowrap shrink-0" title="Ubah Nama / Edit Ruangan">
+                            <svg class="w-3.5 h-3.5 text-slate-500 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125"/></svg>
+                            <span class="hidden md:inline">Edit</span>
+                        </button>
+                        <button onclick="switchTab('settings')" class="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 transition flex items-center gap-1 shadow-2xs whitespace-nowrap shrink-0" title="Buka Menu Manajemen Multi-Ruangan & PIN">
+                            <svg class="w-3.5 h-3.5 text-slate-500 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75"/></svg>
+                            <span class="hidden lg:inline">Kelola</span>
+                        </button>
+                    </div>
+
+                    <div class="h-4 w-px bg-slate-200 hidden sm:block shrink-0"></div>
+
+                    <span id="globalStateBadge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-emerald-50 text-emerald-800 border border-emerald-200 whitespace-nowrap shrink-0 shadow-2xs">
+                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-600 shrink-0"></span>
+                        Proteksi AI Aktif
+                    </span>
                 </div>
 
-                <div class="h-4 w-px bg-slate-200 hidden sm:block"></div>
+                <!-- Right Controls: Modular IDE Access + Global / Per-Room Lock -->
+                <div class="flex flex-wrap items-center gap-2 sm:ml-auto">
+                    <div class="flex flex-wrap items-center gap-1.5">
+                        <button onclick="toggleIdeModule('AI')" id="btnToggleIdeAi" title="Klik untuk Buka/Tutup Kunci AI Chat di VS Code" class="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1.5 bg-rose-50 border-rose-200 text-rose-700 shadow-2xs whitespace-nowrap shrink-0">
+                            <span class="w-2 h-2 rounded-full bg-rose-500 shrink-0" id="dotToggleIdeAi"></span>
+                            <span>AI Chat:</span>
+                            <span id="lblToggleIdeAi" class="font-bold text-rose-600">TERKUNCI</span>
+                        </button>
+                        <button onclick="toggleIdeModule('EXT')" id="btnToggleIdeExt" title="Klik untuk Buka/Tutup Kunci Ekstensi di VS Code" class="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1.5 bg-rose-50 border-rose-200 text-rose-700 shadow-2xs whitespace-nowrap shrink-0">
+                            <span class="w-2 h-2 rounded-full bg-rose-500 shrink-0" id="dotToggleIdeExt"></span>
+                            <span>Ekstensi:</span>
+                            <span id="lblToggleIdeExt" class="font-bold text-rose-600">TERKUNCI</span>
+                        </button>
+                    </div>
 
-                <span id="globalStateBadge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-emerald-50 text-emerald-800 border border-emerald-200 whitespace-nowrap shadow-2xs">
-                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
-                    Proteksi AI Aktif
-                </span>
-            </div>
-
-            <!-- Modular IDE Access Controls (Granular Buka/Tutup Fleksibel) -->
-            <div class="flex flex-wrap items-center gap-1.5">
-                <button onclick="toggleIdeModule('AI')" id="btnToggleIdeAi" title="Klik untuk Buka/Tutup Kunci AI Chat di VS Code" class="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1.5 bg-rose-50 border-rose-200 text-rose-700 shadow-2xs">
-                    <span class="w-2 h-2 rounded-full bg-rose-500" id="dotToggleIdeAi"></span>
-                    <span>AI Chat:</span>
-                    <span id="lblToggleIdeAi" class="font-bold text-rose-600">TERKUNCI</span>
-                </button>
-                <button onclick="toggleIdeModule('EXT')" id="btnToggleIdeExt" title="Klik untuk Buka/Tutup Kunci Ekstensi di VS Code" class="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1.5 bg-rose-50 border-rose-200 text-rose-700 shadow-2xs">
-                    <span class="w-2 h-2 rounded-full bg-rose-500" id="dotToggleIdeExt"></span>
-                    <span>Ekstensi:</span>
-                    <span id="lblToggleIdeExt" class="font-bold text-rose-600">TERKUNCI</span>
-                </button>
-            </div>
-
-            <!-- Global / Per-Room Classroom Controls -->
-            <div class="flex items-center gap-2 shrink-0">
-                <div class="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 shadow-2xs">
-                    <button onclick="setGlobalStatus('LOCKED')" id="btnGlobalLock" class="px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-semibold transition flex items-center gap-1.5 bg-slate-900 text-white shadow-xs">
-                        <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-                        <span id="lblBtnLock">Kunci Semua Ruangan</span>
-                    </button>
-                    <button onclick="setGlobalStatus('UNLOCKED')" id="btnGlobalUnlock" class="px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-medium transition flex items-center gap-1.5 text-slate-600 hover:text-slate-900">
-                        <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 019.9-1"/></svg>
-                        <span id="lblBtnUnlock">Buka Kunci & Pulihkan</span>
-                    </button>
+                    <div class="inline-flex flex-wrap sm:flex-nowrap items-center rounded-lg border border-slate-200 bg-slate-100 p-0.5 shadow-2xs shrink-0">
+                        <button onclick="setGlobalStatus('LOCKED')" id="btnGlobalLock" class="px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-semibold transition flex items-center gap-1.5 bg-slate-900 text-white shadow-xs whitespace-nowrap">
+                            <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                            <span id="lblBtnLock">Kunci Semua Ruangan</span>
+                        </button>
+                        <button onclick="setGlobalStatus('UNLOCKED')" id="btnGlobalUnlock" class="px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-medium transition flex items-center gap-1.5 text-slate-600 hover:text-slate-900 whitespace-nowrap">
+                            <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 019.9-1"/></svg>
+                            <span id="lblBtnUnlock">Buka Kunci & Pulihkan</span>
+                        </button>
+                    </div>
                 </div>
             </div>
         </header>
@@ -816,8 +817,8 @@
                                         <label class="block text-xs font-medium text-slate-700">Password Buka Kunci IDE (AI Chat & Ekstensi VS Code)</label>
                                         <span id="badgeIdePassStatus" class="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-slate-100 text-slate-600 border border-slate-200">Default</span>
                                     </div>
-                                    <div class="flex items-center gap-2">
-                                        <input type="text" id="cfgIdeUnlockPassword" autocomplete="off" readonly onfocus="this.removeAttribute('readonly')" style="-webkit-text-security: disc;" placeholder="Masukkan password baru (min. 4 karakter, kosongkan jika tetap)" class="flex-1 rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono font-medium text-slate-900 focus:border-slate-500 focus:outline-none" value="">
+                                    <div class="flex flex-wrap sm:flex-nowrap items-center gap-2">
+                                        <input type="text" id="cfgIdeUnlockPassword" autocomplete="off" readonly onfocus="this.removeAttribute('readonly')" style="-webkit-text-security: disc;" placeholder="Masukkan password baru (min. 4 karakter, kosongkan jika tetap)" class="min-w-0 flex-1 rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono font-medium text-slate-900 focus:border-slate-500 focus:outline-none" value="">
                                         <button type="button" onclick="updateIdePasswordQuick()" class="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition shrink-0">Perbarui</button>
                                         <button type="button" onclick="resetIdePasswordDefault()" title="Kembalikan ke password default (admin123)" class="px-2.5 py-2 rounded-lg bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-xs font-medium transition shrink-0">Reset</button>
                                     </div>
@@ -917,8 +918,8 @@
                                     </div>
                                     <p class="text-xs text-slate-600 mt-1 leading-relaxed">Memasang IDE <strong>Code - OSS (x64)</strong> ke <code>Program Files</code> (butuh Administrator) lengkap dengan penguncian AI Chat/Agent, Ekstensi, Sign In Title Bar, &amp; sinkronisasi password Web Guard.</p>
                                 </div>
-                                <div class="flex items-center gap-2 shrink-0">
-                                    <a href="dist/VSCodeSetup.exe" download onclick="return downloadIdeInstaller(event)" class="px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold flex items-center gap-2 transition">
+                                <div class="flex flex-wrap items-center gap-2 shrink-0">
+                                    <a href="dist/VSCodeSetup.exe" download onclick="return downloadIdeInstaller(event)" class="px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold flex items-center gap-2 transition whitespace-nowrap">
                                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
                                         Unduh VSCodeSetup.exe
                                     </a>
@@ -1980,22 +1981,22 @@
 
             if (activeStatus === 'LOCKED') {
                 if (gBadge) {
-                    gBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-emerald-50 text-emerald-800 border border-emerald-200 whitespace-nowrap shadow-2xs';
-                    gBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span> ${selectedRoom === 'ALL' ? 'Semua Ruangan Terkunci' : 'Ruangan ' + escapeHtml(selectedRoom) + ' Terkunci'}`;
+                    gBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-emerald-50 text-emerald-800 border border-emerald-200 whitespace-nowrap shrink-0 shadow-2xs';
+                    gBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-600 shrink-0"></span> ${selectedRoom === 'ALL' ? 'Semua Ruangan Terkunci' : 'Ruangan ' + escapeHtml(selectedRoom) + ' Terkunci'}`;
                 }
-                if (btnLock) btnLock.className = 'px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-semibold transition flex items-center gap-1.5 bg-slate-900 text-white shadow-xs';
-                if (btnUnlock) btnUnlock.className = 'px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-medium transition flex items-center gap-1.5 text-slate-600 hover:text-slate-900';
+                if (btnLock) btnLock.className = 'px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-semibold transition flex items-center gap-1.5 bg-slate-900 text-white shadow-xs whitespace-nowrap';
+                if (btnUnlock) btnUnlock.className = 'px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-medium transition flex items-center gap-1.5 text-slate-600 hover:text-slate-900 whitespace-nowrap';
                 if (mobDot) {
                     mobDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-600 shrink-0';
                     mobDot.title = 'Proteksi AI Aktif';
                 }
             } else {
                 if (gBadge) {
-                    gBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap shadow-2xs';
-                    gBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> ${selectedRoom === 'ALL' ? 'Semua Ruangan Terbuka' : 'Ruangan ' + escapeHtml(selectedRoom) + ' Terbuka'}`;
+                    gBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap shrink-0 shadow-2xs';
+                    gBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0"></span> ${selectedRoom === 'ALL' ? 'Semua Ruangan Terbuka' : 'Ruangan ' + escapeHtml(selectedRoom) + ' Terbuka'}`;
                 }
-                if (btnUnlock) btnUnlock.className = 'px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-semibold transition flex items-center gap-1.5 bg-slate-900 text-white shadow-xs';
-                if (btnLock) btnLock.className = 'px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-medium transition flex items-center gap-1.5 text-slate-600 hover:text-slate-900';
+                if (btnUnlock) btnUnlock.className = 'px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-semibold transition flex items-center gap-1.5 bg-slate-900 text-white shadow-xs whitespace-nowrap';
+                if (btnLock) btnLock.className = 'px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-medium transition flex items-center gap-1.5 text-slate-600 hover:text-slate-900 whitespace-nowrap';
                 if (mobDot) {
                     mobDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0';
                     mobDot.title = 'Ruangan Terbuka';
@@ -2016,13 +2017,13 @@
                 if (cachedLockAi) {
                     lblAi.textContent = 'TERKUNCI';
                     lblAi.className = 'font-bold text-rose-600';
-                    dotAi.className = 'w-2 h-2 rounded-full bg-rose-500';
-                    btnAi.className = 'px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1.5 bg-rose-50 border-rose-200 text-rose-700 shadow-2xs hover:bg-rose-100';
+                    dotAi.className = 'w-2 h-2 rounded-full bg-rose-500 shrink-0';
+                    btnAi.className = 'px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1.5 bg-rose-50 border-rose-200 text-rose-700 shadow-2xs hover:bg-rose-100 whitespace-nowrap shrink-0';
                 } else {
                     lblAi.textContent = 'TERBUKA';
                     lblAi.className = 'font-bold text-emerald-600';
-                    dotAi.className = 'w-2 h-2 rounded-full bg-emerald-500 animate-pulse';
-                    btnAi.className = 'px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1.5 bg-emerald-50 border-emerald-200 text-emerald-700 shadow-2xs hover:bg-emerald-100';
+                    dotAi.className = 'w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0';
+                    btnAi.className = 'px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1.5 bg-emerald-50 border-emerald-200 text-emerald-700 shadow-2xs hover:bg-emerald-100 whitespace-nowrap shrink-0';
                 }
             }
 
@@ -2030,13 +2031,13 @@
                 if (cachedLockExt) {
                     lblExt.textContent = 'TERKUNCI';
                     lblExt.className = 'font-bold text-rose-600';
-                    dotExt.className = 'w-2 h-2 rounded-full bg-rose-500';
-                    btnExt.className = 'px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1.5 bg-rose-50 border-rose-200 text-rose-700 shadow-2xs hover:bg-rose-100';
+                    dotExt.className = 'w-2 h-2 rounded-full bg-rose-500 shrink-0';
+                    btnExt.className = 'px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1.5 bg-rose-50 border-rose-200 text-rose-700 shadow-2xs hover:bg-rose-100 whitespace-nowrap shrink-0';
                 } else {
                     lblExt.textContent = 'TERBUKA';
                     lblExt.className = 'font-bold text-emerald-600';
-                    dotExt.className = 'w-2 h-2 rounded-full bg-emerald-500 animate-pulse';
-                    btnExt.className = 'px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1.5 bg-emerald-50 border-emerald-200 text-emerald-700 shadow-2xs hover:bg-emerald-100';
+                    dotExt.className = 'w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0';
+                    btnExt.className = 'px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1.5 bg-emerald-50 border-emerald-200 text-emerald-700 shadow-2xs hover:bg-emerald-100 whitespace-nowrap shrink-0';
                 }
             }
         }
