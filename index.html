@@ -449,6 +449,20 @@
                 </span>
             </div>
 
+            <!-- Modular IDE Access Controls (Granular Buka/Tutup Fleksibel) -->
+            <div class="flex flex-wrap items-center gap-1.5">
+                <button onclick="toggleIdeModule('AI')" id="btnToggleIdeAi" title="Klik untuk Buka/Tutup Kunci AI Chat di VS Code" class="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1.5 bg-rose-50 border-rose-200 text-rose-700 shadow-2xs">
+                    <span class="w-2 h-2 rounded-full bg-rose-500" id="dotToggleIdeAi"></span>
+                    <span>AI Chat:</span>
+                    <span id="lblToggleIdeAi" class="font-bold text-rose-600">TERKUNCI</span>
+                </button>
+                <button onclick="toggleIdeModule('EXT')" id="btnToggleIdeExt" title="Klik untuk Buka/Tutup Kunci Ekstensi di VS Code" class="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1.5 bg-rose-50 border-rose-200 text-rose-700 shadow-2xs">
+                    <span class="w-2 h-2 rounded-full bg-rose-500" id="dotToggleIdeExt"></span>
+                    <span>Ekstensi:</span>
+                    <span id="lblToggleIdeExt" class="font-bold text-rose-600">TERKUNCI</span>
+                </button>
+            </div>
+
             <!-- Global / Per-Room Classroom Controls -->
             <div class="flex items-center gap-2 shrink-0">
                 <div class="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 shadow-2xs">
@@ -796,6 +810,18 @@
                                 <div>
                                     <label class="block text-xs font-medium text-slate-700 mb-1.5">Kata Sandi Login Dashboard</label>
                                     <input type="text" id="cfgAdminPassword" autocomplete="off" readonly onfocus="this.removeAttribute('readonly')" style="-webkit-text-security: disc;" placeholder="Kosongkan jika tidak diubah" class="w-full rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono font-medium text-slate-900 focus:border-slate-500 focus:outline-none" value="">
+                                </div>
+                                <div class="sm:col-span-2 pt-2 border-t border-slate-100">
+                                    <div class="flex items-center justify-between gap-2 mb-1.5">
+                                        <label class="block text-xs font-medium text-slate-700">Password Buka Kunci IDE (AI Chat & Ekstensi VS Code)</label>
+                                        <span id="badgeIdePassStatus" class="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-slate-100 text-slate-600 border border-slate-200">Default</span>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <input type="text" id="cfgIdeUnlockPassword" autocomplete="off" readonly onfocus="this.removeAttribute('readonly')" style="-webkit-text-security: disc;" placeholder="Masukkan password baru (min. 4 karakter, kosongkan jika tetap)" class="flex-1 rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono font-medium text-slate-900 focus:border-slate-500 focus:outline-none" value="">
+                                        <button type="button" onclick="updateIdePasswordQuick()" class="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition shrink-0">Perbarui</button>
+                                        <button type="button" onclick="resetIdePasswordDefault()" title="Kembalikan ke password default (admin123)" class="px-2.5 py-2 rounded-lg bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-xs font-medium transition shrink-0">Reset</button>
+                                    </div>
+                                    <p class="text-[11px] text-slate-500 mt-1">Berlaku real-time di semua VS Code yang terhubung untuk membuka kunci AI Agent/Chat, Copilot Sign In, dan Ekstensi.</p>
                                 </div>
                             </div>
 
@@ -1214,6 +1240,8 @@
         let cachedRoomBlocklists = {};
         let cachedGlobalBlocklist = { domains: [], processes: [], ide_extensions: [] };
         let cachedGlobalStatus = 'LOCKED';
+        let cachedLockAi = true;
+        let cachedLockExt = true;
         let blocklistLoaded = false;
         let pinVisible = false;
         let currentUnlockPin = '202699';
@@ -1956,6 +1984,70 @@
             }
         }
 
+        function updateIdeModuleButtons() {
+            const btnAi = document.getElementById('btnToggleIdeAi');
+            const lblAi = document.getElementById('lblToggleIdeAi');
+            const dotAi = document.getElementById('dotToggleIdeAi');
+
+            const btnExt = document.getElementById('btnToggleIdeExt');
+            const lblExt = document.getElementById('lblToggleIdeExt');
+            const dotExt = document.getElementById('dotToggleIdeExt');
+
+            if (lblAi && dotAi && btnAi) {
+                if (cachedLockAi) {
+                    lblAi.textContent = 'TERKUNCI';
+                    lblAi.className = 'font-bold text-rose-600';
+                    dotAi.className = 'w-2 h-2 rounded-full bg-rose-500';
+                    btnAi.className = 'px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1.5 bg-rose-50 border-rose-200 text-rose-700 shadow-2xs hover:bg-rose-100';
+                } else {
+                    lblAi.textContent = 'TERBUKA';
+                    lblAi.className = 'font-bold text-emerald-600';
+                    dotAi.className = 'w-2 h-2 rounded-full bg-emerald-500 animate-pulse';
+                    btnAi.className = 'px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1.5 bg-emerald-50 border-emerald-200 text-emerald-700 shadow-2xs hover:bg-emerald-100';
+                }
+            }
+
+            if (lblExt && dotExt && btnExt) {
+                if (cachedLockExt) {
+                    lblExt.textContent = 'TERKUNCI';
+                    lblExt.className = 'font-bold text-rose-600';
+                    dotExt.className = 'w-2 h-2 rounded-full bg-rose-500';
+                    btnExt.className = 'px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1.5 bg-rose-50 border-rose-200 text-rose-700 shadow-2xs hover:bg-rose-100';
+                } else {
+                    lblExt.textContent = 'TERBUKA';
+                    lblExt.className = 'font-bold text-emerald-600';
+                    dotExt.className = 'w-2 h-2 rounded-full bg-emerald-500 animate-pulse';
+                    btnExt.className = 'px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1.5 bg-emerald-50 border-emerald-200 text-emerald-700 shadow-2xs hover:bg-emerald-100';
+                }
+            }
+        }
+
+        async function toggleIdeModule(module) {
+            const isAi = module === 'AI';
+            const currentLocked = isAi ? cachedLockAi : cachedLockExt;
+            const targetStatus = currentLocked ? 'UNLOCKED' : 'LOCKED';
+            const moduleName = isAi ? 'AI Chat / Agent' : 'Ekstensi IDE';
+
+            try {
+                const res = await fetch('api/index.php?action=set_ide_module_status', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ module, status: targetStatus })
+                });
+                const data = await res.json();
+                if (data && data.ok) {
+                    cachedLockAi = data.lock_ai !== undefined ? !!data.lock_ai : (targetStatus === 'LOCKED');
+                    cachedLockExt = data.lock_extensions !== undefined ? !!data.lock_extensions : (targetStatus === 'LOCKED');
+                    updateIdeModuleButtons();
+                    showToast(`${moduleName} di VS Code berhasil ${targetStatus === 'LOCKED' ? 'DIKUNCI' : 'DIBUKA'}!`);
+                } else {
+                    showToast('Gagal mengubah status: ' + (data.error || 'Unknown error'), 'error');
+                }
+            } catch (e) {
+                showToast('Koneksi ke server gagal saat mengubah status modul IDE.', 'error');
+            }
+        }
+
         function updateScopedStats() {
             const scoped = selectedRoom === 'ALL'
                 ? cachedStudents
@@ -2010,6 +2102,8 @@
                         room_pins: cachedRoomPins,
                         room_blocklists: cachedRoomBlocklists,
                         global_status: cachedGlobalStatus,
+                        lock_ai: cachedLockAi,
+                        lock_extensions: cachedLockExt,
                         blocklist_customized: true
                     },
                     blocklist: blocklistObj
@@ -2027,6 +2121,17 @@
                 currentRoomCode = data.config.room_code || '';
                 currentUnlockPin = data.config.unlock_pin || '202699';
                 cachedGlobalStatus = data.config.global_status || 'LOCKED';
+                cachedLockAi = data.config.lock_ai !== undefined ? !!data.config.lock_ai : (cachedGlobalStatus === 'LOCKED');
+                cachedLockExt = data.config.lock_extensions !== undefined ? !!data.config.lock_extensions : (cachedGlobalStatus === 'LOCKED');
+                updateIdeModuleButtons();
+                const idePassBadge = document.getElementById('badgeIdePassStatus');
+                if (idePassBadge) {
+                    const isCustomIdePass = Boolean(data.config.ide_password_hash && String(data.config.ide_password_hash).length > 0);
+                    idePassBadge.textContent = isCustomIdePass ? 'Custom Aktif' : 'Default (admin123)';
+                    idePassBadge.className = isCustomIdePass
+                        ? 'px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        : 'px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-slate-100 text-slate-600 border border-slate-200';
+                }
                 const serverRooms = Array.isArray(data.config.rooms) ? data.config.rooms : [];
                 cachedRooms = serverRooms.filter(r => !explicitlyDeletedRooms.has(r));
                 cachedRoomStatuses = data.config.room_statuses || {};
@@ -2119,7 +2224,9 @@
                                 room_statuses: cachedRoomStatuses,
                                 room_pins: cachedRoomPins,
                                 unlock_pin: currentUnlockPin,
-                                global_status: cachedGlobalStatus
+                                global_status: cachedGlobalStatus,
+                                lock_ai: cachedLockAi,
+                                lock_extensions: cachedLockExt
                             },
                             students: missingActiveForRehydrate
                         })
@@ -2633,6 +2740,9 @@
             });
             const data = await res.json();
             if (data.ok) {
+                cachedLockAi = (status === 'LOCKED');
+                cachedLockExt = (status === 'LOCKED');
+                updateIdeModuleButtons();
                 const scopeText = selectedRoom === 'ALL' ? 'Seluruh ruangan' : `Ruangan [${selectedRoom}]`;
                 showToast(status === 'LOCKED'
                     ? `${scopeText} dikunci (Proteksi AI Aktif)`
@@ -2837,7 +2947,52 @@
             }
         }
 
+        async function updateIdePasswordQuick() {
+            const inp = document.getElementById('cfgIdeUnlockPassword');
+            const newPass = (inp?.value || '').trim();
+            if (newPass.length < 4) {
+                showToast('Password buka kunci IDE minimal 4 karakter.', 'error');
+                return;
+            }
+            const res = await fetch('api/index.php?action=set_ide_password', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ new_password: newPass })
+            });
+            const data = await res.json();
+            if (data && data.ok) {
+                if (inp) inp.value = '';
+                showToast('Password buka kunci IDE (AI Chat & Ekstensi) berhasil diperbarui!');
+                fetchDashboard();
+            } else {
+                showToast('Gagal memperbarui password IDE: ' + (data?.error || 'Unknown error'), 'error');
+            }
+        }
+
+        async function resetIdePasswordDefault() {
+            const res = await fetch('api/index.php?action=set_ide_password', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ reset_default: true })
+            });
+            const data = await res.json();
+            if (data && data.ok) {
+                const inp = document.getElementById('cfgIdeUnlockPassword');
+                if (inp) inp.value = '';
+                showToast('Password buka kunci IDE dikembalikan ke default (admin123).');
+                fetchDashboard();
+            } else {
+                showToast('Gagal mereset password IDE: ' + (data?.error || 'Unknown error'), 'error');
+            }
+        }
+
         async function saveConfig() {
+            const idePassEl = document.getElementById('cfgIdeUnlockPassword');
+            const rawIdePass = (idePassEl?.value || '').trim();
+            if (rawIdePass.length > 0 && rawIdePass.length < 4) {
+                showToast('Password buka kunci IDE minimal 4 karakter.', 'error');
+                return;
+            }
             const payload = {
                 room_code: document.getElementById('cfgRoomCode').value,
                 block_doh: document.getElementById('cfgBlockDoh').checked,
@@ -2845,6 +3000,9 @@
                 kill_processes: document.getElementById('cfgKillProcs').checked,
                 block_vpn: document.getElementById('cfgBlockVpn').checked
             };
+            if (rawIdePass.length >= 4) {
+                payload.ide_password = rawIdePass;
+            }
             const res = await fetch('api/index.php?action=update_config', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -2854,9 +3012,14 @@
             if (data.ok) {
                 const passEl = document.getElementById('cfgAdminPassword');
                 if (passEl) passEl.value = '';
+                if (idePassEl) idePassEl.value = '';
                 await syncStateToFirebaseIfAvailable(data.config, null);
-                showToast('Pengaturan ruangan & modul proteksi disimpan');
+                showToast(rawIdePass.length >= 4
+                    ? 'Pengaturan & Password Buka Kunci IDE disimpan'
+                    : 'Pengaturan ruangan & modul proteksi disimpan');
                 fetchDashboard();
+            } else {
+                showToast('Gagal menyimpan pengaturan: ' + (data.error || 'Unknown error'), 'error');
             }
         }
 

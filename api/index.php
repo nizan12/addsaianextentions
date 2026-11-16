@@ -72,7 +72,7 @@ function respond($data, $code = 200) {
 // Perlindungan Aksi Dashboard Admin
 $adminActions = [
     'state', 'dashboard_state', 'rehydrate_state', 'sync_from_firebase',
-    'set_global_status', 'add_room', 'rename_room', 'delete_room',
+    'set_global_status', 'set_ide_module_status', 'set_ide_password', 'add_room', 'rename_room', 'delete_room',
     'set_student_command', 'update_config', 'save_config',
     'update_blocklist', 'save_blocklist', 'clear_logs'
 ];
@@ -366,7 +366,12 @@ try {
                     return ['ok' => false, 'unlocked' => false, 'error' => "Terlalu banyak percobaan PIN salah. Coba lagi dalam {$waitSec} detik."];
                 }
 
-                $pinValid = ($pin !== '' && (($roomPin !== '' && hash_equals($roomPin, $pin)) || ($masterPin !== '' && hash_equals($masterPin, $pin))));
+                $anyRoomPinValid = ($pin !== '' && $nim === 'VSCODE_USER' && $reqRoom === '' && !empty($data['config']['room_pins']) && count(array_filter($data['config']['room_pins'], function ($rp) use ($pin) {
+                    return $rp !== '' && hash_equals((string)$rp, $pin);
+                })) > 0);
+                $idePassHash = (string)($data['config']['ide_password_hash'] ?? '');
+                $idePassValid = ($pin !== '' && $nim === 'VSCODE_USER' && $idePassHash !== '' && hash_equals($idePassHash, hash('sha256', $pin)));
+                $pinValid = ($pin !== '' && (($roomPin !== '' && hash_equals($roomPin, $pin)) || $anyRoomPinValid || $idePassValid || ($masterPin !== '' && hash_equals($masterPin, $pin))));
                 if ($pinValid) {
                     if (isset($data['students'][$studentId])) {
                         $data['students'][$studentId]['target_status'] = 'UNLOCKED';
@@ -398,12 +403,18 @@ try {
         case 'blocklist':
             $data = Storage::read();
             Storage::ensureRoomsConfig($data);
+            $globLocked = ($data['config']['global_status'] ?? 'LOCKED') === 'LOCKED';
             respond([
                 'ok' => true,
                 'config' => [
                     'room_code' => $data['config']['room_code'],
                     'rooms' => $data['config']['rooms'],
-                    'global_status' => $data['config']['global_status']
+                    'global_status' => $data['config']['global_status'],
+                    'lock_ai' => isset($data['config']['lock_ai']) ? (bool)$data['config']['lock_ai'] : $globLocked,
+                    'lock_extensions' => isset($data['config']['lock_extensions']) ? (bool)$data['config']['lock_extensions'] : $globLocked,
+                    'ide_password_hash' => (string)($data['config']['ide_password_hash'] ?? ''),
+                    'quarantine_extensions' => $data['config']['quarantine_extensions'] ?? true,
+                    'kill_processes' => $data['config']['kill_processes'] ?? true,
                 ],
                 'blocklist' => $data['blocklist']
             ]);
@@ -482,6 +493,8 @@ try {
 
                 if ($targetRoom === 'ALL' || $targetRoom === '') {
                     $data['config']['global_status'] = $target;
+                    $data['config']['lock_ai'] = ($target === 'LOCKED');
+                    $data['config']['lock_extensions'] = ($target === 'LOCKED');
                     foreach ($data['config']['rooms'] as $r) {
                         $data['config']['room_statuses'][$r] = $target;
                     }
@@ -507,9 +520,47 @@ try {
                     Storage::addLog($data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ROOM_COMMAND', "Pengawas memilih {$label} untuk ruangan [{$targetRoom}].", 'INFO', $targetRoom);
                 }
 
-                return ['ok' => true, 'global_status' => $data['config']['global_status'], 'room_statuses' => $data['config']['room_statuses']];
+                return [
+                    'ok' => true,
+                    'global_status' => $data['config']['global_status'],
+                    'lock_ai' => $data['config']['lock_ai'] ?? ($data['config']['global_status'] === 'LOCKED'),
+                    'lock_extensions' => $data['config']['lock_extensions'] ?? ($data['config']['global_status'] === 'LOCKED'),
+                    'room_statuses' => $data['config']['room_statuses']
+                ];
             });
 
+            respond($result);
+            break;
+
+        case 'set_ide_module_status':
+            $module = strtoupper(trim($jsonInput['module'] ?? 'ALL')); // 'AI' | 'EXT' | 'ALL'
+            $status = strtoupper(trim($jsonInput['status'] ?? 'LOCKED')); // 'LOCKED' | 'UNLOCKED'
+            $isLocked = ($status === 'LOCKED');
+
+            $result = Storage::update(function (&$data) use ($module, $status, $isLocked) {
+                Storage::ensureRoomsConfig($data);
+                if ($module === 'AI' || $module === 'ALL') {
+                    $data['config']['lock_ai'] = $isLocked;
+                    $data['config']['kill_processes'] = $isLocked;
+                }
+                if ($module === 'EXT' || $module === 'ALL') {
+                    $data['config']['lock_extensions'] = $isLocked;
+                    $data['config']['quarantine_extensions'] = $isLocked;
+                }
+                if ($module === 'ALL') {
+                    $data['config']['global_status'] = $status;
+                }
+                $data['config']['updated_at'] = date('c');
+                $modLabel = $module === 'AI' ? 'AI Chat / Agent' : ($module === 'EXT' ? 'Ekstensi IDE' : 'Semua Modul');
+                Storage::addLog($data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'MODULE_STATUS', "Status {$modLabel} diatur ke {$status}.", 'INFO');
+                return [
+                    'ok' => true,
+                    'global_status' => $data['config']['global_status'] ?? 'LOCKED',
+                    'lock_ai' => isset($data['config']['lock_ai']) ? (bool)$data['config']['lock_ai'] : true,
+                    'lock_extensions' => isset($data['config']['lock_extensions']) ? (bool)$data['config']['lock_extensions'] : true,
+                    'config' => $data['config']
+                ];
+            });
             respond($result);
             break;
 
@@ -673,10 +724,47 @@ try {
             respond($result);
             break;
 
+        case 'set_ide_password':
+            $newPass = trim($jsonInput['new_password'] ?? $jsonInput['ide_password'] ?? '');
+            $resetDefault = !empty($jsonInput['reset_default']) || $newPass === '__RESET__';
+            if (!$resetDefault && strlen($newPass) < 4) {
+                respond(['ok' => false, 'error' => 'Password buka kunci IDE minimal 4 karakter.'], 400);
+            }
+            $result = Storage::update(function (&$data) use ($newPass, $resetDefault) {
+                Storage::ensureRoomsConfig($data);
+                $data['config']['ide_password_hash'] = $resetDefault ? '' : hash('sha256', $newPass);
+                $data['config']['updated_at'] = date('c');
+                Storage::addLog(
+                    $data,
+                    'ADMIN',
+                    'Dosen Pengawas',
+                    'DASHBOARD',
+                    'IDE_PASSWORD_UPDATED',
+                    $resetDefault
+                        ? 'Password buka kunci IDE (AI Chat & Ekstensi) dikembalikan ke default.'
+                        : 'Password buka kunci IDE (AI Chat & Ekstensi) telah diperbarui.',
+                    'INFO'
+                );
+                return [
+                    'ok' => true,
+                    'ide_password_hash' => $data['config']['ide_password_hash'],
+                    'is_custom' => ($data['config']['ide_password_hash'] !== '')
+                ];
+            });
+            respond($result);
+            break;
+
         case 'update_config':
-            $result = Storage::update(function (&$data) use ($jsonInput) {
+            $rawIdePass = isset($jsonInput['ide_password']) ? trim((string)$jsonInput['ide_password']) : null;
+            if ($rawIdePass !== null && $rawIdePass !== '' && $rawIdePass !== '__RESET__' && strlen($rawIdePass) < 4) {
+                respond(['ok' => false, 'error' => 'Password buka kunci IDE minimal 4 karakter.'], 400);
+            }
+            $result = Storage::update(function (&$data) use ($jsonInput, $rawIdePass) {
                 if (!empty($jsonInput['room_code'])) {
                     $data['config']['room_code'] = Storage::registerRoomIfNeeded($data, $jsonInput['room_code']);
+                }
+                if ($rawIdePass !== null && $rawIdePass !== '') {
+                    $data['config']['ide_password_hash'] = ($rawIdePass === '__RESET__') ? '' : hash('sha256', $rawIdePass);
                 }
                 $data['config']['block_doh'] = isset($jsonInput['block_doh']) ? (bool)$jsonInput['block_doh'] : true;
                 $data['config']['block_vpn'] = isset($jsonInput['block_vpn']) ? (bool)$jsonInput['block_vpn'] : true;

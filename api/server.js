@@ -33,7 +33,7 @@ const ADMIN_TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
 // Aksi yang hanya boleh dipanggil oleh Dashboard Admin yang sudah login.
 const ADMIN_ACTIONS = new Set([
     'state', 'dashboard_state', 'rehydrate_state', 'sync_from_firebase',
-    'set_global_status', 'add_room', 'rename_room', 'delete_room',
+    'set_global_status', 'set_ide_module_status', 'set_ide_password', 'add_room', 'rename_room', 'delete_room',
     'set_student_command', 'save_config', 'update_config',
     'save_blocklist', 'update_blocklist', 'clear_logs'
 ]);
@@ -99,6 +99,9 @@ function getDefaultSchema() {
             room_pins: {},
             room_blocklists: {},
             global_status: 'LOCKED',
+            lock_ai: true,
+            lock_extensions: true,
+            ide_password_hash: '',
             block_doh: true,
             block_vpn: true,
             quarantine_extensions: true,
@@ -281,6 +284,9 @@ function packCloudPayload(data) {
             pin: data.config.room_pins || {},
             rbl: rbl,
             gst: data.config.global_status || 'LOCKED',
+            lai: data.config.lock_ai !== undefined ? (data.config.lock_ai ? 1 : 0) : ((data.config.global_status || 'LOCKED') === 'LOCKED' ? 1 : 0),
+            lex: data.config.lock_extensions !== undefined ? (data.config.lock_extensions ? 1 : 0) : ((data.config.global_status || 'LOCKED') === 'LOCKED' ? 1 : 0),
+            iph: data.config.ide_password_hash || '',
             bc: Boolean(data.config.blocklist_customized),
             up: data.config.updated_at || new Date().toISOString()
         },
@@ -354,6 +360,7 @@ function unpackCloudPayload(photoUrl) {
                 }
             }
 
+            const unpackedGst = parsed.cfg.gst || 'LOCKED';
             return {
                 config: {
                     ...schema.config,
@@ -363,7 +370,10 @@ function unpackCloudPayload(photoUrl) {
                     room_statuses: parsed.cfg.rst || {},
                     room_pins: parsed.cfg.pin || {},
                     room_blocklists: roomBlocklists,
-                    global_status: parsed.cfg.gst || 'LOCKED',
+                    global_status: unpackedGst,
+                    lock_ai: parsed.cfg.lai !== undefined ? Boolean(parsed.cfg.lai) : (unpackedGst === 'LOCKED'),
+                    lock_extensions: parsed.cfg.lex !== undefined ? Boolean(parsed.cfg.lex) : (unpackedGst === 'LOCKED'),
+                    ide_password_hash: parsed.cfg.iph || '',
                     blocklist_customized: Boolean(parsed.cfg.bc),
                     updated_at: parsed.cfg.up || new Date().toISOString()
                 },
@@ -558,6 +568,16 @@ function ensureRoomsConfig(data) {
     if (!data.config.room_blocklists || typeof data.config.room_blocklists !== 'object') {
         data.config.room_blocklists = {};
     }
+    const globLocked = (data.config.global_status || 'LOCKED') === 'LOCKED';
+    if (typeof data.config.lock_ai !== 'boolean') {
+        data.config.lock_ai = globLocked;
+    }
+    if (typeof data.config.lock_extensions !== 'boolean') {
+        data.config.lock_extensions = globLocked;
+    }
+    if (typeof data.config.ide_password_hash !== 'string') {
+        data.config.ide_password_hash = '';
+    }
     // Hapus kredensial lama yang dulu ikut tersimpan di state (kini hanya lewat Environment Variables)
     delete data.config.admin_email;
     delete data.config.admin_password;
@@ -690,7 +710,7 @@ module.exports = async (req, res) => {
     }
 
     try {
-        const isMutating = action !== 'dashboard_state' && action !== 'state' && action !== 'get_rooms';
+        const isMutating = action !== 'dashboard_state' && action !== 'state' && action !== 'get_rooms' && action !== 'blocklist';
         const data = await readData(isMutating);
         if (!data.students || Array.isArray(data.students)) data.students = {};
         ensureRoomsConfig(data);
@@ -719,6 +739,24 @@ module.exports = async (req, res) => {
                     rooms: data.config.rooms,
                     room_statuses: data.config.room_statuses,
                     default_room: data.config.room_code || data.config.rooms[0] || ''
+                });
+            }
+
+            case 'blocklist': {
+                const globLocked = (data.config.global_status || 'LOCKED') === 'LOCKED';
+                return res.status(200).json({
+                    ok: true,
+                    config: {
+                        room_code: data.config.room_code || '',
+                        rooms: data.config.rooms || [],
+                        global_status: data.config.global_status || 'LOCKED',
+                        lock_ai: typeof data.config.lock_ai === 'boolean' ? data.config.lock_ai : globLocked,
+                        lock_extensions: typeof data.config.lock_extensions === 'boolean' ? data.config.lock_extensions : globLocked,
+                        ide_password_hash: data.config.ide_password_hash || '',
+                        quarantine_extensions: data.config.quarantine_extensions !== undefined ? Boolean(data.config.quarantine_extensions) : true,
+                        kill_processes: data.config.kill_processes !== undefined ? Boolean(data.config.kill_processes) : true
+                    },
+                    blocklist: data.blocklist
                 });
             }
 
@@ -939,7 +977,10 @@ module.exports = async (req, res) => {
                     return res.status(429).json({ ok: false, unlocked: false, error: `Terlalu banyak percobaan PIN salah. Coba lagi dalam ${waitSec} detik.` });
                 }
 
-                const pinOk = pin && ((roomPin && safeEqual(pin, roomPin)) || (MASTER_PIN && safeEqual(pin, MASTER_PIN)));
+                const anyRoomPinOk = nim === 'VSCODE_USER' && !body.room_code && Object.values(data.config.room_pins || {}).some(rp => rp && safeEqual(pin, String(rp)));
+                const pinSha256 = pin ? crypto.createHash('sha256').update(pin).digest('hex') : '';
+                const idePassOk = nim === 'VSCODE_USER' && data.config.ide_password_hash && safeEqual(pinSha256, data.config.ide_password_hash);
+                const pinOk = pin && ((roomPin && safeEqual(pin, roomPin)) || anyRoomPinOk || idePassOk || (MASTER_PIN && safeEqual(pin, MASTER_PIN)));
                 if (pinOk) {
                     if (stRec) { stRec.pin_fail = 0; stRec.pin_lock_until = 0; }
                     const cmdTs = Date.now();
@@ -1033,7 +1074,12 @@ module.exports = async (req, res) => {
                 const cmdTs = Date.now();
                 data.config.updated_at = new Date(cmdTs).toISOString();
                 if (targetRoom === 'ALL' || !targetRoom) {
+                    const isLocked = target === 'LOCKED';
                     data.config.global_status = target;
+                    data.config.lock_ai = isLocked;
+                    data.config.lock_extensions = isLocked;
+                    data.config.quarantine_extensions = isLocked;
+                    data.config.kill_processes = isLocked;
                     for (const r of data.config.rooms) {
                         data.config.room_statuses[r] = target;
                     }
@@ -1062,7 +1108,44 @@ module.exports = async (req, res) => {
                 }
 
                 await writeData(data);
-                return res.status(200).json({ ok: true, global_status: data.config.global_status, room_statuses: data.config.room_statuses });
+                return res.status(200).json({
+                    ok: true,
+                    global_status: data.config.global_status,
+                    lock_ai: Boolean(data.config.lock_ai),
+                    lock_extensions: Boolean(data.config.lock_extensions),
+                    room_statuses: data.config.room_statuses
+                });
+            }
+
+            case 'set_ide_module_status': {
+                const mod = String(body.module || 'ALL').trim().toUpperCase();
+                const status = String(body.status || 'LOCKED').trim().toUpperCase();
+                if (!['AI', 'EXT', 'ALL'].includes(mod) || !['LOCKED', 'UNLOCKED'].includes(status)) {
+                    return res.status(400).json({ ok: false, error: 'Parameter module atau status tidak valid.' });
+                }
+                const isLocked = status === 'LOCKED';
+                if (mod === 'AI' || mod === 'ALL') {
+                    data.config.lock_ai = isLocked;
+                    data.config.kill_processes = isLocked;
+                }
+                if (mod === 'EXT' || mod === 'ALL') {
+                    data.config.lock_extensions = isLocked;
+                    data.config.quarantine_extensions = isLocked;
+                }
+                if (mod === 'ALL') {
+                    data.config.global_status = status;
+                }
+                data.config.updated_at = new Date().toISOString();
+                const modLabel = mod === 'AI' ? 'AI Chat / Agent' : (mod === 'EXT' ? 'Ekstensi IDE' : 'Semua Modul');
+                addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'MODULE_STATUS', `Status ${modLabel} diatur ke ${status}.`, 'INFO');
+                await writeData(data);
+                return res.status(200).json({
+                    ok: true,
+                    global_status: data.config.global_status || 'LOCKED',
+                    lock_ai: Boolean(data.config.lock_ai),
+                    lock_extensions: Boolean(data.config.lock_extensions),
+                    config: data.config
+                });
             }
 
             case 'add_room': {
@@ -1212,6 +1295,33 @@ module.exports = async (req, res) => {
                 return res.status(400).json({ ok: false, error: 'Perintah tidak dikenali.' });
             }
 
+            case 'set_ide_password': {
+                const newPass = String(body.new_password || body.ide_password || '').trim();
+                const resetDefault = Boolean(body.reset_default) || newPass === '__RESET__';
+                if (!resetDefault && newPass.length < 4) {
+                    return res.status(400).json({ ok: false, error: 'Password buka kunci IDE minimal 4 karakter.' });
+                }
+                data.config.ide_password_hash = resetDefault ? '' : crypto.createHash('sha256').update(newPass).digest('hex');
+                data.config.updated_at = new Date().toISOString();
+                addLog(
+                    data,
+                    'ADMIN',
+                    'Dosen Pengawas',
+                    'DASHBOARD',
+                    'IDE_PASSWORD_UPDATED',
+                    resetDefault
+                        ? 'Password buka kunci IDE (AI Chat & Ekstensi) dikembalikan ke default.'
+                        : 'Password buka kunci IDE (AI Chat & Ekstensi) telah diperbarui.',
+                    'INFO'
+                );
+                await writeData(data);
+                return res.status(200).json({
+                    ok: true,
+                    ide_password_hash: data.config.ide_password_hash,
+                    is_custom: Boolean(data.config.ide_password_hash)
+                });
+            }
+
             case 'save_config':
             case 'update_config': {
                 if (body.room_code) {
@@ -1224,6 +1334,17 @@ module.exports = async (req, res) => {
                 if (body.unlock_pin) data.config.unlock_pin = String(body.unlock_pin).trim();
                 if (body.admin_email) data.config.admin_email = String(body.admin_email).trim();
                 if (body.admin_password) data.config.admin_password = String(body.admin_password).trim();
+                if (body.ide_password !== undefined) {
+                    const rawIdePass = String(body.ide_password).trim();
+                    if (rawIdePass === '__RESET__') {
+                        data.config.ide_password_hash = '';
+                    } else if (rawIdePass.length > 0) {
+                        if (rawIdePass.length < 4) {
+                            return res.status(400).json({ ok: false, error: 'Password buka kunci IDE minimal 4 karakter.' });
+                        }
+                        data.config.ide_password_hash = crypto.createHash('sha256').update(rawIdePass).digest('hex');
+                    }
+                }
                 data.config.block_doh = body.block_doh !== undefined ? Boolean(body.block_doh) : true;
                 data.config.block_vpn = body.block_vpn !== undefined ? Boolean(body.block_vpn) : true;
                 data.config.quarantine_extensions = body.quarantine_extensions !== undefined ? Boolean(body.quarantine_extensions) : true;
