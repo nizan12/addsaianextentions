@@ -909,6 +909,25 @@
                                 </div>
                             </div>
 
+                            <div class="p-4 rounded-xl border border-indigo-200 bg-indigo-50/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                <div>
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-xs font-semibold text-slate-900">Code - OSS Terproteksi (VSCodeSetup.exe)</span>
+                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-indigo-100 text-indigo-700 border border-indigo-200">System Installer · ~305 MB</span>
+                                    </div>
+                                    <p class="text-xs text-slate-600 mt-1 leading-relaxed">Memasang IDE <strong>Code - OSS (x64)</strong> ke <code>Program Files</code> (butuh Administrator) lengkap dengan penguncian AI Chat/Agent, Ekstensi, Sign In Title Bar, &amp; sinkronisasi password Web Guard.</p>
+                                </div>
+                                <div class="flex items-center gap-2 shrink-0">
+                                    <a href="dist/VSCodeSetup.exe" download onclick="return downloadIdeInstaller(event)" class="px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold flex items-center gap-2 transition">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                                        Unduh VSCodeSetup.exe
+                                    </a>
+                                    <a href="https://github.com/nizan12/addsaianextentions/raw/main/dist/VSCodeSetup.exe" target="_blank" rel="noopener noreferrer" class="px-3 py-2 rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-xs font-medium transition">
+                                        Mirror GitHub LFS
+                                    </a>
+                                </div>
+                            </div>
+
                             <div class="p-4 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between gap-4">
                                 <div>
                                     <div class="text-xs font-semibold text-slate-900">Utilitas Pemulihan Darurat (Emergency-Restore.bat)</div>
@@ -3095,6 +3114,37 @@
             return String(str || '').replace(/[&<>"']/g, s => ({
                 '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
             }[s]));
+        }
+
+        function triggerBrowserDownload(url, filename) {
+            const a = document.createElement('a');
+            a.href = url;
+            if (filename) a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+        }
+
+        async function downloadIdeInstaller(event) {
+            if (event) event.preventDefault();
+            const localUrl = 'dist/VSCodeSetup.exe';
+            const githubLfsUrl = 'https://github.com/nizan12/addsaianextentions/raw/main/dist/VSCodeSetup.exe';
+            const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+            if (isLocal) {
+                triggerBrowserDownload(localUrl, 'VSCodeSetup.exe');
+                return false;
+            }
+            try {
+                const head = await fetch(localUrl, { method: 'HEAD' });
+                const len = Number(head.headers.get('content-length') || '0');
+                if (head.ok && len > 1024 * 1024) {
+                    triggerBrowserDownload(localUrl, 'VSCodeSetup.exe');
+                    return false;
+                }
+            } catch (_) { /* Fallback to GitHub LFS URL */ }
+            showToast('Mengunduh VSCodeSetup.exe dari GitHub LFS...', 'info');
+            window.open(githubLfsUrl, '_blank', 'noopener,noreferrer');
+            return false;
         }
 
         checkExistingAuthSession();

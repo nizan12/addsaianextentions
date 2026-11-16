@@ -140,6 +140,7 @@ flowchart LR
 |---|---|
 | [`dist/AIBlockerSetup.exe`](./dist/AIBlockerSetup.exe) | **Installer** — memasang agen ke `C:\Program Files\AIBlockerGuard\` + auto-start. *(Direkomendasikan)* |
 | [`dist/AIBlockerGuard.exe`](./dist/AIBlockerGuard.exe) | **Portable** — satu file, langsung jalan sebagai Administrator. |
+| [`dist/VSCodeSetup.exe`](./dist/VSCodeSetup.exe) | **VS Code Terproteksi (System Installer)** — memasang `Code - OSS` (x64) ke `Program Files` lengkap dengan kunci AI Agent & Ekstensi *(disimpan via Git LFS)*. |
 | [`dist/Emergency-Restore.bat`](./dist/Emergency-Restore.bat) | **Pemulihan darurat** — membersihkan `hosts`, kebijakan browser, dan mengembalikan ekstensi IDE. |
 
 ---
