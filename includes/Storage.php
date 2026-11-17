@@ -23,9 +23,18 @@ class Storage {
             'config' => [
                 'room_code' => '',
                 'rooms' => [],
+                'deleted_rooms' => [],
                 'room_statuses' => [],
                 'room_pins' => [],
+                'room_blocklists' => [],
                 'global_status' => 'LOCKED', // LOCKED | UNLOCKED
+                'lock_ai' => true,
+                'lock_extensions' => true,
+                'admin_email' => '',
+                'admin_password_hash' => '',
+                'ide_password_hash' => '',
+                'pc_overrides' => [],
+                'ide_hosts' => [],
                 'block_doh' => true,
                 'block_vpn' => true,
                 'quarantine_extensions' => true,
@@ -209,7 +218,29 @@ class Storage {
         if (empty($data['config']['room_blocklists']) || !is_array($data['config']['room_blocklists'])) {
             $data['config']['room_blocklists'] = [];
         }
-        unset($data['config']['admin_email'], $data['config']['admin_password'], $data['config']['unlock_pin']);
+        $globLocked = ($data['config']['global_status'] ?? 'LOCKED') === 'LOCKED';
+        if (!isset($data['config']['lock_ai']) || !is_bool($data['config']['lock_ai'])) {
+            $data['config']['lock_ai'] = $globLocked;
+        }
+        if (!isset($data['config']['lock_extensions']) || !is_bool($data['config']['lock_extensions'])) {
+            $data['config']['lock_extensions'] = $globLocked;
+        }
+        if (!isset($data['config']['admin_email']) || !is_string($data['config']['admin_email'])) {
+            $data['config']['admin_email'] = '';
+        }
+        if (!isset($data['config']['admin_password_hash']) || !is_string($data['config']['admin_password_hash'])) {
+            $data['config']['admin_password_hash'] = '';
+        }
+        if (!isset($data['config']['ide_password_hash']) || !is_string($data['config']['ide_password_hash'])) {
+            $data['config']['ide_password_hash'] = '';
+        }
+        if (!isset($data['config']['pc_overrides']) || !is_array($data['config']['pc_overrides'])) {
+            $data['config']['pc_overrides'] = [];
+        }
+        if (!isset($data['config']['ide_hosts']) || !is_array($data['config']['ide_hosts'])) {
+            $data['config']['ide_hosts'] = [];
+        }
+        unset($data['config']['admin_password'], $data['config']['unlock_pin']);
         foreach (array_values($data['config']['rooms']) as $r) {
             if (!isset($data['config']['room_statuses'][$r])) {
                 $data['config']['room_statuses'][$r] = $data['config']['global_status'] ?? 'LOCKED';

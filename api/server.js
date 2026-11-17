@@ -33,7 +33,7 @@ const ADMIN_TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
 // Aksi yang hanya boleh dipanggil oleh Dashboard Admin yang sudah login.
 const ADMIN_ACTIONS = new Set([
     'state', 'dashboard_state', 'rehydrate_state', 'sync_from_firebase',
-    'set_global_status', 'set_ide_module_status', 'set_ide_password', 'add_room', 'rename_room', 'delete_room',
+    'set_global_status', 'set_ide_module_status', 'set_ide_password', 'set_admin_password', 'add_room', 'rename_room', 'delete_room',
     'set_student_command', 'save_config', 'update_config',
     'save_blocklist', 'update_blocklist', 'clear_logs'
 ]);
@@ -101,7 +101,11 @@ function getDefaultSchema() {
             global_status: 'LOCKED',
             lock_ai: true,
             lock_extensions: true,
+            admin_email: '',
+            admin_password_hash: '',
             ide_password_hash: '',
+            pc_overrides: {},
+            ide_hosts: [],
             block_doh: true,
             block_vpn: true,
             quarantine_extensions: true,
@@ -244,7 +248,7 @@ function packCloudPayload(data) {
     const s = {};
     for (const [id, st] of Object.entries(data.students || {})) {
         if (st && (nowSec - (st.last_seen || 0)) <= 150) {
-            // compact tuple: [nim, name, hostname, room, status, target_status, last_seen, q_cnt, k_cnt, vpn, cmd_ts]
+            // compact tuple: [nim, name, hostname, room, status, target_status, last_seen, q_cnt, k_cnt, vpn, cmd_ts, ip, lai, lex, cid, ide]
             s[id] = [
                 st.nim || id,
                 st.name || st.nim || id,
@@ -257,7 +261,11 @@ function packCloudPayload(data) {
                 st.killed_processes_count || 0,
                 st.vpn_detected ? 1 : 0,
                 st.cmd_updated_at || 0,
-                st.ip || ''
+                st.ip || '',
+                st.lock_ai === true ? 1 : (st.lock_ai === false ? 0 : null),
+                st.lock_extensions === true ? 1 : (st.lock_extensions === false ? 0 : null),
+                st.client_id || '',
+                st.os_info === 'VS Code IDE' ? 1 : 0
             ];
         }
     }
@@ -274,6 +282,21 @@ function packCloudPayload(data) {
         }
     }
 
+    const pco = {};
+    if (data.config?.pc_overrides && typeof data.config.pc_overrides === 'object') {
+        for (const [k, ov] of Object.entries(data.config.pc_overrides)) {
+            if (ov && typeof ov === 'object') {
+                const a = typeof ov.lock_ai === 'boolean' ? (ov.lock_ai ? 1 : 0) : null;
+                const e = typeof ov.lock_extensions === 'boolean' ? (ov.lock_extensions ? 1 : 0) : null;
+                if (a !== null || e !== null) {
+                    pco[k] = [a, e];
+                }
+            }
+        }
+    }
+
+    const ideHostsCompact = Array.isArray(data.config?.ide_hosts) ? data.config.ide_hosts.slice(0, 15) : [];
+
     const compact = {
         v: 4,
         cfg: {
@@ -287,6 +310,10 @@ function packCloudPayload(data) {
             lai: data.config.lock_ai !== undefined ? (data.config.lock_ai ? 1 : 0) : ((data.config.global_status || 'LOCKED') === 'LOCKED' ? 1 : 0),
             lex: data.config.lock_extensions !== undefined ? (data.config.lock_extensions ? 1 : 0) : ((data.config.global_status || 'LOCKED') === 'LOCKED' ? 1 : 0),
             iph: data.config.ide_password_hash || '',
+            ...(data.config.admin_email ? { ae: data.config.admin_email } : {}),
+            ...(data.config.admin_password_hash ? { aph: data.config.admin_password_hash } : {}),
+            ...(Object.keys(pco).length > 0 ? { pco } : {}),
+            ...(ideHostsCompact.length > 0 ? { ih: ideHostsCompact } : {}),
             bc: Boolean(data.config.blocklist_customized),
             up: data.config.updated_at || new Date().toISOString()
         },
@@ -305,6 +332,9 @@ function packCloudPayload(data) {
     if (encoded.length > 1900) {
         for (const [id, tuple] of Object.entries(compact.s)) {
             if ((nowSec - tuple[6]) > 30) delete compact.s[id];
+        }
+        if (Array.isArray(compact.cfg.ih)) {
+            compact.cfg.ih = compact.cfg.ih.slice(0, 6);
         }
         encoded = zlib.deflateRawSync(Buffer.from(JSON.stringify(compact)), { level: 9 }).toString('base64url');
     }
@@ -326,6 +356,7 @@ function unpackCloudPayload(photoUrl) {
             const students = {};
             for (const [id, val] of Object.entries(parsed.s || {})) {
                 if (Array.isArray(val)) {
+                    const isIde = val[15] === 1;
                     students[id] = {
                         id,
                         nim: val[0] || id,
@@ -342,8 +373,12 @@ function unpackCloudPayload(photoUrl) {
                         vpn_detected: Boolean(val[9]),
                         cmd_updated_at: val[10] || 0,
                         ip: val[11] || '127.0.0.1',
-                        os_info: 'Windows',
-                        version: '1.5.0'
+                        lock_ai: val[12] === 1 ? true : (val[12] === 0 ? false : null),
+                        lock_extensions: val[13] === 1 ? true : (val[13] === 0 ? false : null),
+                        client_id: val[14] || '',
+                        ...(isIde ? { ide_connected: true, ide_last_seen: val[6] || Math.floor(Date.now() / 1000) } : {}),
+                        os_info: isIde ? 'VS Code IDE' : 'Windows',
+                        version: isIde ? 'IDE-Sync' : '1.5.0'
                     };
                 } else {
                     students[id] = val;
@@ -360,6 +395,18 @@ function unpackCloudPayload(photoUrl) {
                 }
             }
 
+            const pcOverrides = {};
+            if (parsed.cfg.pco && typeof parsed.cfg.pco === 'object') {
+                for (const [k, tup] of Object.entries(parsed.cfg.pco)) {
+                    if (Array.isArray(tup)) {
+                        pcOverrides[k] = {
+                            lock_ai: tup[0] === 1 ? true : (tup[0] === 0 ? false : null),
+                            lock_extensions: tup[1] === 1 ? true : (tup[1] === 0 ? false : null)
+                        };
+                    }
+                }
+            }
+
             const unpackedGst = parsed.cfg.gst || 'LOCKED';
             return {
                 config: {
@@ -373,7 +420,11 @@ function unpackCloudPayload(photoUrl) {
                     global_status: unpackedGst,
                     lock_ai: parsed.cfg.lai !== undefined ? Boolean(parsed.cfg.lai) : (unpackedGst === 'LOCKED'),
                     lock_extensions: parsed.cfg.lex !== undefined ? Boolean(parsed.cfg.lex) : (unpackedGst === 'LOCKED'),
+                    admin_email: parsed.cfg.ae || '',
+                    admin_password_hash: parsed.cfg.aph || '',
                     ide_password_hash: parsed.cfg.iph || '',
+                    pc_overrides: pcOverrides,
+                    ide_hosts: Array.isArray(parsed.cfg.ih) ? parsed.cfg.ih : [],
                     blocklist_customized: Boolean(parsed.cfg.bc),
                     updated_at: parsed.cfg.up || new Date().toISOString()
                 },
@@ -575,11 +626,22 @@ function ensureRoomsConfig(data) {
     if (typeof data.config.lock_extensions !== 'boolean') {
         data.config.lock_extensions = globLocked;
     }
+    if (typeof data.config.admin_email !== 'string') {
+        data.config.admin_email = '';
+    }
+    if (typeof data.config.admin_password_hash !== 'string') {
+        data.config.admin_password_hash = '';
+    }
     if (typeof data.config.ide_password_hash !== 'string') {
         data.config.ide_password_hash = '';
     }
-    // Hapus kredensial lama yang dulu ikut tersimpan di state (kini hanya lewat Environment Variables)
-    delete data.config.admin_email;
+    if (!data.config.pc_overrides || typeof data.config.pc_overrides !== 'object' || Array.isArray(data.config.pc_overrides)) {
+        data.config.pc_overrides = {};
+    }
+    if (!Array.isArray(data.config.ide_hosts)) {
+        data.config.ide_hosts = [];
+    }
+    // Pastikan kredensial plaintext tidak pernah tersimpan di state JSON
     delete data.config.admin_password;
     delete data.config.unlock_pin;
     data.config.rooms.forEach((r) => {
@@ -659,6 +721,97 @@ function addLog(data, nim, name, hostname, type, message, severity = 'INFO', roo
     }
 }
 
+function findMatchingStudentKey(data, studentId, upperHost, clientId, clientIp) {
+    const students = data.students || {};
+    if (studentId && students[studentId]) {
+        return studentId;
+    }
+    if (upperHost) {
+        for (const [id, st] of Object.entries(students)) {
+            if (st && String(st.hostname || '').trim().toUpperCase() === upperHost) {
+                return id;
+            }
+        }
+    }
+    if (clientId) {
+        for (const [id, st] of Object.entries(students)) {
+            if (st && String(st.client_id || '').trim() === clientId) {
+                return id;
+            }
+        }
+    }
+    if (clientIp && clientIp !== '127.0.0.1' && clientIp !== '::1') {
+        const ipMatches = [];
+        for (const [id, st] of Object.entries(students)) {
+            if (st && String(st.ip || '').trim() === clientIp) {
+                ipMatches.push(id);
+            }
+        }
+        if (ipMatches.length === 1) {
+            return ipMatches[0];
+        }
+    }
+    return null;
+}
+
+function resolveDeviceIdeLocks(data, params, clientIp) {
+    const globLocked = (data.config.global_status || 'LOCKED') === 'LOCKED';
+    const globalAi = typeof data.config.lock_ai === 'boolean' ? data.config.lock_ai : globLocked;
+    const globalExt = typeof data.config.lock_extensions === 'boolean' ? data.config.lock_extensions : globLocked;
+
+    const studentId = String(params.student_id || '').trim();
+    const upperHost = String(params.hostname || '').trim().toUpperCase();
+    const clientId = String(params.client_id || '').trim();
+
+    const matchedKey = findMatchingStudentKey(data, studentId, upperHost, clientId, clientIp);
+    const matchedStudent = matchedKey ? data.students[matchedKey] : null;
+    const resolvedHost = upperHost || String(matchedStudent?.hostname || '').trim().toUpperCase();
+
+    const pco = data.config.pc_overrides || {};
+    let override = null;
+    for (const cand of [matchedKey, studentId, resolvedHost, clientId]) {
+        if (cand && pco[cand] && typeof pco[cand] === 'object') {
+            override = pco[cand];
+            break;
+        }
+    }
+
+    let lockAi = globalAi;
+    if (matchedStudent && typeof matchedStudent.lock_ai === 'boolean') {
+        lockAi = matchedStudent.lock_ai;
+    } else if (override && typeof override.lock_ai === 'boolean') {
+        lockAi = override.lock_ai;
+    }
+
+    let lockExt = globalExt;
+    if (matchedStudent && typeof matchedStudent.lock_extensions === 'boolean') {
+        lockExt = matchedStudent.lock_extensions;
+    } else if (override && typeof override.lock_extensions === 'boolean') {
+        lockExt = override.lock_extensions;
+    }
+
+    const hostKnown = Boolean(upperHost && (data.config.ide_hosts || []).some((ih) => ih && String(ih.h || '').trim().toUpperCase() === upperHost));
+
+    return {
+        lock_ai: lockAi,
+        lock_extensions: lockExt,
+        global_lock_ai: globalAi,
+        global_lock_extensions: globalExt,
+        device_known: Boolean(matchedStudent || hostKnown),
+        matched_student_id: matchedKey || null,
+        matched_hostname: resolvedHost
+    };
+}
+
+function sanitizeConfigForDashboard(cfg) {
+    const out = { ...(cfg || {}) };
+    out.has_custom_admin_password = Boolean(out.admin_password_hash && String(out.admin_password_hash).trim());
+    out.admin_email_effective = (out.admin_email && String(out.admin_email).trim()) ? String(out.admin_email).trim() : ADMIN_EMAIL;
+    delete out.admin_password_hash;
+    delete out.admin_password;
+    return out;
+}
+
 module.exports = async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -670,18 +823,22 @@ module.exports = async (req, res) => {
     }
 
     const body = typeof req.body === 'string' ? (() => { try { return JSON.parse(req.body); } catch { return {}; } })() : (req.body || {});
-    let queryAction = req.query?.action;
-    if (!queryAction && req.url && req.url.includes('?')) {
+    const queryParams = { ...(req.query || {}) };
+    if (req.url && req.url.includes('?')) {
         try {
             const u = new URL(req.url, 'http://localhost');
-            queryAction = u.searchParams.get('action');
+            for (const [k, v] of u.searchParams.entries()) {
+                if (queryParams[k] === undefined) {
+                    queryParams[k] = v;
+                }
+            }
         } catch (e) {}
     }
-    const action = queryAction || body.action || '';
+    const action = queryParams.action || body.action || '';
     const clientIp = ((req.headers && req.headers['x-forwarded-for']) || req.socket?.remoteAddress || '127.0.0.1').split(',')[0].trim();
 
     // ---------------------------------------------------------------
-    // LOGIN ADMIN — diverifikasi terhadap Environment Variables saja
+    // LOGIN ADMIN — mendukung kustomisasi panel admin + fallback ENV
     // ---------------------------------------------------------------
     if (action === 'admin_login') {
         if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
@@ -692,12 +849,22 @@ module.exports = async (req, res) => {
         }
         const email = String(body.email || '').trim().toLowerCase();
         const password = String(body.password || '');
-        if (safeEqual(email, ADMIN_EMAIL) && safeEqual(password, ADMIN_PASSWORD)) {
+        const authData = await readData(true);
+        ensureRoomsConfig(authData);
+
+        const effectiveEmail = (authData.config.admin_email && String(authData.config.admin_email).trim())
+            ? String(authData.config.admin_email).trim().toLowerCase()
+            : ADMIN_EMAIL;
+        const customPassHash = String(authData.config.admin_password_hash || '').trim();
+        const effectivePassHash = customPassHash || crypto.createHash('sha256').update(ADMIN_PASSWORD).digest('hex');
+        const inputPassHash = crypto.createHash('sha256').update(password).digest('hex');
+
+        if (email && password && safeEqual(email, effectiveEmail) && safeEqual(inputPassHash, effectivePassHash)) {
             return res.status(200).json({
                 ok: true,
-                token: signAdminToken(ADMIN_EMAIL),
+                token: signAdminToken(effectiveEmail),
                 expires_in: Math.floor(ADMIN_TOKEN_TTL_MS / 1000),
-                user: { email: ADMIN_EMAIL, name: 'Dosen / Pengawas Ujian', role: 'ADMIN' }
+                user: { email: effectiveEmail, name: 'Dosen / Pengawas Ujian', role: 'ADMIN' }
             });
         }
         await sleep(600); // perlambat percobaan tebak password
@@ -742,16 +909,103 @@ module.exports = async (req, res) => {
                 });
             }
 
+            case 'ide_register': {
+                const rawHost = String(body.hostname ?? queryParams.hostname ?? '').trim();
+                const upperHost = rawHost.toUpperCase();
+                const clientId = String(body.client_id ?? queryParams.client_id ?? '').trim();
+                const username = String(body.username ?? queryParams.username ?? 'VS Code User').trim();
+                if (!upperHost) {
+                    return res.status(400).json({ ok: false, error: 'Hostname diperlukan.' });
+                }
+                const nowSec = Math.floor(Date.now() / 1000);
+                const matchedKey = findMatchingStudentKey(data, '', upperHost, clientId, '');
+                if (matchedKey) {
+                    data.students[matchedKey].ide_connected = true;
+                    data.students[matchedKey].ide_last_seen = nowSec;
+                    data.students[matchedKey].last_seen = nowSec;
+                    data.students[matchedKey].last_seen_str = nowFormatted();
+                    if (clientId) {
+                        data.students[matchedKey].client_id = clientId;
+                    }
+                    await writeData(data);
+                    return res.status(200).json({ ok: true, student_id: matchedKey, mode: 'existing_student' });
+                }
+
+                if (data.config.rooms.length > 0) {
+                    const targetRoom = data.config.room_code || data.config.rooms[0];
+                    const safeId = 'IDE_' + upperHost.replace(/[^A-Z0-9_-]/g, '_');
+                    const roomStatus = data.config.room_statuses[targetRoom] || data.config.global_status || 'LOCKED';
+                    const hostOverride = (data.config.pc_overrides && typeof data.config.pc_overrides[upperHost] === 'object')
+                        ? data.config.pc_overrides[upperHost]
+                        : null;
+                    const existing = data.students[safeId] || {};
+                    data.students[safeId] = {
+                        id: safeId,
+                        nim: 'VS CODE',
+                        name: username || upperHost,
+                        hostname: upperHost,
+                        client_id: clientId,
+                        room_code: targetRoom,
+                        ip: clientIp,
+                        os_info: 'VS Code IDE',
+                        version: 'IDE-Sync',
+                        status: existing.status || roomStatus,
+                        target_status: existing.target_status || roomStatus,
+                        lock_ai: existing.lock_ai !== undefined ? existing.lock_ai : (hostOverride?.lock_ai ?? null),
+                        lock_extensions: existing.lock_extensions !== undefined ? existing.lock_extensions : (hostOverride?.lock_extensions ?? null),
+                        quarantined_count: existing.quarantined_count || 0,
+                        quarantined_list: existing.quarantined_list || [],
+                        killed_processes_count: existing.killed_processes_count || 0,
+                        vpn_detected: false,
+                        joined_at: existing.joined_at || nowFormatted(),
+                        ide_connected: true,
+                        ide_last_seen: nowSec,
+                        last_seen: nowSec,
+                        last_seen_str: nowFormatted()
+                    };
+                    await writeData(data);
+                    return res.status(200).json({ ok: true, student_id: safeId, mode: 'ide_student' });
+                }
+
+                const hosts = [];
+                let found = false;
+                for (const ih of (data.config.ide_hosts || [])) {
+                    if (ih && ih.h) {
+                        if (String(ih.h).toUpperCase() === upperHost) {
+                            hosts.push({ h: upperHost, id: clientId, ip: clientIp, ls: nowSec });
+                            found = true;
+                        } else {
+                            hosts.push(ih);
+                        }
+                    }
+                }
+                if (!found) {
+                    hosts.unshift({ h: upperHost, id: clientId, ip: clientIp, ls: nowSec });
+                }
+                data.config.ide_hosts = hosts.slice(0, 20);
+                await writeData(data);
+                return res.status(200).json({ ok: true, hostname: upperHost, mode: 'standalone_host' });
+            }
+
             case 'blocklist': {
-                const globLocked = (data.config.global_status || 'LOCKED') === 'LOCKED';
+                const resolved = resolveDeviceIdeLocks(data, {
+                    hostname: queryParams.hostname ?? body.hostname ?? '',
+                    student_id: queryParams.student_id ?? body.student_id ?? '',
+                    client_id: queryParams.client_id ?? body.client_id ?? ''
+                }, clientIp);
                 return res.status(200).json({
                     ok: true,
+                    device_known: resolved.device_known,
+                    matched_student_id: resolved.matched_student_id,
+                    matched_hostname: resolved.matched_hostname,
                     config: {
                         room_code: data.config.room_code || '',
                         rooms: data.config.rooms || [],
                         global_status: data.config.global_status || 'LOCKED',
-                        lock_ai: typeof data.config.lock_ai === 'boolean' ? data.config.lock_ai : globLocked,
-                        lock_extensions: typeof data.config.lock_extensions === 'boolean' ? data.config.lock_extensions : globLocked,
+                        lock_ai: resolved.lock_ai,
+                        lock_extensions: resolved.lock_extensions,
+                        global_lock_ai: resolved.global_lock_ai,
+                        global_lock_extensions: resolved.global_lock_extensions,
                         ide_password_hash: data.config.ide_password_hash || '',
                         quarantine_extensions: data.config.quarantine_extensions !== undefined ? Boolean(data.config.quarantine_extensions) : true,
                         kill_processes: data.config.kill_processes !== undefined ? Boolean(data.config.kill_processes) : true
@@ -791,6 +1045,10 @@ module.exports = async (req, res) => {
                 const roomPin = data.config.room_pins[normalizedRoom] || '';
                 const effectiveBl = getEffectiveBlocklist(data, normalizedRoom);
                 const nowSec = Math.floor(Date.now() / 1000);
+                const upperHost = hostname.toUpperCase();
+                const hostOverride = (upperHost && data.config.pc_overrides && typeof data.config.pc_overrides[upperHost] === 'object')
+                    ? data.config.pc_overrides[upperHost]
+                    : null;
 
                 data.students[studentId] = {
                     id: studentId,
@@ -803,6 +1061,8 @@ module.exports = async (req, res) => {
                     version,
                     status: desiredState,
                     target_status: desiredState,
+                    lock_ai: existing?.lock_ai !== undefined ? existing.lock_ai : (hostOverride?.lock_ai ?? null),
+                    lock_extensions: existing?.lock_extensions !== undefined ? existing.lock_extensions : (hostOverride?.lock_extensions ?? null),
                     cmd_updated_at: existing?.cmd_updated_at || Date.now(),
                     quarantined_count: existing?.quarantined_count || 0,
                     quarantined_list: existing?.quarantined_list || [],
@@ -873,6 +1133,11 @@ module.exports = async (req, res) => {
                     });
                 }
 
+                const upperHost = hostname.toUpperCase();
+                const hostOverride = (upperHost && data.config.pc_overrides && typeof data.config.pc_overrides[upperHost] === 'object')
+                    ? data.config.pc_overrides[upperHost]
+                    : null;
+
                 if (!data.students[studentId]) {
                     data.students[studentId] = {
                         id: studentId,
@@ -884,6 +1149,8 @@ module.exports = async (req, res) => {
                         os_info: 'Windows',
                         version: '1.5.0',
                         target_status: data.config.room_statuses[reqRoom] || globalTarget,
+                        lock_ai: hostOverride?.lock_ai ?? null,
+                        lock_extensions: hostOverride?.lock_extensions ?? null,
                         cmd_updated_at: Date.now(),
                         joined_at: nowFormatted()
                     };
@@ -915,6 +1182,16 @@ module.exports = async (req, res) => {
 
                 await writeData(data);
                 const roomPin = data.config.room_pins[st.room_code] || '';
+                const effLockAi = typeof st.lock_ai === 'boolean'
+                    ? st.lock_ai
+                    : ((hostOverride && typeof hostOverride.lock_ai === 'boolean')
+                        ? hostOverride.lock_ai
+                        : (typeof data.config.lock_ai === 'boolean' ? data.config.lock_ai : (data.config.kill_processes !== undefined ? Boolean(data.config.kill_processes) : true)));
+                const effLockExt = typeof st.lock_extensions === 'boolean'
+                    ? st.lock_extensions
+                    : ((hostOverride && typeof hostOverride.lock_extensions === 'boolean')
+                        ? hostOverride.lock_extensions
+                        : (typeof data.config.lock_extensions === 'boolean' ? data.config.lock_extensions : (data.config.quarantine_extensions !== undefined ? Boolean(data.config.quarantine_extensions) : true)));
 
                 const resPayload = {
                     ok: true,
@@ -927,8 +1204,10 @@ module.exports = async (req, res) => {
                         room_pin_hash: roomPin ? roomPinHash(st.room_code, roomPin) : '',
                         block_doh: data.config.block_doh,
                         block_vpn: data.config.block_vpn,
-                        quarantine_extensions: data.config.quarantine_extensions,
-                        kill_processes: data.config.kill_processes
+                        quarantine_extensions: effLockExt,
+                        kill_processes: effLockAi,
+                        lock_ai: effLockAi,
+                        lock_extensions: effLockExt
                     },
                     blocklist: effectiveBl
                 };
@@ -1048,7 +1327,7 @@ module.exports = async (req, res) => {
                 return res.status(200).json({
                     ok: true,
                     server_time: nowFormatted(),
-                    config: data.config,
+                    config: sanitizeConfigForDashboard(data.config),
                     stats: {
                         total_students: students.length,
                         online_students: onlineCount,
@@ -1080,12 +1359,15 @@ module.exports = async (req, res) => {
                     data.config.lock_extensions = isLocked;
                     data.config.quarantine_extensions = isLocked;
                     data.config.kill_processes = isLocked;
+                    data.config.pc_overrides = {};
                     for (const r of data.config.rooms) {
                         data.config.room_statuses[r] = target;
                     }
                     for (const id of Object.keys(data.students)) {
                         data.students[id].target_status = target;
                         data.students[id].status = target;
+                        data.students[id].lock_ai = null;
+                        data.students[id].lock_extensions = null;
                         data.students[id].cmd_updated_at = cmdTs;
                     }
                     const label = target === 'LOCKED' ? 'MENGUNCI (Aktifkan Blokir AI)' : 'MEMBUKA KUNCI (Pulihkan PC)';
@@ -1094,13 +1376,23 @@ module.exports = async (req, res) => {
                     if (!data.config.rooms.includes(targetRoom)) {
                         return res.status(404).json({ ok: false, error: 'Ruangan tidak ditemukan.' });
                     }
+                    const isRoomLocked = target === 'LOCKED';
                     data.config.room_statuses[targetRoom] = target;
                     for (const id of Object.keys(data.students)) {
                         const stRoom = String(data.students[id].room_code || '').toUpperCase();
                         if (stRoom === targetRoom) {
                             data.students[id].target_status = target;
                             data.students[id].status = target;
+                            data.students[id].lock_ai = isRoomLocked;
+                            data.students[id].lock_extensions = isRoomLocked;
                             data.students[id].cmd_updated_at = cmdTs;
+                            const hKey = String(data.students[id].hostname || '').trim().toUpperCase();
+                            if (hKey) {
+                                data.config.pc_overrides[hKey] = {
+                                    lock_ai: isRoomLocked,
+                                    lock_extensions: isRoomLocked
+                                };
+                            }
                         }
                     }
                     const label = target === 'LOCKED' ? 'MENGUNCI (Aktifkan Blokir AI)' : 'MEMBUKA KUNCI (Pulihkan PC)';
@@ -1120,9 +1412,92 @@ module.exports = async (req, res) => {
             case 'set_ide_module_status': {
                 const mod = String(body.module || 'ALL').trim().toUpperCase();
                 const status = String(body.status || 'LOCKED').trim().toUpperCase();
-                if (!['AI', 'EXT', 'ALL'].includes(mod) || !['LOCKED', 'UNLOCKED'].includes(status)) {
+                const targetStudentId = String(body.student_id || '').trim();
+                const targetHost = String(body.hostname || '').trim().toUpperCase();
+
+                if (!['AI', 'EXT', 'ALL', 'REMOVE'].includes(mod) || !['LOCKED', 'UNLOCKED', 'INHERIT'].includes(status)) {
                     return res.status(400).json({ ok: false, error: 'Parameter module atau status tidak valid.' });
                 }
+
+                if (!data.config.pc_overrides || typeof data.config.pc_overrides !== 'object' || Array.isArray(data.config.pc_overrides)) {
+                    data.config.pc_overrides = {};
+                }
+
+                if (targetStudentId || targetHost) {
+                    const matchedKey = findMatchingStudentKey(data, targetStudentId, targetHost, '', '');
+                    const resolvedHost = targetHost || (matchedKey ? String(data.students[matchedKey].hostname || '').trim().toUpperCase() : '');
+                    const overrideKey = resolvedHost || targetStudentId;
+
+                    if (mod === 'REMOVE') {
+                        delete data.config.pc_overrides[overrideKey];
+                        if (targetStudentId) {
+                            delete data.config.pc_overrides[targetStudentId];
+                        }
+                        if (matchedKey && data.students[matchedKey]) {
+                            data.students[matchedKey].lock_ai = null;
+                            data.students[matchedKey].lock_extensions = null;
+                        }
+                        if (resolvedHost) {
+                            data.config.ide_hosts = (data.config.ide_hosts || []).filter((ih) => String(ih?.h || '').trim().toUpperCase() !== resolvedHost);
+                        }
+                        data.config.updated_at = new Date().toISOString();
+                        await writeData(data);
+                        return res.status(200).json({
+                            ok: true,
+                            pc_overrides: data.config.pc_overrides,
+                            ide_hosts: data.config.ide_hosts
+                        });
+                    }
+
+                    const val = status === 'INHERIT' ? null : (status === 'LOCKED');
+                    const cur = (data.config.pc_overrides[overrideKey] && typeof data.config.pc_overrides[overrideKey] === 'object')
+                        ? { ...data.config.pc_overrides[overrideKey] }
+                        : { lock_ai: null, lock_extensions: null };
+                    if (mod === 'AI' || mod === 'ALL') {
+                        cur.lock_ai = val;
+                    }
+                    if (mod === 'EXT' || mod === 'ALL') {
+                        cur.lock_extensions = val;
+                    }
+                    if ((cur.lock_ai ?? null) === null && (cur.lock_extensions ?? null) === null) {
+                        delete data.config.pc_overrides[overrideKey];
+                    } else {
+                        data.config.pc_overrides[overrideKey] = cur;
+                    }
+
+                    for (const [sid, stItem] of Object.entries(data.students)) {
+                        if (!stItem) continue;
+                        const stHost = String(stItem.hostname || '').trim().toUpperCase();
+                        if ((targetStudentId && sid === targetStudentId) || (resolvedHost && stHost === resolvedHost)) {
+                            if (mod === 'AI' || mod === 'ALL') {
+                                stItem.lock_ai = val;
+                            }
+                            if (mod === 'EXT' || mod === 'ALL') {
+                                stItem.lock_extensions = val;
+                            }
+                            stItem.cmd_updated_at = Date.now();
+                        }
+                    }
+
+                    data.config.updated_at = new Date().toISOString();
+                    const modLabel = mod === 'AI' ? 'AI Chat / Agent' : (mod === 'EXT' ? 'Ekstensi IDE' : 'Semua Modul');
+                    const pcLabel = overrideKey || targetStudentId;
+                    addLog(data, targetStudentId || 'ADMIN', 'Dosen Pengawas', pcLabel, 'MODULE_STATUS', `${modLabel} pada PC [${pcLabel}] diatur ke ${status}.`, 'INFO');
+                    await writeData(data);
+                    return res.status(200).json({
+                        ok: true,
+                        student_id: matchedKey || targetStudentId,
+                        hostname: resolvedHost,
+                        lock_ai: cur.lock_ai ?? null,
+                        lock_extensions: cur.lock_extensions ?? null,
+                        pc_overrides: data.config.pc_overrides
+                    });
+                }
+
+                if (status === 'INHERIT' || mod === 'REMOVE') {
+                    return res.status(400).json({ ok: false, error: 'Status INHERIT / REMOVE hanya berlaku per komputer.' });
+                }
+
                 const isLocked = status === 'LOCKED';
                 if (mod === 'AI' || mod === 'ALL') {
                     data.config.lock_ai = isLocked;
@@ -1135,16 +1510,31 @@ module.exports = async (req, res) => {
                 if (mod === 'ALL') {
                     data.config.global_status = status;
                 }
+                for (const stItem of Object.values(data.students)) {
+                    if (!stItem) continue;
+                    if (mod === 'AI' || mod === 'ALL') stItem.lock_ai = null;
+                    if (mod === 'EXT' || mod === 'ALL') stItem.lock_extensions = null;
+                }
+                for (const [k, ov] of Object.entries(data.config.pc_overrides)) {
+                    if (ov && typeof ov === 'object') {
+                        if (mod === 'AI' || mod === 'ALL') ov.lock_ai = null;
+                        if (mod === 'EXT' || mod === 'ALL') ov.lock_extensions = null;
+                        if ((ov.lock_ai ?? null) === null && (ov.lock_extensions ?? null) === null) {
+                            delete data.config.pc_overrides[k];
+                        }
+                    }
+                }
                 data.config.updated_at = new Date().toISOString();
                 const modLabel = mod === 'AI' ? 'AI Chat / Agent' : (mod === 'EXT' ? 'Ekstensi IDE' : 'Semua Modul');
-                addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'MODULE_STATUS', `Status ${modLabel} diatur ke ${status}.`, 'INFO');
+                addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'MODULE_STATUS', `Status ${modLabel} diatur ke ${status} (Semua PC mengikuti global).`, 'INFO');
                 await writeData(data);
                 return res.status(200).json({
                     ok: true,
                     global_status: data.config.global_status || 'LOCKED',
                     lock_ai: Boolean(data.config.lock_ai),
                     lock_extensions: Boolean(data.config.lock_extensions),
-                    config: data.config
+                    pc_overrides: data.config.pc_overrides,
+                    config: sanitizeConfigForDashboard(data.config)
                 });
             }
 
@@ -1276,13 +1666,26 @@ module.exports = async (req, res) => {
                 }
                 if (['LOCKED', 'UNLOCKED'].includes(cmd)) {
                     const cmdTs = Date.now();
+                    const isCmdLocked = cmd === 'LOCKED';
                     data.config.updated_at = new Date(cmdTs).toISOString();
                     st.target_status = cmd;
                     st.status = cmd;
+                    st.lock_ai = isCmdLocked;
+                    st.lock_extensions = isCmdLocked;
                     st.cmd_updated_at = cmdTs;
+                    const hKey = String(st.hostname || '').trim().toUpperCase();
+                    if (hKey) {
+                        if (!data.config.pc_overrides || typeof data.config.pc_overrides !== 'object' || Array.isArray(data.config.pc_overrides)) {
+                            data.config.pc_overrides = {};
+                        }
+                        data.config.pc_overrides[hKey] = {
+                            lock_ai: isCmdLocked,
+                            lock_extensions: isCmdLocked
+                        };
+                    }
                     addLog(data, st.nim, st.name, st.hostname, 'REMOTE_CMD', `Pengawas mengubah status endpoint menjadi ${cmd} di [${stRoom}].`, 'INFO', stRoom);
                     await writeData(data);
-                    return res.status(200).json({ ok: true, target_status: cmd, status: cmd });
+                    return res.status(200).json({ ok: true, target_status: cmd, status: cmd, lock_ai: isCmdLocked, lock_extensions: isCmdLocked });
                 }
                 if (cmd === 'UPDATE') {
                     const cmdTs = Date.now();
@@ -1322,6 +1725,61 @@ module.exports = async (req, res) => {
                 });
             }
 
+            case 'set_admin_password': {
+                const newPass = String(body.new_password || body.admin_password || '').trim();
+                const hasEmailField = body.admin_email !== undefined;
+                const rawEmail = hasEmailField ? String(body.admin_email || '').trim().toLowerCase() : null;
+                const resetDefault = Boolean(body.reset_default) || newPass === '__RESET__';
+                const syncIde = Boolean(body.sync_ide_password);
+
+                if (!resetDefault && !newPass && !rawEmail) {
+                    return res.status(400).json({ ok: false, error: 'Masukkan password baru atau email pengawas baru.' });
+                }
+                if (!resetDefault && newPass && newPass.length < 4) {
+                    return res.status(400).json({ ok: false, error: 'Kata sandi login dashboard minimal 4 karakter.' });
+                }
+
+                if (resetDefault) {
+                    data.config.admin_password_hash = '';
+                    if (rawEmail === '__reset__') {
+                        data.config.admin_email = '';
+                    }
+                    if (syncIde) {
+                        data.config.ide_password_hash = '';
+                    }
+                } else {
+                    if (newPass) {
+                        const hash = crypto.createHash('sha256').update(newPass).digest('hex');
+                        data.config.admin_password_hash = hash;
+                        if (syncIde) {
+                            data.config.ide_password_hash = hash;
+                        }
+                    }
+                    if (rawEmail) {
+                        data.config.admin_email = rawEmail;
+                    }
+                }
+                data.config.updated_at = new Date().toISOString();
+                const effectiveEmail = (data.config.admin_email && String(data.config.admin_email).trim())
+                    ? String(data.config.admin_email).trim().toLowerCase()
+                    : ADMIN_EMAIL;
+                const logMsg = resetDefault
+                    ? 'Kata sandi login dashboard admin dikembalikan ke default server.'
+                    : (syncIde
+                        ? 'Kata sandi login dashboard admin & buka kunci IDE telah diperbarui.'
+                        : 'Kata sandi login dashboard admin telah diperbarui.');
+                addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ADMIN_PASSWORD_UPDATED', logMsg, 'INFO');
+                await writeData(data);
+                return res.status(200).json({
+                    ok: true,
+                    has_custom_admin_password: Boolean(data.config.admin_password_hash),
+                    is_custom: Boolean(data.config.admin_password_hash),
+                    admin_email_effective: effectiveEmail,
+                    token: signAdminToken(effectiveEmail),
+                    synced_ide: syncIde
+                });
+            }
+
             case 'save_config':
             case 'update_config': {
                 if (body.room_code) {
@@ -1332,8 +1790,25 @@ module.exports = async (req, res) => {
                     data.config.rooms = Array.from(new Set(body.rooms.map(r => String(r).trim().toUpperCase()).filter(Boolean)));
                 }
                 if (body.unlock_pin) data.config.unlock_pin = String(body.unlock_pin).trim();
-                if (body.admin_email) data.config.admin_email = String(body.admin_email).trim();
-                if (body.admin_password) data.config.admin_password = String(body.admin_password).trim();
+                if (body.admin_email !== undefined) {
+                    const rawEmail = String(body.admin_email).trim().toLowerCase();
+                    if (rawEmail === '__reset__') {
+                        data.config.admin_email = '';
+                    } else if (rawEmail.length > 0) {
+                        data.config.admin_email = rawEmail;
+                    }
+                }
+                if (body.admin_password !== undefined) {
+                    const rawAdminPass = String(body.admin_password).trim();
+                    if (rawAdminPass === '__RESET__') {
+                        data.config.admin_password_hash = '';
+                    } else if (rawAdminPass.length > 0) {
+                        if (rawAdminPass.length < 4) {
+                            return res.status(400).json({ ok: false, error: 'Kata sandi login dashboard minimal 4 karakter.' });
+                        }
+                        data.config.admin_password_hash = crypto.createHash('sha256').update(rawAdminPass).digest('hex');
+                    }
+                }
                 if (body.ide_password !== undefined) {
                     const rawIdePass = String(body.ide_password).trim();
                     if (rawIdePass === '__RESET__') {
@@ -1351,9 +1826,16 @@ module.exports = async (req, res) => {
                 data.config.kill_processes = body.kill_processes !== undefined ? Boolean(body.kill_processes) : true;
                 data.config.updated_at = new Date().toISOString();
                 ensureRoomsConfig(data);
+                const effectiveEmail = (data.config.admin_email && String(data.config.admin_email).trim())
+                    ? String(data.config.admin_email).trim().toLowerCase()
+                    : ADMIN_EMAIL;
                 addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'CONFIG_UPDATE', 'Konfigurasi ruangan & kebijakan blokir diperbarui.', 'INFO');
                 await writeData(data);
-                return res.status(200).json({ ok: true, config: data.config });
+                return res.status(200).json({
+                    ok: true,
+                    token: signAdminToken(effectiveEmail),
+                    config: sanitizeConfigForDashboard(data.config)
+                });
             }
 
             case 'save_blocklist':

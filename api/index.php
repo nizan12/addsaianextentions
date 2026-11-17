@@ -52,6 +52,94 @@ function roomPinHash($room, $pin) {
     return hash_pbkdf2('sha1', (string)$pin, "guard-pin:" . strtoupper((string)$room), 20000, 64);
 }
 
+function findMatchingStudentKey(&$data, $studentId, $upperHost, $clientId, $clientIp) {
+    $students = $data['students'] ?? [];
+    if ($studentId !== '' && isset($students[$studentId])) {
+        return $studentId;
+    }
+    if ($upperHost !== '') {
+        foreach ($students as $id => $st) {
+            if (strtoupper(trim((string)($st['hostname'] ?? ''))) === $upperHost) {
+                return $id;
+            }
+        }
+    }
+    if ($clientId !== '') {
+        foreach ($students as $id => $st) {
+            if (trim((string)($st['client_id'] ?? '')) === $clientId) {
+                return $id;
+            }
+        }
+    }
+    if ($clientIp !== '' && $clientIp !== '127.0.0.1' && $clientIp !== '::1') {
+        $ipMatches = [];
+        foreach ($students as $id => $st) {
+            if (trim((string)($st['ip'] ?? '')) === $clientIp) {
+                $ipMatches[] = $id;
+            }
+        }
+        if (count($ipMatches) === 1) {
+            return $ipMatches[0];
+        }
+    }
+    return null;
+}
+
+function resolveDeviceIdeLocks(&$data, $params, $clientIp) {
+    $globLocked = ($data['config']['global_status'] ?? 'LOCKED') === 'LOCKED';
+    $globalAi = isset($data['config']['lock_ai']) ? (bool)$data['config']['lock_ai'] : $globLocked;
+    $globalExt = isset($data['config']['lock_extensions']) ? (bool)$data['config']['lock_extensions'] : $globLocked;
+
+    $studentId = trim((string)($params['student_id'] ?? ''));
+    $upperHost = strtoupper(trim((string)($params['hostname'] ?? '')));
+    $clientId = trim((string)($params['client_id'] ?? ''));
+
+    $matchedKey = findMatchingStudentKey($data, $studentId, $upperHost, $clientId, $clientIp);
+    $matchedStudent = $matchedKey !== null ? $data['students'][$matchedKey] : null;
+    $resolvedHost = $upperHost ?: strtoupper(trim((string)($matchedStudent['hostname'] ?? '')));
+
+    $pco = $data['config']['pc_overrides'] ?? [];
+    $override = null;
+    foreach ([$matchedKey, $studentId, $resolvedHost, $clientId] as $cand) {
+        if ($cand !== null && $cand !== '' && isset($pco[$cand]) && is_array($pco[$cand])) {
+            $override = $pco[$cand];
+            break;
+        }
+    }
+
+    $lockAi = $globalAi;
+    if ($matchedStudent && array_key_exists('lock_ai', $matchedStudent) && is_bool($matchedStudent['lock_ai'])) {
+        $lockAi = $matchedStudent['lock_ai'];
+    } elseif ($override && array_key_exists('lock_ai', $override) && is_bool($override['lock_ai'])) {
+        $lockAi = $override['lock_ai'];
+    }
+
+    $lockExt = $globalExt;
+    if ($matchedStudent && array_key_exists('lock_extensions', $matchedStudent) && is_bool($matchedStudent['lock_extensions'])) {
+        $lockExt = $matchedStudent['lock_extensions'];
+    } elseif ($override && array_key_exists('lock_extensions', $override) && is_bool($override['lock_extensions'])) {
+        $lockExt = $override['lock_extensions'];
+    }
+
+    $hostKnown = false;
+    foreach (($data['config']['ide_hosts'] ?? []) as $ih) {
+        if (is_array($ih) && strtoupper(trim((string)($ih['h'] ?? ''))) === $upperHost && $upperHost !== '') {
+            $hostKnown = true;
+            break;
+        }
+    }
+
+    return [
+        'lock_ai' => $lockAi,
+        'lock_extensions' => $lockExt,
+        'global_lock_ai' => $globalAi,
+        'global_lock_extensions' => $globalExt,
+        'device_known' => ($matchedStudent !== null || $hostKnown),
+        'matched_student_id' => $matchedKey,
+        'matched_hostname' => $resolvedHost
+    ];
+}
+
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 $rawInput = file_get_contents('php://input');
 $jsonInput = json_decode($rawInput, true);
@@ -69,10 +157,21 @@ function respond($data, $code = 200) {
     exit;
 }
 
+function sanitizeConfigForDashboard($config, $defaultAdminEmail) {
+    $out = $config;
+    $out['has_custom_admin_password'] = !empty($out['admin_password_hash']);
+    $out['admin_email_effective'] = !empty($out['admin_email']) ? $out['admin_email'] : $defaultAdminEmail;
+    unset($out['admin_password_hash'], $out['admin_password']);
+    if (empty($out['pc_overrides'])) {
+        $out['pc_overrides'] = (object)[];
+    }
+    return $out;
+}
+
 // Perlindungan Aksi Dashboard Admin
 $adminActions = [
     'state', 'dashboard_state', 'rehydrate_state', 'sync_from_firebase',
-    'set_global_status', 'set_ide_module_status', 'set_ide_password', 'add_room', 'rename_room', 'delete_room',
+    'set_global_status', 'set_ide_module_status', 'set_ide_password', 'set_admin_password', 'add_room', 'rename_room', 'delete_room',
     'set_student_command', 'update_config', 'save_config',
     'update_blocklist', 'save_blocklist', 'clear_logs'
 ];
@@ -87,13 +186,22 @@ try {
             $email = strtolower(trim($jsonInput['email'] ?? ''));
             $password = trim($jsonInput['password'] ?? '');
 
-            if (hash_equals($adminEmail, $email) && hash_equals($adminPassword, $password)) {
+            $authData = Storage::read();
+            Storage::ensureRoomsConfig($authData);
+            $effectiveAdminEmail = !empty($authData['config']['admin_email'])
+                ? strtolower(trim((string)$authData['config']['admin_email']))
+                : $adminEmail;
+            $customPassHash = trim((string)($authData['config']['admin_password_hash'] ?? ''));
+            $effectivePassHash = $customPassHash !== '' ? $customPassHash : hash('sha256', $adminPassword);
+            $inputPassHash = hash('sha256', $password);
+
+            if ($email !== '' && $password !== '' && hash_equals($effectiveAdminEmail, $email) && hash_equals($effectivePassHash, $inputPassHash)) {
                 respond([
                     'ok' => true,
-                    'token' => signAdminToken($adminEmail, $authSecret),
+                    'token' => signAdminToken($effectiveAdminEmail, $authSecret),
                     'expires_in' => 43200,
                     'user' => [
-                        'email' => $adminEmail,
+                        'email' => $effectiveAdminEmail,
                         'name' => 'Dosen / Pengawas Ujian',
                         'role' => 'ADMIN'
                     ]
@@ -106,7 +214,9 @@ try {
         case 'sync_from_firebase':
             $result = Storage::update(function (&$data) use ($jsonInput) {
                 if (isset($jsonInput['config']) && is_array($jsonInput['config'])) {
-                    $data['config'] = array_merge($data['config'] ?? [], $jsonInput['config']);
+                    $incomingCfg = $jsonInput['config'];
+                    unset($incomingCfg['admin_password_hash'], $incomingCfg['admin_password'], $incomingCfg['admin_email'], $incomingCfg['has_custom_admin_password'], $incomingCfg['admin_email_effective']);
+                    $data['config'] = array_merge($data['config'] ?? [], $incomingCfg);
                 }
                 if (isset($jsonInput['blocklist']) && is_array($jsonInput['blocklist'])) {
                     $data['blocklist'] = array_merge($data['blocklist'] ?? [], $jsonInput['blocklist']);
@@ -145,7 +255,7 @@ try {
                 respond(['ok' => false, 'error' => 'NIM dan Nama Mahasiswa wajib diisi.'], 400);
             }
 
-            $result = Storage::update(function (&$data) use ($nim, $name, $hostname, $roomCode, $osInfo, $clientVersion) {
+            $result = Storage::update(function (&$data) use ($nim, $name, $hostname, $roomCode, $osInfo, $clientVersion, $jsonInput) {
                 Storage::ensureRoomsConfig($data);
                 if ($roomCode === '' || !in_array($roomCode, $data['config']['rooms'], true)) {
                     return [
@@ -165,6 +275,11 @@ try {
                     : $roomDefaultState;
                 $roomPin = (string)($data['config']['room_pins'][$normalizedRoom] ?? '');
 
+                $upperHost = strtoupper(trim((string)$hostname));
+                $hostOverride = ($upperHost !== '' && isset($data['config']['pc_overrides'][$upperHost]) && is_array($data['config']['pc_overrides'][$upperHost]))
+                    ? $data['config']['pc_overrides'][$upperHost]
+                    : null;
+
                 $data['students'][$studentId] = [
                     'id' => $studentId,
                     'nim' => $nim,
@@ -176,6 +291,8 @@ try {
                     'version' => $clientVersion,
                     'status' => $existing['status'] ?? $desiredState,
                     'target_status' => $desiredState,
+                    'lock_ai' => $existing['lock_ai'] ?? ($hostOverride['lock_ai'] ?? null),
+                    'lock_extensions' => $existing['lock_extensions'] ?? ($hostOverride['lock_extensions'] ?? null),
                     'quarantined_count' => $existing['quarantined_count'] ?? 0,
                     'quarantined_list' => $existing['quarantined_list'] ?? [],
                     'blocked_domains_count' => count($data['blocklist']['domains'] ?? []),
@@ -255,6 +372,11 @@ try {
                     ];
                 }
 
+                $upperHost = strtoupper(trim((string)$hostname));
+                $hostOverride = ($upperHost !== '' && isset($data['config']['pc_overrides'][$upperHost]) && is_array($data['config']['pc_overrides'][$upperHost]))
+                    ? $data['config']['pc_overrides'][$upperHost]
+                    : null;
+
                 if (!isset($data['students'][$studentId])) {
                     $data['students'][$studentId] = [
                         'id' => $studentId,
@@ -266,6 +388,8 @@ try {
                         'os_info' => 'Windows',
                         'version' => '1.5.0',
                         'target_status' => $data['config']['room_statuses'][$reqRoom] ?? $globalTarget,
+                        'lock_ai' => $hostOverride['lock_ai'] ?? null,
+                        'lock_extensions' => $hostOverride['lock_extensions'] ?? null,
                         'joined_at' => date('Y-m-d H:i:s')
                     ];
                 }
@@ -294,6 +418,16 @@ try {
 
                 $targetStatus = $student['target_status'] ?? ($data['config']['room_statuses'][$student['room_code']] ?? $globalTarget);
                 $roomPin = (string)($data['config']['room_pins'][$student['room_code']] ?? '');
+                $effLockAi = (array_key_exists('lock_ai', $student) && is_bool($student['lock_ai']))
+                    ? $student['lock_ai']
+                    : (($hostOverride && array_key_exists('lock_ai', $hostOverride) && is_bool($hostOverride['lock_ai']))
+                        ? $hostOverride['lock_ai']
+                        : ($data['config']['lock_ai'] ?? $data['config']['kill_processes'] ?? true));
+                $effLockExt = (array_key_exists('lock_extensions', $student) && is_bool($student['lock_extensions']))
+                    ? $student['lock_extensions']
+                    : (($hostOverride && array_key_exists('lock_extensions', $hostOverride) && is_bool($hostOverride['lock_extensions']))
+                        ? $hostOverride['lock_extensions']
+                        : ($data['config']['lock_extensions'] ?? $data['config']['quarantine_extensions'] ?? true));
 
                 $resPayload = [
                     'ok' => true,
@@ -306,8 +440,10 @@ try {
                         'room_pin_hash' => $roomPin !== '' ? roomPinHash($student['room_code'], $roomPin) : '',
                         'block_doh' => $data['config']['block_doh'],
                         'block_vpn' => $data['config']['block_vpn'],
-                        'quarantine_extensions' => $data['config']['quarantine_extensions'],
-                        'kill_processes' => $data['config']['kill_processes']
+                        'quarantine_extensions' => $effLockExt,
+                        'kill_processes' => $effLockAi,
+                        'lock_ai' => $effLockAi,
+                        'lock_extensions' => $effLockExt
                     ],
                     'blocklist' => Storage::getEffectiveBlocklist($data, $student['room_code'])
                 ];
@@ -400,18 +536,108 @@ try {
             respond($result, $result['ok'] ? 200 : 403);
             break;
 
+        case 'ide_register':
+            $rawHost = trim((string)($jsonInput['hostname'] ?? $_GET['hostname'] ?? ''));
+            $upperHost = strtoupper($rawHost);
+            $clientId = trim((string)($jsonInput['client_id'] ?? $_GET['client_id'] ?? ''));
+            $username = trim((string)($jsonInput['username'] ?? $_GET['username'] ?? 'VS Code User'));
+            if ($upperHost === '') {
+                respond(['ok' => false, 'error' => 'Hostname diperlukan.'], 400);
+            }
+            $clientIp = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+            $result = Storage::update(function (&$data) use ($upperHost, $clientId, $username, $clientIp) {
+                Storage::ensureRoomsConfig($data);
+                $now = time();
+                $matchedKey = findMatchingStudentKey($data, '', $upperHost, $clientId, '');
+                if ($matchedKey !== null) {
+                    $data['students'][$matchedKey]['ide_connected'] = true;
+                    $data['students'][$matchedKey]['ide_last_seen'] = $now;
+                    if ($clientId !== '') {
+                        $data['students'][$matchedKey]['client_id'] = $clientId;
+                    }
+                    return ['ok' => true, 'student_id' => $matchedKey, 'mode' => 'existing_student'];
+                }
+
+                if (!empty($data['config']['rooms'])) {
+                    $targetRoom = $data['config']['room_code'] ?: $data['config']['rooms'][0];
+                    $safeId = 'IDE_' . preg_replace('/[^A-Z0-9_-]/', '_', $upperHost);
+                    $roomStatus = $data['config']['room_statuses'][$targetRoom] ?? ($data['config']['global_status'] ?? 'LOCKED');
+                    $hostOverride = isset($data['config']['pc_overrides'][$upperHost]) && is_array($data['config']['pc_overrides'][$upperHost])
+                        ? $data['config']['pc_overrides'][$upperHost]
+                        : null;
+                    $existing = $data['students'][$safeId] ?? [];
+                    $data['students'][$safeId] = array_merge([
+                        'id' => $safeId,
+                        'nim' => 'VS CODE',
+                        'name' => $username ?: $upperHost,
+                        'hostname' => $upperHost,
+                        'client_id' => $clientId,
+                        'room_code' => $targetRoom,
+                        'ip' => $clientIp,
+                        'os_info' => 'VS Code IDE',
+                        'version' => 'IDE-Sync',
+                        'status' => $existing['status'] ?? $roomStatus,
+                        'target_status' => $existing['target_status'] ?? $roomStatus,
+                        'lock_ai' => $existing['lock_ai'] ?? ($hostOverride['lock_ai'] ?? null),
+                        'lock_extensions' => $existing['lock_extensions'] ?? ($hostOverride['lock_extensions'] ?? null),
+                        'quarantined_count' => $existing['quarantined_count'] ?? 0,
+                        'quarantined_list' => $existing['quarantined_list'] ?? [],
+                        'killed_processes_count' => $existing['killed_processes_count'] ?? 0,
+                        'vpn_detected' => false,
+                        'joined_at' => $existing['joined_at'] ?? date('Y-m-d H:i:s'),
+                    ], [
+                        'ide_connected' => true,
+                        'ide_last_seen' => $now,
+                        'last_seen' => $now,
+                        'last_seen_str' => date('Y-m-d H:i:s')
+                    ]);
+                    return ['ok' => true, 'student_id' => $safeId, 'mode' => 'ide_student'];
+                }
+
+                $hosts = [];
+                $found = false;
+                foreach (($data['config']['ide_hosts'] ?? []) as $ih) {
+                    if (is_array($ih) && !empty($ih['h'])) {
+                        if (strtoupper($ih['h']) === $upperHost) {
+                            $hosts[] = ['h' => $upperHost, 'id' => $clientId, 'ip' => $clientIp, 'ls' => $now];
+                            $found = true;
+                        } else {
+                            $hosts[] = $ih;
+                        }
+                    }
+                }
+                if (!$found) {
+                    array_unshift($hosts, ['h' => $upperHost, 'id' => $clientId, 'ip' => $clientIp, 'ls' => $now]);
+                }
+                $data['config']['ide_hosts'] = array_slice($hosts, 0, 20);
+                return ['ok' => true, 'hostname' => $upperHost, 'mode' => 'standalone_host'];
+            });
+            respond($result);
+            break;
+
         case 'blocklist':
             $data = Storage::read();
             Storage::ensureRoomsConfig($data);
-            $globLocked = ($data['config']['global_status'] ?? 'LOCKED') === 'LOCKED';
+            $clientIp = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+            $params = [
+                'hostname' => $_GET['hostname'] ?? ($jsonInput['hostname'] ?? ''),
+                'student_id' => $_GET['student_id'] ?? ($jsonInput['student_id'] ?? ''),
+                'client_id' => $_GET['client_id'] ?? ($jsonInput['client_id'] ?? ''),
+            ];
+            $resolved = resolveDeviceIdeLocks($data, $params, $clientIp);
             respond([
                 'ok' => true,
+                'device_known' => $resolved['device_known'],
+                'matched_student_id' => $resolved['matched_student_id'],
+                'matched_hostname' => $resolved['matched_hostname'],
                 'config' => [
                     'room_code' => $data['config']['room_code'],
                     'rooms' => $data['config']['rooms'],
                     'global_status' => $data['config']['global_status'],
-                    'lock_ai' => isset($data['config']['lock_ai']) ? (bool)$data['config']['lock_ai'] : $globLocked,
-                    'lock_extensions' => isset($data['config']['lock_extensions']) ? (bool)$data['config']['lock_extensions'] : $globLocked,
+                    'lock_ai' => $resolved['lock_ai'],
+                    'lock_extensions' => $resolved['lock_extensions'],
+                    'global_lock_ai' => $resolved['global_lock_ai'],
+                    'global_lock_extensions' => $resolved['global_lock_extensions'],
                     'ide_password_hash' => (string)($data['config']['ide_password_hash'] ?? ''),
                     'quarantine_extensions' => $data['config']['quarantine_extensions'] ?? true,
                     'kill_processes' => $data['config']['kill_processes'] ?? true,
@@ -425,7 +651,7 @@ try {
         // ====================================================================
         case 'dashboard_state':
             $now = time();
-            $result = Storage::update(function (&$data) use ($now) {
+            $result = Storage::update(function (&$data) use ($now, $adminEmail) {
                 Storage::ensureRoomsConfig($data);
                 $students = [];
                 $onlineCount = 0;
@@ -458,10 +684,11 @@ try {
                     return strcmp($a['nim'], $b['nim']);
                 });
 
+                $outConfig = sanitizeConfigForDashboard($data['config'], $adminEmail);
                 return [
                     'ok' => true,
                     'server_time' => date('Y-m-d H:i:s'),
-                    'config' => $data['config'],
+                    'config' => $outConfig,
                     'stats' => [
                         'total_students' => count($students),
                         'online_students' => $onlineCount,
@@ -492,30 +719,48 @@ try {
                 $data['config']['updated_at'] = date('c');
 
                 if ($targetRoom === 'ALL' || $targetRoom === '') {
+                    $isGlobLocked = ($target === 'LOCKED');
                     $data['config']['global_status'] = $target;
-                    $data['config']['lock_ai'] = ($target === 'LOCKED');
-                    $data['config']['lock_extensions'] = ($target === 'LOCKED');
+                    $data['config']['lock_ai'] = $isGlobLocked;
+                    $data['config']['lock_extensions'] = $isGlobLocked;
+                    $data['config']['quarantine_extensions'] = $isGlobLocked;
+                    $data['config']['kill_processes'] = $isGlobLocked;
+                    $data['config']['pc_overrides'] = [];
                     foreach ($data['config']['rooms'] as $r) {
                         $data['config']['room_statuses'][$r] = $target;
                     }
                     foreach ($data['students'] as $id => &$st) {
                         $st['target_status'] = $target;
                         $st['status'] = $target;
+                        $st['lock_ai'] = null;
+                        $st['lock_extensions'] = null;
                     }
+                    unset($st);
                     $label = $target === 'LOCKED' ? 'MENGUNCI (Aktifkan Blokir AI)' : 'MEMBUKA KUNCI (Pulihkan PC)';
                     Storage::addLog($data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'GLOBAL_COMMAND', "Pengawas memilih {$label} untuk SELURUH RUANGAN.", 'INFO', 'ALL');
                 } else {
                     if (!in_array($targetRoom, $data['config']['rooms'], true)) {
                         return ['ok' => false, 'error' => 'Ruangan tidak ditemukan.'];
                     }
+                    $isRoomLocked = ($target === 'LOCKED');
                     $data['config']['room_statuses'][$targetRoom] = $target;
                     foreach ($data['students'] as $id => &$st) {
                         $stRoom = strtoupper($st['room_code'] ?? '');
                         if ($stRoom === $targetRoom) {
                             $st['target_status'] = $target;
                             $st['status'] = $target;
+                            $st['lock_ai'] = $isRoomLocked;
+                            $st['lock_extensions'] = $isRoomLocked;
+                            $hKey = strtoupper(trim((string)($st['hostname'] ?? '')));
+                            if ($hKey !== '') {
+                                $data['config']['pc_overrides'][$hKey] = [
+                                    'lock_ai' => $isRoomLocked,
+                                    'lock_extensions' => $isRoomLocked
+                                ];
+                            }
                         }
                     }
+                    unset($st);
                     $label = $target === 'LOCKED' ? 'MENGUNCI (Aktifkan Blokir AI)' : 'MEMBUKA KUNCI (Pulihkan PC)';
                     Storage::addLog($data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ROOM_COMMAND', "Pengawas memilih {$label} untuk ruangan [{$targetRoom}].", 'INFO', $targetRoom);
                 }
@@ -533,12 +778,98 @@ try {
             break;
 
         case 'set_ide_module_status':
-            $module = strtoupper(trim($jsonInput['module'] ?? 'ALL')); // 'AI' | 'EXT' | 'ALL'
-            $status = strtoupper(trim($jsonInput['status'] ?? 'LOCKED')); // 'LOCKED' | 'UNLOCKED'
-            $isLocked = ($status === 'LOCKED');
+            $module = strtoupper(trim($jsonInput['module'] ?? 'ALL')); // 'AI' | 'EXT' | 'ALL' | 'REMOVE'
+            $status = strtoupper(trim($jsonInput['status'] ?? 'LOCKED')); // 'LOCKED' | 'UNLOCKED' | 'INHERIT'
+            $targetStudentId = trim((string)($jsonInput['student_id'] ?? ''));
+            $targetHost = strtoupper(trim((string)($jsonInput['hostname'] ?? '')));
 
-            $result = Storage::update(function (&$data) use ($module, $status, $isLocked) {
+            if (!in_array($module, ['AI', 'EXT', 'ALL', 'REMOVE'], true) || !in_array($status, ['LOCKED', 'UNLOCKED', 'INHERIT'], true)) {
+                respond(['ok' => false, 'error' => 'Parameter module atau status tidak valid.'], 400);
+            }
+
+            $result = Storage::update(function (&$data) use ($module, $status, $targetStudentId, $targetHost) {
                 Storage::ensureRoomsConfig($data);
+                if (!isset($data['config']['pc_overrides']) || !is_array($data['config']['pc_overrides'])) {
+                    $data['config']['pc_overrides'] = [];
+                }
+
+                if ($targetStudentId !== '' || $targetHost !== '') {
+                    $matchedKey = findMatchingStudentKey($data, $targetStudentId, $targetHost, '', '');
+                    $resolvedHost = $targetHost;
+                    if ($matchedKey !== null && $resolvedHost === '') {
+                        $resolvedHost = strtoupper(trim((string)($data['students'][$matchedKey]['hostname'] ?? '')));
+                    }
+                    $overrideKey = $resolvedHost !== '' ? $resolvedHost : $targetStudentId;
+
+                    if ($module === 'REMOVE') {
+                        unset($data['config']['pc_overrides'][$overrideKey]);
+                        if ($targetStudentId !== '') {
+                            unset($data['config']['pc_overrides'][$targetStudentId]);
+                        }
+                        if ($matchedKey !== null) {
+                            $data['students'][$matchedKey]['lock_ai'] = null;
+                            $data['students'][$matchedKey]['lock_extensions'] = null;
+                        }
+                        if ($resolvedHost !== '') {
+                            $data['config']['ide_hosts'] = array_values(array_filter($data['config']['ide_hosts'] ?? [], function ($ih) use ($resolvedHost) {
+                                return strtoupper(trim((string)($ih['h'] ?? ''))) !== $resolvedHost;
+                            }));
+                        }
+                        $data['config']['updated_at'] = date('c');
+                        return [
+                            'ok' => true,
+                            'pc_overrides' => empty($data['config']['pc_overrides']) ? (object)[] : $data['config']['pc_overrides'],
+                            'ide_hosts' => $data['config']['ide_hosts']
+                        ];
+                    }
+
+                    $val = ($status === 'INHERIT') ? null : ($status === 'LOCKED');
+                    $cur = isset($data['config']['pc_overrides'][$overrideKey]) && is_array($data['config']['pc_overrides'][$overrideKey])
+                        ? $data['config']['pc_overrides'][$overrideKey]
+                        : ['lock_ai' => null, 'lock_extensions' => null];
+                    if ($module === 'AI' || $module === 'ALL') {
+                        $cur['lock_ai'] = $val;
+                    }
+                    if ($module === 'EXT' || $module === 'ALL') {
+                        $cur['lock_extensions'] = $val;
+                    }
+                    if (($cur['lock_ai'] ?? null) === null && ($cur['lock_extensions'] ?? null) === null) {
+                        unset($data['config']['pc_overrides'][$overrideKey]);
+                    } else {
+                        $data['config']['pc_overrides'][$overrideKey] = $cur;
+                    }
+
+                    foreach ($data['students'] as $sid => &$stItem) {
+                        $stHost = strtoupper(trim((string)($stItem['hostname'] ?? '')));
+                        if (($targetStudentId !== '' && $sid === $targetStudentId) || ($resolvedHost !== '' && $stHost === $resolvedHost)) {
+                            if ($module === 'AI' || $module === 'ALL') {
+                                $stItem['lock_ai'] = $val;
+                            }
+                            if ($module === 'EXT' || $module === 'ALL') {
+                                $stItem['lock_extensions'] = $val;
+                            }
+                        }
+                    }
+                    unset($stItem);
+
+                    $data['config']['updated_at'] = date('c');
+                    $modLabel = $module === 'AI' ? 'AI Chat / Agent' : ($module === 'EXT' ? 'Ekstensi IDE' : 'Semua Modul');
+                    $pcLabel = $overrideKey ?: $targetStudentId;
+                    Storage::addLog($data, $targetStudentId ?: 'ADMIN', 'Dosen Pengawas', $pcLabel, 'MODULE_STATUS', "{$modLabel} pada PC [{$pcLabel}] diatur ke {$status}.", 'INFO');
+                    return [
+                        'ok' => true,
+                        'student_id' => $matchedKey ?? $targetStudentId,
+                        'hostname' => $resolvedHost,
+                        'lock_ai' => $cur['lock_ai'] ?? null,
+                        'lock_extensions' => $cur['lock_extensions'] ?? null,
+                        'pc_overrides' => empty($data['config']['pc_overrides']) ? (object)[] : $data['config']['pc_overrides']
+                    ];
+                }
+
+                if ($status === 'INHERIT') {
+                    return ['ok' => false, 'error' => 'Status INHERIT hanya berlaku per komputer.'];
+                }
+                $isLocked = ($status === 'LOCKED');
                 if ($module === 'AI' || $module === 'ALL') {
                     $data['config']['lock_ai'] = $isLocked;
                     $data['config']['kill_processes'] = $isLocked;
@@ -550,18 +881,42 @@ try {
                 if ($module === 'ALL') {
                     $data['config']['global_status'] = $status;
                 }
+
+                foreach ($data['students'] as &$stItem) {
+                    if ($module === 'AI' || $module === 'ALL') {
+                        $stItem['lock_ai'] = null;
+                    }
+                    if ($module === 'EXT' || $module === 'ALL') {
+                        $stItem['lock_extensions'] = null;
+                    }
+                }
+                unset($stItem);
+                foreach ($data['config']['pc_overrides'] as $k => &$ov) {
+                    if ($module === 'AI' || $module === 'ALL') {
+                        $ov['lock_ai'] = null;
+                    }
+                    if ($module === 'EXT' || $module === 'ALL') {
+                        $ov['lock_extensions'] = null;
+                    }
+                    if (($ov['lock_ai'] ?? null) === null && ($ov['lock_extensions'] ?? null) === null) {
+                        unset($data['config']['pc_overrides'][$k]);
+                    }
+                }
+                unset($ov);
+
                 $data['config']['updated_at'] = date('c');
                 $modLabel = $module === 'AI' ? 'AI Chat / Agent' : ($module === 'EXT' ? 'Ekstensi IDE' : 'Semua Modul');
-                Storage::addLog($data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'MODULE_STATUS', "Status {$modLabel} diatur ke {$status}.", 'INFO');
+                Storage::addLog($data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'MODULE_STATUS', "Status Global {$modLabel} diatur ke {$status}.", 'INFO');
                 return [
                     'ok' => true,
                     'global_status' => $data['config']['global_status'] ?? 'LOCKED',
                     'lock_ai' => isset($data['config']['lock_ai']) ? (bool)$data['config']['lock_ai'] : true,
                     'lock_extensions' => isset($data['config']['lock_extensions']) ? (bool)$data['config']['lock_extensions'] : true,
+                    'pc_overrides' => empty($data['config']['pc_overrides']) ? (object)[] : $data['config']['pc_overrides'],
                     'config' => $data['config']
                 ];
             });
-            respond($result);
+            respond($result, !empty($result['ok']) ? 200 : 400);
             break;
 
         case 'add_room':
@@ -707,10 +1062,23 @@ try {
                     return ['ok' => true];
                 }
                 if (in_array($cmd, ['LOCKED', 'UNLOCKED'], true)) {
+                    $isCmdLocked = ($cmd === 'LOCKED');
                     $st['target_status'] = $cmd;
                     $st['status'] = $cmd;
+                    $st['lock_ai'] = $isCmdLocked;
+                    $st['lock_extensions'] = $isCmdLocked;
+                    $hKey = strtoupper(trim((string)($st['hostname'] ?? '')));
+                    if ($hKey !== '') {
+                        if (!isset($data['config']['pc_overrides']) || !is_array($data['config']['pc_overrides'])) {
+                            $data['config']['pc_overrides'] = [];
+                        }
+                        $data['config']['pc_overrides'][$hKey] = [
+                            'lock_ai' => $isCmdLocked,
+                            'lock_extensions' => $isCmdLocked
+                        ];
+                    }
                     Storage::addLog($data, $st['nim'], $st['name'], $st['hostname'], 'REMOTE_CMD', "Pengawas mengubah status endpoint menjadi {$cmd} di [{$stRoom}].", 'INFO', $stRoom);
-                    return ['ok' => true, 'target_status' => $cmd, 'status' => $cmd];
+                    return ['ok' => true, 'target_status' => $cmd, 'status' => $cmd, 'lock_ai' => $isCmdLocked, 'lock_extensions' => $isCmdLocked];
                 }
                 if ($cmd === 'UPDATE') {
                     $st['pending_command'] = 'UPDATE';
@@ -754,17 +1122,84 @@ try {
             respond($result);
             break;
 
+        case 'set_admin_password':
+            $newPass = trim((string)($jsonInput['new_password'] ?? $jsonInput['admin_password'] ?? ''));
+            $newEmail = isset($jsonInput['admin_email']) ? strtolower(trim((string)$jsonInput['admin_email'])) : null;
+            $resetDefault = !empty($jsonInput['reset_default']) || $newPass === '__RESET__';
+            $syncIde = !empty($jsonInput['sync_ide_password']);
+
+            if (!$resetDefault && $newPass === '' && ($newEmail === null || $newEmail === '')) {
+                respond(['ok' => false, 'error' => 'Masukkan password baru atau email pengawas baru.'], 400);
+            }
+            if (!$resetDefault && $newPass !== '' && strlen($newPass) < 4) {
+                respond(['ok' => false, 'error' => 'Kata sandi login dashboard minimal 4 karakter.'], 400);
+            }
+
+            $result = Storage::update(function (&$data) use ($newPass, $newEmail, $resetDefault, $syncIde, $adminEmail, $authSecret) {
+                Storage::ensureRoomsConfig($data);
+                if ($resetDefault) {
+                    $data['config']['admin_password_hash'] = '';
+                    if (!empty($newEmail) && $newEmail === '__reset__') {
+                        $data['config']['admin_email'] = '';
+                    }
+                    if ($syncIde) {
+                        $data['config']['ide_password_hash'] = '';
+                    }
+                } else {
+                    if ($newPass !== '') {
+                        $hash = hash('sha256', $newPass);
+                        $data['config']['admin_password_hash'] = $hash;
+                        if ($syncIde) {
+                            $data['config']['ide_password_hash'] = $hash;
+                        }
+                    }
+                    if ($newEmail !== null && $newEmail !== '') {
+                        $data['config']['admin_email'] = $newEmail;
+                    }
+                }
+                $data['config']['updated_at'] = date('c');
+                $effectiveEmail = !empty($data['config']['admin_email']) ? $data['config']['admin_email'] : $adminEmail;
+                $logMsg = $resetDefault
+                    ? 'Kata sandi login dashboard admin dikembalikan ke default server.'
+                    : ($syncIde
+                        ? 'Kata sandi login dashboard admin & buka kunci IDE telah diperbarui.'
+                        : 'Kata sandi login dashboard admin telah diperbarui.');
+                Storage::addLog($data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ADMIN_PASSWORD_UPDATED', $logMsg, 'INFO');
+                return [
+                    'ok' => true,
+                    'has_custom_admin_password' => ($data['config']['admin_password_hash'] !== ''),
+                    'is_custom' => ($data['config']['admin_password_hash'] !== ''),
+                    'admin_email_effective' => $effectiveEmail,
+                    'token' => signAdminToken($effectiveEmail, $authSecret),
+                    'synced_ide' => $syncIde
+                ];
+            });
+            respond($result);
+            break;
+
         case 'update_config':
             $rawIdePass = isset($jsonInput['ide_password']) ? trim((string)$jsonInput['ide_password']) : null;
             if ($rawIdePass !== null && $rawIdePass !== '' && $rawIdePass !== '__RESET__' && strlen($rawIdePass) < 4) {
                 respond(['ok' => false, 'error' => 'Password buka kunci IDE minimal 4 karakter.'], 400);
             }
-            $result = Storage::update(function (&$data) use ($jsonInput, $rawIdePass) {
+            $rawAdminPass = isset($jsonInput['admin_password']) ? trim((string)$jsonInput['admin_password']) : null;
+            if ($rawAdminPass !== null && $rawAdminPass !== '' && $rawAdminPass !== '__RESET__' && strlen($rawAdminPass) < 4) {
+                respond(['ok' => false, 'error' => 'Kata sandi login dashboard minimal 4 karakter.'], 400);
+            }
+            $rawAdminEmail = isset($jsonInput['admin_email']) ? strtolower(trim((string)$jsonInput['admin_email'])) : null;
+
+            $result = Storage::update(function (&$data) use ($jsonInput, $rawIdePass, $rawAdminPass, $rawAdminEmail, $adminEmail, $authSecret) {
                 if (!empty($jsonInput['room_code'])) {
                     $data['config']['room_code'] = Storage::registerRoomIfNeeded($data, $jsonInput['room_code']);
                 }
                 if ($rawIdePass !== null && $rawIdePass !== '') {
                     $data['config']['ide_password_hash'] = ($rawIdePass === '__RESET__') ? '' : hash('sha256', $rawIdePass);
+                }
+                if ($rawAdminPass !== null && $rawAdminPass !== '') {
+                    $data['config']['admin_password_hash'] = ($rawAdminPass === '__RESET__') ? '' : hash('sha256', $rawAdminPass);
+                }
+                if ($rawAdminEmail !== null && $rawAdminEmail !== '') {
+                    $data['config']['admin_email'] = ($rawAdminEmail === '__reset__') ? '' : $rawAdminEmail;
                 }
                 $data['config']['block_doh'] = isset($jsonInput['block_doh']) ? (bool)$jsonInput['block_doh'] : true;
                 $data['config']['block_vpn'] = isset($jsonInput['block_vpn']) ? (bool)$jsonInput['block_vpn'] : true;
@@ -773,8 +1208,13 @@ try {
                 $data['config']['updated_at'] = date('c');
                 Storage::ensureRoomsConfig($data);
 
+                $effectiveEmail = !empty($data['config']['admin_email']) ? $data['config']['admin_email'] : $adminEmail;
                 Storage::addLog($data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'CONFIG_UPDATE', 'Konfigurasi ruangan & kebijakan blokir diperbarui.', 'INFO');
-                return ['ok' => true, 'config' => $data['config']];
+                return [
+                    'ok' => true,
+                    'token' => signAdminToken($effectiveEmail, $authSecret),
+                    'config' => sanitizeConfigForDashboard($data['config'], $adminEmail)
+                ];
             });
             respond($result);
             break;

@@ -636,6 +636,26 @@
                     </div>
 
                     <div id="studentGridContainer" class="hidden grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5 sm:gap-4"></div>
+
+                    <!-- Kontrol Per Komputer (VS Code Standalone & Override Hostname) -->
+                    <div id="ideStandalonePanel" class="card-surface rounded-xl p-4 shadow-xs border border-slate-200/80 space-y-3">
+                        <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
+                                    <h3 class="text-xs sm:text-sm font-semibold text-slate-900">Kontrol AI Chat & Ekstensi Per Komputer</h3>
+                                </div>
+                                <p class="text-[11px] text-slate-500 mt-0.5">Atur izin AI Chat / Agent & Ekstensi VS Code secara terpisah per PC (berlaku untuk PC yang terdaftar di atas maupun VS Code mandiri tanpa ruangan).</p>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-1.5">
+                                <input type="text" id="customPcHostnameInput" onkeydown="if(event.key==='Enter') addCustomPcOverride('AI','UNLOCKED')" placeholder="Nama / Hostname PC (mis: LAB-01)" class="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-mono text-slate-800 w-52 focus:outline-none focus:ring-2 focus:ring-slate-900/10 uppercase">
+                                <button onclick="addCustomPcOverride('AI', 'UNLOCKED')" class="px-2.5 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-semibold transition whitespace-nowrap">+ Buka AI Chat</button>
+                                <button onclick="addCustomPcOverride('EXT', 'UNLOCKED')" class="px-2.5 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-semibold transition whitespace-nowrap">+ Buka Ekstensi</button>
+                                <button onclick="addCustomPcOverride('ALL', 'LOCKED')" class="px-2.5 py-1.5 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold transition whitespace-nowrap">+ Kunci Semua</button>
+                            </div>
+                        </div>
+                        <div id="ideOverridesList" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5"></div>
+                    </div>
                 </section>
 
                 <!-- VIEW 2: LOG AUDIT & INSIDEN -->
@@ -806,15 +826,26 @@
                                 </div>
                                 <div>
                                     <label class="block text-xs font-medium text-slate-700 mb-1.5">Email Login Pengawas</label>
-                                    <input type="text" id="cfgAdminEmail" autocomplete="off" readonly onfocus="this.removeAttribute('readonly')" placeholder="Kosongkan jika tidak diubah" class="w-full rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono font-medium text-slate-900 focus:border-slate-500 focus:outline-none" value="">
-                                </div>
-                                <div>
-                                    <label class="block text-xs font-medium text-slate-700 mb-1.5">Kata Sandi Login Dashboard</label>
-                                    <input type="text" id="cfgAdminPassword" autocomplete="off" readonly onfocus="this.removeAttribute('readonly')" style="-webkit-text-security: disc;" placeholder="Kosongkan jika tidak diubah" class="w-full rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono font-medium text-slate-900 focus:border-slate-500 focus:outline-none" value="">
+                                    <input type="text" id="cfgAdminEmail" autocomplete="off" readonly onfocus="this.removeAttribute('readonly')" placeholder="Kosongkan jika tetap" class="w-full rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono font-medium text-slate-900 focus:border-slate-500 focus:outline-none" value="">
                                 </div>
                                 <div class="sm:col-span-2 pt-2 border-t border-slate-100">
                                     <div class="flex items-center justify-between gap-2 mb-1.5">
-                                        <label class="block text-xs font-medium text-slate-700">Password Buka Kunci IDE (AI Chat & Ekstensi VS Code)</label>
+                                        <label class="block text-xs font-medium text-slate-700">Kata Sandi Login Panel Admin (Agar Tidak Pakai Template admin123)</label>
+                                        <span id="badgeAdminPassStatus" class="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-slate-100 text-slate-600 border border-slate-200">Default (admin123)</span>
+                                    </div>
+                                    <div class="flex flex-wrap sm:flex-nowrap items-center gap-2">
+                                        <input type="text" id="cfgAdminPassword" autocomplete="off" readonly onfocus="this.removeAttribute('readonly')" style="-webkit-text-security: disc;" placeholder="Masukkan kata sandi baru Panel Admin (min. 4 karakter)" class="min-w-0 flex-1 rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs font-mono font-medium text-slate-900 focus:border-slate-500 focus:outline-none" value="">
+                                        <button type="button" onclick="updateAdminPasswordQuick()" class="px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition shrink-0">Perbarui</button>
+                                        <button type="button" onclick="resetAdminPasswordDefault()" title="Kembalikan kata sandi login ke default server" class="px-2.5 py-2 rounded-lg bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-xs font-medium transition shrink-0">Reset</button>
+                                    </div>
+                                    <label class="inline-flex items-center gap-2 mt-1.5 text-[11px] text-slate-600 cursor-pointer select-none">
+                                        <input type="checkbox" id="chkSyncIdePassword" class="rounded border-slate-300 text-indigo-600" checked>
+                                        <span>Terapkan kata sandi baru ini juga untuk membuka kunci AI Chat &amp; Ekstensi di VS Code</span>
+                                    </label>
+                                </div>
+                                <div class="sm:col-span-2 pt-2 border-t border-slate-100">
+                                    <div class="flex items-center justify-between gap-2 mb-1.5">
+                                        <label class="block text-xs font-medium text-slate-700">Password Buka Kunci IDE (AI Chat &amp; Ekstensi VS Code)</label>
                                         <span id="badgeIdePassStatus" class="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-slate-100 text-slate-600 border border-slate-200">Default</span>
                                     </div>
                                     <div class="flex flex-wrap sm:flex-nowrap items-center gap-2">
@@ -822,7 +853,7 @@
                                         <button type="button" onclick="updateIdePasswordQuick()" class="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition shrink-0">Perbarui</button>
                                         <button type="button" onclick="resetIdePasswordDefault()" title="Kembalikan ke password default (admin123)" class="px-2.5 py-2 rounded-lg bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-xs font-medium transition shrink-0">Reset</button>
                                     </div>
-                                    <p class="text-[11px] text-slate-500 mt-1">Berlaku real-time di semua VS Code yang terhubung untuk membuka kunci AI Agent/Chat, Copilot Sign In, dan Ekstensi.</p>
+                                    <p class="text-[11px] text-slate-500 mt-1">Dikelola sepenuhnya dari Panel Admin ini — otomatis berlaku real-time di semua VS Code tanpa perlu diubah di VS Code.</p>
                                 </div>
                             </div>
 
@@ -1033,6 +1064,7 @@
                         <div id="modalJoined" class="font-mono font-medium text-slate-900 mt-0.5">-</div>
                     </div>
                 </div>
+                <div id="modalStudentIdeControls" class="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 space-y-2.5"></div>
                 <div>
                     <div class="font-semibold text-slate-800 mb-1.5">Daftar Proteksi & Ekstensi IDE yang Dikarantina:</div>
                     <div id="modalExtList" class="p-3 rounded-xl border border-slate-200 bg-slate-50 font-mono text-[11px] text-slate-700 max-h-36 overflow-y-auto space-y-1"></div>
@@ -1262,6 +1294,10 @@
         let cachedGlobalStatus = 'LOCKED';
         let cachedLockAi = true;
         let cachedLockExt = true;
+        let cachedPcOverrides = {};
+        let cachedIdeHosts = [];
+        let currentModalStudentId = '';
+        const recentLocalIdeModuleCmds = new Map();
         let blocklistLoaded = false;
         let pinVisible = false;
         let currentUnlockPin = '202699';
@@ -2042,6 +2078,27 @@
             }
         }
 
+        function escJsArg(v) {
+            return String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        }
+
+        function getEffectivePcModules(st) {
+            const upperHost = String(st?.hostname || '').trim().toUpperCase();
+            const override = (st?.id && cachedPcOverrides[st.id]) || (upperHost && cachedPcOverrides[upperHost]) || null;
+            const customAi = typeof st?.lock_ai === 'boolean'
+                ? st.lock_ai
+                : (override && typeof override.lock_ai === 'boolean' ? override.lock_ai : null);
+            const customExt = typeof st?.lock_extensions === 'boolean'
+                ? st.lock_extensions
+                : (override && typeof override.lock_extensions === 'boolean' ? override.lock_extensions : null);
+            return {
+                lockAi: customAi !== null ? customAi : cachedLockAi,
+                lockExt: customExt !== null ? customExt : cachedLockExt,
+                isCustomAi: customAi !== null,
+                isCustomExt: customExt !== null
+            };
+        }
+
         async function toggleIdeModule(module) {
             const isAi = module === 'AI';
             const currentLocked = isAi ? cachedLockAi : cachedLockExt;
@@ -2058,14 +2115,212 @@
                 if (data && data.ok) {
                     cachedLockAi = data.lock_ai !== undefined ? !!data.lock_ai : (targetStatus === 'LOCKED');
                     cachedLockExt = data.lock_extensions !== undefined ? !!data.lock_extensions : (targetStatus === 'LOCKED');
+                    if (data.pc_overrides && !Array.isArray(data.pc_overrides)) {
+                        cachedPcOverrides = data.pc_overrides;
+                    } else {
+                        for (const [k, ov] of Object.entries(cachedPcOverrides)) {
+                            if (!ov || typeof ov !== 'object') continue;
+                            if (module === 'AI' || module === 'ALL') ov.lock_ai = null;
+                            if (module === 'EXT' || module === 'ALL') ov.lock_extensions = null;
+                            if ((ov.lock_ai ?? null) === null && (ov.lock_extensions ?? null) === null) delete cachedPcOverrides[k];
+                        }
+                    }
+                    cachedStudents.forEach(st => {
+                        if (module === 'AI' || module === 'ALL') st.lock_ai = null;
+                        if (module === 'EXT' || module === 'ALL') st.lock_extensions = null;
+                    });
+                    for (const entry of knownStudentsCache.values()) {
+                        if (module === 'AI' || module === 'ALL') entry.student.lock_ai = null;
+                        if (module === 'EXT' || module === 'ALL') entry.student.lock_extensions = null;
+                    }
                     updateIdeModuleButtons();
-                    showToast(`${moduleName} di VS Code berhasil ${targetStatus === 'LOCKED' ? 'DIKUNCI' : 'DIBUKA'}!`);
+                    renderCurrentStudents();
+                    renderIdeOverridesPanel();
+                    await syncStateToFirebaseIfAvailable();
+                    showToast(`${moduleName} di VS Code (Semua PC) berhasil ${targetStatus === 'LOCKED' ? 'DIKUNCI' : 'DIBUKA'}!`);
                 } else {
                     showToast('Gagal mengubah status: ' + (data.error || 'Unknown error'), 'error');
                 }
             } catch (e) {
                 showToast('Koneksi ke server gagal saat mengubah status modul IDE.', 'error');
             }
+        }
+
+        async function toggleStudentIdeModule(studentId, hostname, module, nextStatus) {
+            const upperHost = String(hostname || '').trim().toUpperCase();
+            const overrideKey = upperHost || studentId;
+            const modUp = String(module || 'ALL').trim().toUpperCase();
+            const stUp = String(nextStatus || 'LOCKED').trim().toUpperCase();
+            if (!overrideKey) return;
+
+            if (modUp !== 'REMOVE') {
+                const val = stUp === 'INHERIT' ? null : (stUp === 'LOCKED');
+                recentLocalIdeModuleCmds.set(overrideKey, { ts: Date.now() });
+                if (studentId) recentLocalIdeModuleCmds.set(studentId, { ts: Date.now() });
+
+                const cur = (cachedPcOverrides[overrideKey] && typeof cachedPcOverrides[overrideKey] === 'object')
+                    ? { ...cachedPcOverrides[overrideKey] }
+                    : { lock_ai: null, lock_extensions: null };
+                if (modUp === 'AI' || modUp === 'ALL') cur.lock_ai = val;
+                if (modUp === 'EXT' || modUp === 'ALL') cur.lock_extensions = val;
+                if ((cur.lock_ai ?? null) === null && (cur.lock_extensions ?? null) === null) {
+                    delete cachedPcOverrides[overrideKey];
+                } else {
+                    cachedPcOverrides[overrideKey] = cur;
+                }
+
+                const applyLocalStudent = (st) => {
+                    if (!st) return;
+                    const sHost = String(st.hostname || '').trim().toUpperCase();
+                    if ((studentId && st.id === studentId) || (upperHost && sHost === upperHost)) {
+                        if (modUp === 'AI' || modUp === 'ALL') st.lock_ai = val;
+                        if (modUp === 'EXT' || modUp === 'ALL') st.lock_extensions = val;
+                    }
+                };
+                cachedStudents.forEach(applyLocalStudent);
+                for (const entry of knownStudentsCache.values()) applyLocalStudent(entry.student);
+                renderCurrentStudents();
+                renderIdeOverridesPanel();
+                if (currentModalStudentId && !document.getElementById('studentModal')?.classList.contains('hidden')) {
+                    openStudentModal(currentModalStudentId);
+                }
+            }
+
+            try {
+                const res = await fetch('api/index.php?action=set_ide_module_status', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        student_id: studentId || '',
+                        hostname: upperHost,
+                        module: modUp,
+                        status: modUp === 'REMOVE' ? 'INHERIT' : stUp
+                    })
+                });
+                const data = await res.json();
+                if (data && data.ok) {
+                    if (data.pc_overrides && !Array.isArray(data.pc_overrides)) {
+                        cachedPcOverrides = data.pc_overrides;
+                    }
+                    if (Array.isArray(data.ide_hosts)) {
+                        cachedIdeHosts = data.ide_hosts;
+                    }
+                    if (modUp === 'REMOVE') {
+                        delete cachedPcOverrides[overrideKey];
+                        if (studentId) delete cachedPcOverrides[studentId];
+                        cachedIdeHosts = cachedIdeHosts.filter(ih => String(ih?.h || '').trim().toUpperCase() !== upperHost);
+                        cachedStudents.forEach(st => {
+                            if ((studentId && st.id === studentId) || (upperHost && String(st.hostname || '').toUpperCase() === upperHost)) {
+                                st.lock_ai = null;
+                                st.lock_extensions = null;
+                            }
+                        });
+                    }
+                    renderCurrentStudents();
+                    renderIdeOverridesPanel();
+                    if (currentModalStudentId && !document.getElementById('studentModal')?.classList.contains('hidden')) {
+                        openStudentModal(currentModalStudentId);
+                    }
+                    await syncStateToFirebaseIfAvailable();
+                    const pcLabel = upperHost || studentId;
+                    if (modUp === 'REMOVE') {
+                        showToast(`Aturan khusus PC [${pcLabel}] dihapus (kembali mengikuti Global).`);
+                    } else if (stUp === 'INHERIT') {
+                        showToast(`PC [${pcLabel}] diatur mengikuti aturan Global.`);
+                    } else {
+                        const modName = modUp === 'AI' ? 'AI Chat' : (modUp === 'EXT' ? 'Ekstensi IDE' : 'AI Chat & Ekstensi');
+                        showToast(`${modName} pada PC [${pcLabel}] ${stUp === 'LOCKED' ? 'DIKUNCI' : 'DIBUKA'}!`);
+                    }
+                } else {
+                    showToast('Gagal mengubah status PC: ' + (data?.error || 'Unknown error'), true);
+                    fetchDashboard();
+                }
+            } catch (e) {
+                showToast('Koneksi gagal saat menyimpan aturan per komputer.', true);
+            }
+        }
+
+        async function addCustomPcOverride(module, nextStatus) {
+            const inp = document.getElementById('customPcHostnameInput');
+            const raw = (inp?.value || '').trim().toUpperCase();
+            if (!raw) {
+                showToast('Masukkan Hostname PC terlebih dahulu (mis. LAB-01 atau DESKTOP-ABC).', true);
+                inp?.focus();
+                return;
+            }
+            if (inp) inp.value = '';
+            if (!cachedIdeHosts.some(ih => String(ih?.h || '').toUpperCase() === raw)) {
+                cachedIdeHosts.unshift({ h: raw, id: '', ip: '', ls: Math.floor(Date.now() / 1000) });
+            }
+            await toggleStudentIdeModule('', raw, module, nextStatus);
+        }
+
+        function renderIdeOverridesPanel() {
+            const box = document.getElementById('ideOverridesList');
+            if (!box) return;
+
+            const studentHosts = new Set(cachedStudents.map(st => String(st.hostname || '').trim().toUpperCase()).filter(Boolean));
+            const studentIds = new Set(cachedStudents.map(st => st.id).filter(Boolean));
+            const nowSec = Math.floor(Date.now() / 1000);
+            const entriesMap = new Map();
+
+            (cachedIdeHosts || []).forEach(ih => {
+                const h = String(ih?.h || '').trim().toUpperCase();
+                if (!h || studentHosts.has(h)) return;
+                entriesMap.set(h, {
+                    key: h,
+                    hostname: h,
+                    ip: ih.ip || '',
+                    lastSeen: ih.ls || 0,
+                    isOnline: Boolean(ih.ls && (nowSec - ih.ls) <= 120)
+                });
+            });
+
+            Object.entries(cachedPcOverrides || {}).forEach(([k, ov]) => {
+                const keyUp = String(k || '').trim().toUpperCase();
+                if (!keyUp || studentHosts.has(keyUp) || studentIds.has(k) || !ov || typeof ov !== 'object') return;
+                if (typeof ov.lock_ai !== 'boolean' && typeof ov.lock_extensions !== 'boolean') return;
+                if (!entriesMap.has(keyUp)) {
+                    entriesMap.set(keyUp, { key: keyUp, hostname: keyUp, ip: '', lastSeen: 0, isOnline: false });
+                }
+            });
+
+            const items = Array.from(entriesMap.values());
+            if (!items.length) {
+                box.innerHTML = `<div class="col-span-full text-[11px] text-slate-400 bg-slate-50/70 border border-dashed border-slate-200 rounded-lg px-3 py-2.5">Semua VS Code yang masuk ruangan akan muncul di tabel/kartu atas dengan tombol kontrol per PC. Anda juga dapat menambahkan Hostname PC secara manual lewat form di atas meskipun belum ada ruangan.</div>`;
+                return;
+            }
+
+            box.innerHTML = items.map(item => {
+                const ov = cachedPcOverrides[item.key] || {};
+                const effAi = typeof ov.lock_ai === 'boolean' ? ov.lock_ai : cachedLockAi;
+                const effExt = typeof ov.lock_extensions === 'boolean' ? ov.lock_extensions : cachedLockExt;
+                const nextAi = effAi ? 'UNLOCKED' : 'LOCKED';
+                const nextExt = effExt ? 'UNLOCKED' : 'LOCKED';
+                const jsHost = escapeHtml(escJsArg(item.hostname));
+                return `
+                    <div class="p-3 rounded-xl border border-slate-200 bg-white flex flex-col gap-2 shadow-2xs">
+                        <div class="flex items-center justify-between gap-2">
+                            <div class="flex items-center gap-2 min-w-0">
+                                <span class="w-2 h-2 rounded-full shrink-0 ${item.isOnline ? 'bg-emerald-500' : 'bg-slate-300'}"></span>
+                                <span class="font-mono text-xs font-bold text-slate-900 truncate">${escapeHtml(item.hostname)}</span>
+                                ${item.ip ? `<span class="text-[10px] font-mono text-slate-400 shrink-0">${escapeHtml(item.ip)}</span>` : ''}
+                            </div>
+                            <button onclick="toggleStudentIdeModule('', '${jsHost}', 'REMOVE', 'INHERIT')" class="text-[11px] text-slate-400 hover:text-rose-600 px-1.5 py-0.5 rounded hover:bg-rose-50 transition shrink-0" title="Hapus aturan PC ini">✕</button>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-1.5">
+                            <button onclick="toggleStudentIdeModule('', '${jsHost}', 'AI', '${nextAi}')" class="flex-1 px-2 py-1 rounded-lg border text-[11px] font-semibold transition flex items-center justify-between gap-1 ${effAi ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100' : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'}">
+                                <span>AI Chat</span>
+                                <span class="font-bold">${effAi ? 'TERKUNCI' : 'TERBUKA'}</span>
+                            </button>
+                            <button onclick="toggleStudentIdeModule('', '${jsHost}', 'EXT', '${nextExt}')" class="flex-1 px-2 py-1 rounded-lg border text-[11px] font-semibold transition flex items-center justify-between gap-1 ${effExt ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100' : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'}">
+                                <span>Ekstensi</span>
+                                <span class="font-bold">${effExt ? 'TERKUNCI' : 'TERBUKA'}</span>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
         }
 
         function updateScopedStats() {
@@ -2124,6 +2379,8 @@
                         global_status: cachedGlobalStatus,
                         lock_ai: cachedLockAi,
                         lock_extensions: cachedLockExt,
+                        pc_overrides: cachedPcOverrides,
+                        ide_hosts: cachedIdeHosts,
                         blocklist_customized: true
                     },
                     blocklist: blocklistObj
@@ -2143,7 +2400,40 @@
                 cachedGlobalStatus = data.config.global_status || 'LOCKED';
                 cachedLockAi = data.config.lock_ai !== undefined ? !!data.config.lock_ai : (cachedGlobalStatus === 'LOCKED');
                 cachedLockExt = data.config.lock_extensions !== undefined ? !!data.config.lock_extensions : (cachedGlobalStatus === 'LOCKED');
+                if (data.config.pc_overrides && typeof data.config.pc_overrides === 'object' && !Array.isArray(data.config.pc_overrides)) {
+                    const serverPco = data.config.pc_overrides;
+                    const nowSync = Date.now();
+                    for (const [k, cmd] of recentLocalIdeModuleCmds.entries()) {
+                        if (nowSync - cmd.ts > 10000) {
+                            recentLocalIdeModuleCmds.delete(k);
+                        }
+                    }
+                    const nextPco = { ...serverPco };
+                    for (const k of recentLocalIdeModuleCmds.keys()) {
+                        if (cachedPcOverrides[k]) {
+                            nextPco[k] = cachedPcOverrides[k];
+                        } else {
+                            delete nextPco[k];
+                        }
+                    }
+                    cachedPcOverrides = nextPco;
+                } else {
+                    cachedPcOverrides = {};
+                }
+                cachedIdeHosts = Array.isArray(data.config.ide_hosts) ? data.config.ide_hosts : [];
                 updateIdeModuleButtons();
+                const adminPassBadge = document.getElementById('badgeAdminPassStatus');
+                if (adminPassBadge) {
+                    const isCustomAdminPass = Boolean(data.config.has_custom_admin_password);
+                    adminPassBadge.textContent = isCustomAdminPass ? 'Custom Aktif' : 'Default (admin123)';
+                    adminPassBadge.className = isCustomAdminPass
+                        ? 'px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        : 'px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-slate-100 text-slate-600 border border-slate-200';
+                }
+                const cfgAdminEmailEl = document.getElementById('cfgAdminEmail');
+                if (cfgAdminEmailEl && data.config.admin_email_effective) {
+                    cfgAdminEmailEl.placeholder = `Aktif: ${data.config.admin_email_effective} (kosongkan jika tetap)`;
+                }
                 const idePassBadge = document.getElementById('badgeIdePassStatus');
                 if (idePassBadge) {
                     const isCustomIdePass = Boolean(data.config.ide_password_hash && String(data.config.ide_password_hash).length > 0);
@@ -2189,6 +2479,17 @@
                     if (recentCmd && (nowMs - recentCmd.ts) < 12000) {
                         st.status = recentCmd.status;
                         st.target_status = recentCmd.status;
+                    }
+                    const upperHost = String(st.hostname || '').trim().toUpperCase();
+                    if (recentLocalIdeModuleCmds.has(st.id) || (upperHost && recentLocalIdeModuleCmds.has(upperHost))) {
+                        const ov = cachedPcOverrides[upperHost] || cachedPcOverrides[st.id];
+                        if (ov) {
+                            st.lock_ai = ov.lock_ai ?? null;
+                            st.lock_extensions = ov.lock_extensions ?? null;
+                        } else {
+                            st.lock_ai = null;
+                            st.lock_extensions = null;
+                        }
                     }
                     incomingIds.add(st.id);
                     knownStudentsCache.set(st.id, {
@@ -2246,7 +2547,9 @@
                                 unlock_pin: currentUnlockPin,
                                 global_status: cachedGlobalStatus,
                                 lock_ai: cachedLockAi,
-                                lock_extensions: cachedLockExt
+                                lock_extensions: cachedLockExt,
+                                pc_overrides: cachedPcOverrides,
+                                ide_hosts: cachedIdeHosts
                             },
                             students: missingActiveForRehydrate
                         })
@@ -2265,6 +2568,7 @@
                 updateHeaderStatusUI();
                 updateScopedStats();
                 renderCurrentStudents();
+                renderIdeOverridesPanel();
                 renderLogs(cachedLogs);
                 renderRoomsManager();
             } catch (e) {
@@ -2362,6 +2666,7 @@
 
                 tbody.innerHTML = `<tr><td colspan="8" class="p-0">${emptyStateHtml}</td></tr>`;
                 grid.innerHTML = `<div class="col-span-full card-surface rounded-2xl">${emptyStateHtml}</div>`;
+                renderIdeOverridesPanel();
                 return;
             }
 
@@ -2399,15 +2704,32 @@
                 }
 
                 const extCount = st.quarantined_count || 0;
+                const { lockAi, lockExt, isCustomAi, isCustomExt } = getEffectivePcModules(st);
+                const jsId = escapeHtml(escJsArg(st.id));
+                const jsHost = escapeHtml(escJsArg(st.hostname || ''));
+                const nextAi = lockAi ? 'UNLOCKED' : 'LOCKED';
+                const nextExt = lockExt ? 'UNLOCKED' : 'LOCKED';
                 const extSummary = extCount > 0
-                    ? `<button onclick="openStudentModal('${escapeHtml(st.id)}')" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50/90 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 font-mono text-[11px] font-semibold transition shadow-2xs" title="Proteksi Aktif: ${extCount} modul/fitur AI diamankan & dikarantina. Klik untuk melihat detail.">
-                        <svg class="w-3.5 h-3.5 text-indigo-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14.25 9.75L16.5 12l-2.25 2.25m-4.5 0L7.5 12l2.25-2.25M6 20.25h12A2.25 2.25 0 0020.25 18V6A2.25 2.25 0 0018 3.75H6A2.25 2.25 0 003.75 6v12A2.25 2.25 0 006 20.25z"/></svg>
-                        <span>${extCount} modul dikunci</span>
+                    ? `<button onclick="openStudentModal('${jsId}')" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-indigo-50/90 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 font-mono text-[10px] font-semibold transition shadow-2xs" title="Proteksi Aktif: ${extCount} modul/fitur AI diamankan & dikarantina. Klik untuk melihat detail.">
+                        <svg class="w-3 h-3 text-indigo-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14.25 9.75L16.5 12l-2.25 2.25m-4.5 0L7.5 12l2.25-2.25M6 20.25h12A2.25 2.25 0 0020.25 18V6A2.25 2.25 0 0018 3.75H6A2.25 2.25 0 003.75 6v12A2.25 2.25 0 006 20.25z"/></svg>
+                        <span>${extCount} modul</span>
                       </button>`
-                    : `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200/80 font-medium text-[11px]" title="Proteksi IDE Aktif: Tidak ditemukan ekstensi/modul AI terlarang pada perangkat ini">
-                        <svg class="w-3.5 h-3.5 text-emerald-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
-                        <span>Bersih (0 AI)</span>
+                    : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-200 font-medium text-[10px]">
+                        <span>${st.os_info === 'VS Code IDE' ? 'VS Code IDE' : '0 modul'}</span>
                       </span>`;
+                const idePerPcButtons = `
+                    <div class="flex flex-col gap-1">
+                        <div>${extSummary}</div>
+                        <div class="flex items-center gap-1 flex-wrap">
+                            <button onclick="toggleStudentIdeModule('${jsId}', '${jsHost}', 'AI', '${nextAi}')" class="px-2 py-0.5 rounded-md border text-[10px] font-semibold transition whitespace-nowrap ${lockAi ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100' : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'}" title="Klik untuk ${lockAi ? 'membuka' : 'mengunci'} AI Chat khusus komputer ${escapeHtml(st.hostname)}">
+                                AI: ${lockAi ? 'Terkunci' : 'Terbuka'}${isCustomAi ? '*' : ''}
+                            </button>
+                            <button onclick="toggleStudentIdeModule('${jsId}', '${jsHost}', 'EXT', '${nextExt}')" class="px-2 py-0.5 rounded-md border text-[10px] font-semibold transition whitespace-nowrap ${lockExt ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100' : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'}" title="Klik untuk ${lockExt ? 'membuka' : 'mengunci'} Ekstensi khusus komputer ${escapeHtml(st.hostname)}">
+                                Ext: ${lockExt ? 'Terkunci' : 'Terbuka'}${isCustomExt ? '*' : ''}
+                            </button>
+                        </div>
+                    </div>
+                `;
 
                 const incidents = st.killed_processes_count || 0;
                 const incidentCell = incidents > 0
@@ -2459,7 +2781,7 @@
                         </td>
                         <td class="py-3 px-3">${connBadge}</td>
                         <td class="py-3 px-3">${stateBadge}</td>
-                        <td class="py-3 px-3">${extSummary}</td>
+                        <td class="py-3 px-3">${idePerPcButtons}</td>
                         <td class="py-3 px-3">${incidentCell}</td>
                         <td class="py-3 px-4 text-right whitespace-nowrap">
                             <div class="inline-flex items-center gap-1 rounded-xl bg-slate-100 p-0.5 border border-slate-200/70 shadow-2xs">
@@ -2490,6 +2812,11 @@
                 const isLocked = st.status === 'LOCKED';
                 const incidents = st.killed_processes_count || 0;
                 const extCount = st.quarantined_count || 0;
+                const { lockAi, lockExt, isCustomAi, isCustomExt } = getEffectivePcModules(st);
+                const jsId = escapeHtml(escJsArg(st.id));
+                const jsHost = escapeHtml(escJsArg(st.hostname || ''));
+                const nextAi = lockAi ? 'UNLOCKED' : 'LOCKED';
+                const nextExt = lockExt ? 'UNLOCKED' : 'LOCKED';
 
                 return `
                     <div class="card-surface rounded-2xl p-4 flex flex-col justify-between border-t-4 ${isLocked ? 'border-t-emerald-600' : 'border-t-amber-500'} hover:shadow-lg transition">
@@ -2538,19 +2865,32 @@
                                     <span class="font-mono text-[11px] ${incidents > 0 ? 'text-rose-600 font-bold' : 'text-slate-500'}">${incidents > 0 ? incidents + 'x dicegat' : '0'}</span>
                                 </div>
                             </div>
+
+                            <!-- Kontrol AI Chat & Ekstensi Per Komputer -->
+                            <div class="mt-2.5 grid grid-cols-2 gap-1.5">
+                                <button onclick="toggleStudentIdeModule('${jsId}', '${jsHost}', 'AI', '${nextAi}')" class="px-2 py-1.5 rounded-lg border text-[11px] font-semibold transition flex items-center justify-between gap-1 ${lockAi ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100' : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'}" title="Toggle AI Chat khusus komputer ${escapeHtml(st.hostname)}">
+                                    <span>AI Chat</span>
+                                    <span class="font-bold">${lockAi ? 'KUNCI' : 'BUKA'}${isCustomAi ? '*' : ''}</span>
+                                </button>
+                                <button onclick="toggleStudentIdeModule('${jsId}', '${jsHost}', 'EXT', '${nextExt}')" class="px-2 py-1.5 rounded-lg border text-[11px] font-semibold transition flex items-center justify-between gap-1 ${lockExt ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100' : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'}" title="Toggle Ekstensi khusus komputer ${escapeHtml(st.hostname)}">
+                                    <span>Ekstensi</span>
+                                    <span class="font-bold">${lockExt ? 'KUNCI' : 'BUKA'}${isCustomExt ? '*' : ''}</span>
+                                </button>
+                            </div>
                         </div>
 
                         <!-- Node Actions -->
                         <div class="mt-4 pt-3 border-t border-slate-100 flex items-center gap-1.5">
-                            <button onclick="sendStudentCmd('${escapeHtml(st.id)}', 'LOCKED')" class="btn-tactile flex-1 py-1.5 rounded-xl font-bold text-xs transition ${isLocked ? 'bg-slate-900 text-white shadow-xs' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}">Kunci</button>
-                            <button onclick="sendStudentCmd('${escapeHtml(st.id)}', 'UNLOCKED')" class="btn-tactile flex-1 py-1.5 rounded-xl font-bold text-xs transition ${!isLocked ? 'bg-amber-600 text-white shadow-xs' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}">Buka</button>
-                            <button onclick="openStudentModal('${escapeHtml(st.id)}')" class="btn-tactile p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600" title="Detail Perangkat">
+                            <button onclick="sendStudentCmd('${jsId}', 'LOCKED')" class="btn-tactile flex-1 py-1.5 rounded-xl font-bold text-xs transition ${isLocked ? 'bg-slate-900 text-white shadow-xs' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}">Kunci</button>
+                            <button onclick="sendStudentCmd('${jsId}', 'UNLOCKED')" class="btn-tactile flex-1 py-1.5 rounded-xl font-bold text-xs transition ${!isLocked ? 'bg-amber-600 text-white shadow-xs' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}">Buka</button>
+                            <button onclick="openStudentModal('${jsId}')" class="btn-tactile p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600" title="Detail Perangkat">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/></svg>
                             </button>
                         </div>
                     </div>
                 `;
             }).join('');
+            renderIdeOverridesPanel();
         }
 
         function renderRoomsManager() {
@@ -2610,10 +2950,39 @@
         function openStudentModal(studentId) {
             const st = cachedStudents.find(x => x.id === studentId);
             if (!st) return;
+            currentModalStudentId = st.id;
             document.getElementById('modalStudentName').textContent = `${st.name} (${st.nim}) — [${st.room_code || currentRoomCode}]`;
             document.getElementById('modalStudentSub').textContent = `${st.hostname} · ${st.ip || '127.0.0.1'}`;
             document.getElementById('modalOs').textContent = st.os_info || 'Windows 10/11';
             document.getElementById('modalJoined').textContent = st.joined_at || '-';
+
+            const modalCtrl = document.getElementById('modalStudentIdeControls');
+            if (modalCtrl) {
+                const { lockAi, lockExt, isCustomAi, isCustomExt } = getEffectivePcModules(st);
+                const jsId = escapeHtml(escJsArg(st.id));
+                const jsHost = escapeHtml(escJsArg(st.hostname || ''));
+                const nextAi = lockAi ? 'UNLOCKED' : 'LOCKED';
+                const nextExt = lockExt ? 'UNLOCKED' : 'LOCKED';
+                modalCtrl.innerHTML = `
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                            <div class="font-semibold text-slate-800">Kontrol AI Chat & Ekstensi Khusus Komputer Ini</div>
+                            <div class="text-[11px] text-slate-500">Hanya berlaku untuk <span class="font-mono font-semibold text-slate-700">${escapeHtml(st.hostname || st.id)}</span> tanpa membuka/mengunci PC lain.</div>
+                        </div>
+                        ${(isCustomAi || isCustomExt) ? `<button onclick="toggleStudentIdeModule('${jsId}', '${jsHost}', 'ALL', 'INHERIT')" class="px-2.5 py-1 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-[11px] font-semibold transition">Ikut Aturan Global</button>` : ''}
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <button onclick="toggleStudentIdeModule('${jsId}', '${jsHost}', 'AI', '${nextAi}')" class="px-3 py-2 rounded-xl border text-xs font-semibold transition flex items-center justify-between gap-2 ${lockAi ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100' : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'}">
+                            <span>AI Chat / Agent ${isCustomAi ? '<span class="text-[10px] opacity-75">(Khusus)</span>' : '<span class="text-[10px] opacity-75">(Global)</span>'}</span>
+                            <span class="font-bold">${lockAi ? 'TERKUNCI' : 'TERBUKA'}</span>
+                        </button>
+                        <button onclick="toggleStudentIdeModule('${jsId}', '${jsHost}', 'EXT', '${nextExt}')" class="px-3 py-2 rounded-xl border text-xs font-semibold transition flex items-center justify-between gap-2 ${lockExt ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100' : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'}">
+                            <span>Ekstensi IDE ${isCustomExt ? '<span class="text-[10px] opacity-75">(Khusus)</span>' : '<span class="text-[10px] opacity-75">(Global)</span>'}</span>
+                            <span class="font-bold">${lockExt ? 'TERKUNCI' : 'TERBUKA'}</span>
+                        </button>
+                    </div>
+                `;
+            }
 
             const box = document.getElementById('modalExtList');
             if (st.quarantined_list && st.quarantined_list.length) {
@@ -2669,6 +3038,7 @@
         }
 
         function closeStudentModal() {
+            currentModalStudentId = '';
             document.getElementById('studentModal').classList.add('hidden');
         }
 
@@ -2938,16 +3308,26 @@
                 recentLocalStudentCommands.delete(student_id);
                 setTimeout(() => explicitlyRemovedStudentIds.delete(student_id), 25000);
             } else if (['LOCKED', 'UNLOCKED'].includes(command)) {
+                const isCmdLocked = command === 'LOCKED';
                 recentLocalStudentCommands.set(student_id, { status: command, ts: Date.now() });
                 if (knownStudentsCache.has(student_id)) {
                     const entry = knownStudentsCache.get(student_id);
                     entry.student.status = command;
                     entry.student.target_status = command;
+                    entry.student.lock_ai = isCmdLocked;
+                    entry.student.lock_extensions = isCmdLocked;
                 }
                 const localSt = cachedStudents.find(s => s.id === student_id);
                 if (localSt) {
                     localSt.status = command;
                     localSt.target_status = command;
+                    localSt.lock_ai = isCmdLocked;
+                    localSt.lock_extensions = isCmdLocked;
+                    const hKey = String(localSt.hostname || '').trim().toUpperCase();
+                    if (hKey) {
+                        recentLocalIdeModuleCmds.set(hKey, { ts: Date.now() });
+                        cachedPcOverrides[hKey] = { lock_ai: isCmdLocked, lock_extensions: isCmdLocked };
+                    }
                 }
                 renderCurrentStudents();
             }
@@ -2964,6 +3344,77 @@
                     showToast('Perintah berhasil dikirim ke perangkat peserta');
                 }
                 fetchDashboard();
+            }
+        }
+
+        async function updateAdminPasswordQuick() {
+            const inp = document.getElementById('cfgAdminPassword');
+            const emailInp = document.getElementById('cfgAdminEmail');
+            const newPass = (inp?.value || '').trim();
+            const newEmail = (emailInp?.value || '').trim();
+            const syncIde = Boolean(document.getElementById('chkSyncIdePassword')?.checked);
+
+            if (!newPass && !newEmail) {
+                showToast('Masukkan kata sandi baru atau email pengawas baru.', 'error');
+                inp?.focus();
+                return;
+            }
+            if (newPass && newPass.length < 4) {
+                showToast('Kata sandi login dashboard minimal 4 karakter.', 'error');
+                return;
+            }
+
+            const payload = { sync_ide_password: syncIde };
+            if (newPass) payload.new_password = newPass;
+            if (newEmail) payload.admin_email = newEmail;
+
+            const res = await fetch('api/index.php?action=set_admin_password', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (data && data.ok) {
+                if (inp) inp.value = '';
+                if (emailInp) emailInp.value = '';
+                if (data.token && data.admin_email_effective) {
+                    sessionStorage.setItem('guard_admin_auth', data.admin_email_effective);
+                    sessionStorage.setItem('guard_admin_token', data.token);
+                    const emailEl = document.getElementById('sidebarAdminEmail');
+                    if (emailEl) emailEl.textContent = data.admin_email_effective;
+                    const mobEmailEl = document.getElementById('mobDrawerAdminEmail');
+                    if (mobEmailEl) mobEmailEl.textContent = data.admin_email_effective;
+                }
+                showToast(syncIde && newPass
+                    ? 'Kata sandi Panel Admin & Buka Kunci VS Code berhasil diperbarui!'
+                    : 'Kredensial Login Panel Admin berhasil diperbarui!');
+                fetchDashboard();
+            } else {
+                showToast('Gagal memperbarui kata sandi Panel Admin: ' + (data?.error || 'Unknown error'), 'error');
+            }
+        }
+
+        async function resetAdminPasswordDefault() {
+            const syncIde = Boolean(document.getElementById('chkSyncIdePassword')?.checked);
+            const res = await fetch('api/index.php?action=set_admin_password', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ reset_default: true, sync_ide_password: syncIde })
+            });
+            const data = await res.json();
+            if (data && data.ok) {
+                const inp = document.getElementById('cfgAdminPassword');
+                if (inp) inp.value = '';
+                if (data.token && data.admin_email_effective) {
+                    sessionStorage.setItem('guard_admin_auth', data.admin_email_effective);
+                    sessionStorage.setItem('guard_admin_token', data.token);
+                }
+                showToast(syncIde
+                    ? 'Kata sandi Panel Admin & IDE dikembalikan ke default server.'
+                    : 'Kata sandi login Panel Admin dikembalikan ke default server.');
+                fetchDashboard();
+            } else {
+                showToast('Gagal mereset kata sandi Panel Admin: ' + (data?.error || 'Unknown error'), 'error');
             }
         }
 
@@ -3008,9 +3459,19 @@
 
         async function saveConfig() {
             const idePassEl = document.getElementById('cfgIdeUnlockPassword');
+            const adminPassEl = document.getElementById('cfgAdminPassword');
+            const adminEmailEl = document.getElementById('cfgAdminEmail');
             const rawIdePass = (idePassEl?.value || '').trim();
+            const rawAdminPass = (adminPassEl?.value || '').trim();
+            const rawAdminEmail = (adminEmailEl?.value || '').trim();
+            const syncIde = Boolean(document.getElementById('chkSyncIdePassword')?.checked);
+
             if (rawIdePass.length > 0 && rawIdePass.length < 4) {
                 showToast('Password buka kunci IDE minimal 4 karakter.', 'error');
+                return;
+            }
+            if (rawAdminPass.length > 0 && rawAdminPass.length < 4) {
+                showToast('Kata sandi login dashboard minimal 4 karakter.', 'error');
                 return;
             }
             const payload = {
@@ -3020,6 +3481,15 @@
                 kill_processes: document.getElementById('cfgKillProcs').checked,
                 block_vpn: document.getElementById('cfgBlockVpn').checked
             };
+            if (rawAdminEmail.length > 0) {
+                payload.admin_email = rawAdminEmail;
+            }
+            if (rawAdminPass.length >= 4) {
+                payload.admin_password = rawAdminPass;
+                if (syncIde && rawIdePass.length === 0) {
+                    payload.ide_password = rawAdminPass;
+                }
+            }
             if (rawIdePass.length >= 4) {
                 payload.ide_password = rawIdePass;
             }
@@ -3030,12 +3500,20 @@
             });
             const data = await res.json();
             if (data.ok) {
-                const passEl = document.getElementById('cfgAdminPassword');
-                if (passEl) passEl.value = '';
+                if (adminPassEl) adminPassEl.value = '';
+                if (adminEmailEl) adminEmailEl.value = '';
                 if (idePassEl) idePassEl.value = '';
+                if (data.token && data.config?.admin_email_effective) {
+                    sessionStorage.setItem('guard_admin_auth', data.config.admin_email_effective);
+                    sessionStorage.setItem('guard_admin_token', data.token);
+                    const emailEl = document.getElementById('sidebarAdminEmail');
+                    if (emailEl) emailEl.textContent = data.config.admin_email_effective;
+                    const mobEmailEl = document.getElementById('mobDrawerAdminEmail');
+                    if (mobEmailEl) mobEmailEl.textContent = data.config.admin_email_effective;
+                }
                 await syncStateToFirebaseIfAvailable(data.config, null);
-                showToast(rawIdePass.length >= 4
-                    ? 'Pengaturan & Password Buka Kunci IDE disimpan'
+                showToast((rawAdminPass.length >= 4 || rawIdePass.length >= 4 || rawAdminEmail.length > 0)
+                    ? 'Pengaturan & Kata Sandi Admin berhasil disimpan!'
                     : 'Pengaturan ruangan & modul proteksi disimpan');
                 fetchDashboard();
             } else {
