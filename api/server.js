@@ -95,6 +95,7 @@ function getDefaultSchema() {
             room_code: '',
             rooms: [],
             deleted_rooms: [],
+            deleted_students: {},
             room_statuses: {},
             room_pins: {},
             room_blocklists: {},
@@ -243,10 +244,46 @@ async function getFirebaseStoreToken() {
     return null;
 }
 
+function pruneDeletedStudentsMap(mapObj, nowSec = Math.floor(Date.now() / 1000)) {
+    if (!mapObj || typeof mapObj !== 'object' || Array.isArray(mapObj)) return {};
+    const entries = [];
+    for (const [id, rawTs] of Object.entries(mapObj)) {
+        const ts = Number(rawTs || 0);
+        if (id && Number.isFinite(ts) && ts > 0 && (nowSec - ts) <= 86400) {
+            entries.push([id, Math.floor(ts)]);
+        }
+    }
+    entries.sort((a, b) => b[1] - a[1]);
+    const out = {};
+    for (const [id, ts] of entries.slice(0, 60)) {
+        out[id] = ts;
+    }
+    return out;
+}
+
+function purgeDeletedStudents(data, nowSec = Math.floor(Date.now() / 1000)) {
+    if (!data || !data.config) return false;
+    const pruned = pruneDeletedStudentsMap(data.config.deleted_students, nowSec);
+    data.config.deleted_students = pruned;
+    if (!data.students || typeof data.students !== 'object') return false;
+    let changed = false;
+    for (const [id, delSec] of Object.entries(pruned)) {
+        const st = data.students[id];
+        if (st && Number(st.last_seen || 0) <= delSec) {
+            delete data.students[id];
+            changed = true;
+        }
+    }
+    return changed;
+}
+
 function packCloudPayload(data) {
     const nowSec = Math.floor(Date.now() / 1000);
+    const deletedStudentsCompact = pruneDeletedStudentsMap(data.config?.deleted_students, nowSec);
     const s = {};
     for (const [id, st] of Object.entries(data.students || {})) {
+        const delSec = Number(deletedStudentsCompact[id] || 0);
+        if (delSec > 0 && Number(st?.last_seen || 0) <= delSec) continue;
         if (st && (nowSec - (st.last_seen || 0)) <= 150) {
             // compact tuple: [nim, name, hostname, room, status, target_status, last_seen, q_cnt, k_cnt, vpn, cmd_ts, ip, lai, lex, cid, ide]
             s[id] = [
@@ -303,6 +340,7 @@ function packCloudPayload(data) {
             r: data.config.room_code || '',
             rs: data.config.rooms || [],
             dr: data.config.deleted_rooms || [],
+            ...(Object.keys(deletedStudentsCompact).length > 0 ? { ds: deletedStudentsCompact } : {}),
             rst: data.config.room_statuses || {},
             pin: data.config.room_pins || {},
             rbl: rbl,
@@ -335,6 +373,10 @@ function packCloudPayload(data) {
         }
         if (Array.isArray(compact.cfg.ih)) {
             compact.cfg.ih = compact.cfg.ih.slice(0, 6);
+        }
+        if (compact.cfg.ds && typeof compact.cfg.ds === 'object') {
+            const topDs = Object.entries(compact.cfg.ds).sort((a, b) => b[1] - a[1]).slice(0, 20);
+            compact.cfg.ds = Object.fromEntries(topDs);
         }
         encoded = zlib.deflateRawSync(Buffer.from(JSON.stringify(compact)), { level: 9 }).toString('base64url');
     }
@@ -414,6 +456,7 @@ function unpackCloudPayload(photoUrl) {
                     room_code: parsed.cfg.r || '',
                     rooms: parsed.cfg.rs || schema.config.rooms,
                     deleted_rooms: parsed.cfg.dr || [],
+                    deleted_students: (parsed.cfg.ds && typeof parsed.cfg.ds === 'object' && !Array.isArray(parsed.cfg.ds)) ? parsed.cfg.ds : {},
                     room_statuses: parsed.cfg.rst || {},
                     room_pins: parsed.cfg.pin || {},
                     room_blocklists: roomBlocklists,
@@ -522,9 +565,20 @@ async function readData(forceCloud = false) {
         lastCloudReadMs = now;
         const fbData = await readFromFirebase();
         if (fbData && fbData.config) {
+            const nowSec = Math.floor(now / 1000);
             if (!memoryStore) {
                 memoryStore = fbData;
             } else {
+                const localDeleted = memoryStore.config?.deleted_students || {};
+                const fbDeleted = fbData.config.deleted_students || {};
+                const mergedDeleted = { ...localDeleted };
+                for (const [id, ts] of Object.entries(fbDeleted)) {
+                    const numTs = Number(ts || 0);
+                    if (numTs > Number(mergedDeleted[id] || 0)) {
+                        mergedDeleted[id] = numTs;
+                    }
+                }
+
                 // Gabungkan konfigurasi terbaru & daftar mahasiswa aktif dari seluruh container
                 const fbTime = Date.parse(fbData.config.updated_at || 0) || 0;
                 const localTime = Date.parse(memoryStore.config?.updated_at || 0) || 0;
@@ -534,6 +588,7 @@ async function readData(forceCloud = false) {
                         memoryStore.blocklist = fbData.blocklist;
                     }
                 }
+
                 const mergedStudents = { ...(fbData.students || {}) };
                 for (const [id, localSt] of Object.entries(memoryStore.students || {})) {
                     const cloudSt = mergedStudents[id];
@@ -554,11 +609,19 @@ async function readData(forceCloud = false) {
                         };
                     }
                 }
+                for (const [id, st] of Object.entries(mergedStudents)) {
+                    const delSec = Number(mergedDeleted[id] || 0);
+                    if (delSec > 0 && Number(st?.last_seen || 0) > delSec) {
+                        delete mergedDeleted[id];
+                    }
+                }
+                memoryStore.config.deleted_students = pruneDeletedStudentsMap(mergedDeleted, nowSec);
                 memoryStore.students = mergedStudents;
                 if ((!memoryStore.logs || !memoryStore.logs.length) && Array.isArray(fbData.logs)) {
                     memoryStore.logs = fbData.logs;
                 }
             }
+            purgeDeletedStudents(memoryStore, nowSec);
             try {
                 fs.writeFileSync(TMP_DB_PATH, JSON.stringify(memoryStore, null, 2), 'utf8');
             } catch (e) {}
@@ -609,6 +672,9 @@ function ensureRoomsConfig(data) {
     }
     if (!Array.isArray(data.config.deleted_rooms)) {
         data.config.deleted_rooms = [];
+    }
+    if (!data.config.deleted_students || typeof data.config.deleted_students !== 'object' || Array.isArray(data.config.deleted_students)) {
+        data.config.deleted_students = {};
     }
     if (!data.config.room_statuses || typeof data.config.room_statuses !== 'object') {
         data.config.room_statuses = {};
@@ -881,6 +947,7 @@ module.exports = async (req, res) => {
         const data = await readData(isMutating);
         if (!data.students || Array.isArray(data.students)) data.students = {};
         ensureRoomsConfig(data);
+        purgeDeletedStudents(data);
 
         switch (action) {
 
@@ -888,14 +955,19 @@ module.exports = async (req, res) => {
             case 'sync_from_firebase': {
                 // Hanya rehydrate peserta aktif yang berada di ruangan resmi yang sudah dibuat Admin
                 if (Array.isArray(body.students)) {
+                    const delMap = data.config.deleted_students || {};
                     for (const st of body.students) {
                         const stRoom = String(st?.room_code || '').trim().toUpperCase();
                         if (st && st.id && stRoom && data.config.rooms.includes(stRoom) && !data.students[st.id]) {
-                            data.students[st.id] = st;
+                            const delSec = Number(delMap[st.id] || 0);
+                            if (!delSec || Number(st.last_seen || 0) > delSec) {
+                                data.students[st.id] = st;
+                            }
                         }
                     }
                 }
                 ensureRoomsConfig(data);
+                purgeDeletedStudents(data);
                 await writeData(data);
                 return res.status(200).json({ ok: true });
             }
@@ -920,9 +992,15 @@ module.exports = async (req, res) => {
                 const nowSec = Math.floor(Date.now() / 1000);
                 const matchedKey = findMatchingStudentKey(data, '', upperHost, clientId, '');
                 if (matchedKey) {
+                    let effectiveNow = nowSec;
+                    if (data.config.deleted_students && data.config.deleted_students[matchedKey]) {
+                        effectiveNow = Math.max(nowSec, Number(data.config.deleted_students[matchedKey] || 0) + 1);
+                        delete data.config.deleted_students[matchedKey];
+                        data.config.updated_at = new Date().toISOString();
+                    }
                     data.students[matchedKey].ide_connected = true;
-                    data.students[matchedKey].ide_last_seen = nowSec;
-                    data.students[matchedKey].last_seen = nowSec;
+                    data.students[matchedKey].ide_last_seen = effectiveNow;
+                    data.students[matchedKey].last_seen = effectiveNow;
                     data.students[matchedKey].last_seen_str = nowFormatted();
                     if (clientId) {
                         data.students[matchedKey].client_id = clientId;
@@ -934,6 +1012,12 @@ module.exports = async (req, res) => {
                 if (data.config.rooms.length > 0) {
                     const targetRoom = data.config.room_code || data.config.rooms[0];
                     const safeId = 'IDE_' + upperHost.replace(/[^A-Z0-9_-]/g, '_');
+                    let effectiveNow = nowSec;
+                    if (data.config.deleted_students && data.config.deleted_students[safeId]) {
+                        effectiveNow = Math.max(nowSec, Number(data.config.deleted_students[safeId] || 0) + 1);
+                        delete data.config.deleted_students[safeId];
+                        data.config.updated_at = new Date().toISOString();
+                    }
                     const roomStatus = data.config.room_statuses[targetRoom] || data.config.global_status || 'LOCKED';
                     const hostOverride = (data.config.pc_overrides && typeof data.config.pc_overrides[upperHost] === 'object')
                         ? data.config.pc_overrides[upperHost]
@@ -959,8 +1043,8 @@ module.exports = async (req, res) => {
                         vpn_detected: false,
                         joined_at: existing.joined_at || nowFormatted(),
                         ide_connected: true,
-                        ide_last_seen: nowSec,
-                        last_seen: nowSec,
+                        ide_last_seen: effectiveNow,
+                        last_seen: effectiveNow,
                         last_seen_str: nowFormatted()
                     };
                     await writeData(data);
@@ -1045,6 +1129,12 @@ module.exports = async (req, res) => {
                 const roomPin = data.config.room_pins[normalizedRoom] || '';
                 const effectiveBl = getEffectiveBlocklist(data, normalizedRoom);
                 const nowSec = Math.floor(Date.now() / 1000);
+                let effectiveNow = nowSec;
+                if (data.config.deleted_students && data.config.deleted_students[studentId]) {
+                    effectiveNow = Math.max(nowSec, Number(data.config.deleted_students[studentId] || 0) + 1);
+                    delete data.config.deleted_students[studentId];
+                    data.config.updated_at = new Date().toISOString();
+                }
                 const upperHost = hostname.toUpperCase();
                 const hostOverride = (upperHost && data.config.pc_overrides && typeof data.config.pc_overrides[upperHost] === 'object')
                     ? data.config.pc_overrides[upperHost]
@@ -1072,7 +1162,7 @@ module.exports = async (req, res) => {
                     pin_fail: existing?.pin_fail || 0,
                     pin_lock_until: existing?.pin_lock_until || 0,
                     joined_at: existing?.joined_at || nowFormatted(),
-                    last_seen: nowSec,
+                    last_seen: effectiveNow,
                     last_seen_str: nowFormatted()
                 };
 
@@ -1116,6 +1206,12 @@ module.exports = async (req, res) => {
                 const studentId = nim.replace(/[^a-zA-Z0-9_-]/g, '_');
                 const globalTarget = data.config.global_status || 'LOCKED';
                 const nowSec = Math.floor(Date.now() / 1000);
+                let effectiveNow = nowSec;
+                if (data.config.deleted_students && data.config.deleted_students[studentId]) {
+                    effectiveNow = Math.max(nowSec, Number(data.config.deleted_students[studentId] || 0) + 1);
+                    delete data.config.deleted_students[studentId];
+                    data.config.updated_at = new Date().toISOString();
+                }
                 const reqRoom = String(body.room_code || '').trim().toUpperCase();
 
                 // Ruangan harus terdaftar secara resmi di data.config.rooms yang dibuat mandiri oleh Admin
@@ -1173,7 +1269,7 @@ module.exports = async (req, res) => {
                 st.blocked_domains_count = (effectiveBl.domains || []).length;
                 st.killed_processes_count = killedCount;
                 st.vpn_detected = vpnDetected;
-                st.last_seen = nowSec;
+                st.last_seen = effectiveNow;
                 st.last_seen_str = nowFormatted();
 
                 if (vpnDetected && !prevVpn) {
@@ -1295,7 +1391,7 @@ module.exports = async (req, res) => {
                 let onlineCount = 0;
                 let lockedCount = 0;
                 let violationCount = 0;
-                let dirty = false;
+                let dirty = purgeDeletedStudents(data, nowSec);
 
                 for (const id of Object.keys(data.students)) {
                     const rawSt = data.students[id];
@@ -1652,18 +1748,35 @@ module.exports = async (req, res) => {
             case 'set_student_command': {
                 const studentId = String(body.student_id || '').trim();
                 const cmd = String(body.command || '').trim().toUpperCase();
+                if (!studentId) {
+                    return res.status(400).json({ ok: false, error: 'ID mahasiswa wajib diisi.' });
+                }
+                if (cmd === 'REMOVE') {
+                    const nowSec = Math.floor(Date.now() / 1000);
+                    const st = data.students[studentId] || null;
+                    if (!data.config.deleted_students || typeof data.config.deleted_students !== 'object' || Array.isArray(data.config.deleted_students)) {
+                        data.config.deleted_students = {};
+                    }
+                    data.config.deleted_students[studentId] = Math.max(
+                        nowSec,
+                        Number(st?.last_seen || 0),
+                        Number(data.config.deleted_students[studentId] || 0)
+                    );
+                    data.config.deleted_students = pruneDeletedStudentsMap(data.config.deleted_students, nowSec);
+                    data.config.updated_at = new Date().toISOString();
+                    if (st) {
+                        const stRoom = st.room_code || data.config.room_code || '-';
+                        addLog(data, st.nim, st.name, st.hostname, 'ADMIN_REMOVE', `Data sesi mahasiswa dihapus dari ruangan [${stRoom}] oleh pengawas.`, 'INFO', stRoom);
+                        delete data.students[studentId];
+                    }
+                    await writeData(data);
+                    return res.status(200).json({ ok: true, deleted_students: data.config.deleted_students });
+                }
                 if (!data.students[studentId]) {
                     return res.status(404).json({ ok: false, error: 'Data mahasiswa tidak ditemukan.' });
                 }
                 const st = data.students[studentId];
                 const stRoom = st.room_code || data.config.room_code || '-';
-                if (cmd === 'REMOVE') {
-                    data.config.updated_at = new Date().toISOString();
-                    addLog(data, st.nim, st.name, st.hostname, 'ADMIN_REMOVE', `Data sesi mahasiswa dihapus dari ruangan [${stRoom}] oleh pengawas.`, 'INFO', stRoom);
-                    delete data.students[studentId];
-                    await writeData(data);
-                    return res.status(200).json({ ok: true });
-                }
                 if (['LOCKED', 'UNLOCKED'].includes(cmd)) {
                     const cmdTs = Date.now();
                     const isCmdLocked = cmd === 'LOCKED';

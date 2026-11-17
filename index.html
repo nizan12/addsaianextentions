@@ -1361,8 +1361,34 @@
 
         const knownStudentsCache = new Map(); // id -> { student, seenAtMs }
         const recentLocalStudentCommands = new Map(); // id -> { status, ts }
-        const explicitlyRemovedStudentIds = new Set();
+        const explicitlyRemovedStudentIds = new Map(); // id -> { knownLastSeen, localDeleteClientMs }
+        let serverDeletedStudents = {}; // id -> delSec
         const explicitlyDeletedRooms = new Set();
+
+        function isStudentSuppressed(st) {
+            if (!st || !st.id) return false;
+            const stRoom = String(st.room_code || '').toUpperCase();
+            if (explicitlyDeletedRooms.has(stRoom)) return true;
+
+            const stLastSeen = Number(st.last_seen || 0);
+            const srvDelSec = Number(serverDeletedStudents[st.id] || 0);
+            if (srvDelSec > 0 && stLastSeen <= srvDelSec) {
+                return true;
+            }
+
+            const localRec = explicitlyRemovedStudentIds.get(st.id);
+            if (localRec) {
+                const elapsedMs = Date.now() - localRec.localDeleteClientMs;
+                if (stLastSeen <= localRec.knownLastSeen || elapsedMs < 5000) {
+                    return true;
+                }
+                if (srvDelSec > 0 && stLastSeen <= srvDelSec) {
+                    return true;
+                }
+                explicitlyRemovedStudentIds.delete(st.id);
+            }
+            return false;
+        }
 
         window.completeAdminAuth = function(email, token) {
             sessionStorage.setItem('guard_admin_auth', email);
@@ -2447,6 +2473,11 @@
                 cachedRoomStatuses = data.config.room_statuses || {};
                 cachedRoomPins = data.config.room_pins || {};
                 cachedRoomBlocklists = data.config.room_blocklists || {};
+                if (data.config.deleted_students && typeof data.config.deleted_students === 'object' && !Array.isArray(data.config.deleted_students)) {
+                    serverDeletedStudents = data.config.deleted_students;
+                } else {
+                    serverDeletedStudents = {};
+                }
                 if (data.blocklist) {
                     cachedGlobalBlocklist = data.blocklist;
                 }
@@ -2473,8 +2504,7 @@
 
                 incomingStudents.forEach(st => {
                     if (!st || !st.id) return;
-                    const stRoom = String(st.room_code || '').toUpperCase();
-                    if (explicitlyRemovedStudentIds.has(st.id) || explicitlyDeletedRooms.has(stRoom)) return;
+                    if (isStudentSuppressed(st)) return;
                     const recentCmd = recentLocalStudentCommands.get(st.id);
                     if (recentCmd && (nowMs - recentCmd.ts) < 12000) {
                         st.status = recentCmd.status;
@@ -2498,13 +2528,12 @@
                     });
                 });
 
-                const mergedStudents = [...incomingStudents.filter(st => st && !explicitlyRemovedStudentIds.has(st.id) && !explicitlyDeletedRooms.has(String(st.room_code || '').toUpperCase()))];
+                const mergedStudents = [...incomingStudents.filter(st => st && st.id && !isStudentSuppressed(st))];
                 const missingActiveForRehydrate = [];
 
                 for (const [id, entry] of knownStudentsCache.entries()) {
                     const ageSec = Math.floor((nowMs - entry.seenAtMs) / 1000);
-                    const stRoom = String(entry.student.room_code || '').toUpperCase();
-                    if (ageSec > 90 || explicitlyRemovedStudentIds.has(id) || explicitlyDeletedRooms.has(stRoom)) {
+                    if (ageSec > 90 || isStudentSuppressed(entry.student)) {
                         knownStudentsCache.delete(id);
                         continue;
                     }
@@ -3303,10 +3332,18 @@
 
         async function sendStudentCmd(student_id, command) {
             if (command === 'REMOVE') {
-                explicitlyRemovedStudentIds.add(student_id);
+                const existingSt = cachedStudents.find(s => s.id === student_id) || knownStudentsCache.get(student_id)?.student;
+                const knownLastSeen = Number(existingSt?.last_seen || 0);
+                explicitlyRemovedStudentIds.set(student_id, {
+                    knownLastSeen,
+                    localDeleteClientMs: Date.now()
+                });
                 knownStudentsCache.delete(student_id);
                 recentLocalStudentCommands.delete(student_id);
-                setTimeout(() => explicitlyRemovedStudentIds.delete(student_id), 25000);
+                cachedStudents = cachedStudents.filter(s => s.id !== student_id);
+                updateRoomSelectorOptions();
+                updateScopedStats();
+                renderCurrentStudents();
             } else if (['LOCKED', 'UNLOCKED'].includes(command)) {
                 const isCmdLocked = command === 'LOCKED';
                 recentLocalStudentCommands.set(student_id, { status: command, ts: Date.now() });
@@ -3338,11 +3375,22 @@
             });
             const data = await res.json();
             if (data.ok) {
-                if (command === 'UPDATE') {
+                if (data.deleted_students && typeof data.deleted_students === 'object' && !Array.isArray(data.deleted_students)) {
+                    serverDeletedStudents = { ...serverDeletedStudents, ...data.deleted_students };
+                }
+                if (command === 'REMOVE') {
+                    showToast('Sesi perangkat berhasil dihapus');
+                } else if (command === 'UPDATE') {
                     showToast('Instruksi pembaruan (self-update) berhasil dikirim ke PC peserta');
                 } else {
                     showToast('Perintah berhasil dikirim ke perangkat peserta');
                 }
+                fetchDashboard();
+            } else {
+                if (command === 'REMOVE') {
+                    explicitlyRemovedStudentIds.delete(student_id);
+                }
+                showToast(data?.error || 'Gagal mengirim perintah ke perangkat peserta', true);
                 fetchDashboard();
             }
         }

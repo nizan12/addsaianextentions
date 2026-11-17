@@ -24,6 +24,7 @@ class Storage {
                 'room_code' => '',
                 'rooms' => [],
                 'deleted_rooms' => [],
+                'deleted_students' => [],
                 'room_statuses' => [],
                 'room_pins' => [],
                 'room_blocklists' => [],
@@ -205,6 +206,19 @@ class Storage {
         }
         if (!isset($data['config']['deleted_rooms']) || !is_array($data['config']['deleted_rooms'])) {
             $data['config']['deleted_rooms'] = [];
+        }
+        if (!isset($data['config']['deleted_students']) || !is_array($data['config']['deleted_students'])) {
+            $data['config']['deleted_students'] = [];
+        } else {
+            $nowSec = time();
+            $cleanDel = [];
+            foreach ($data['config']['deleted_students'] as $sid => $ts) {
+                $t = (int)$ts;
+                if ($t > 0 && ($nowSec - $t) <= 86400) {
+                    $cleanDel[(string)$sid] = $t;
+                }
+            }
+            $data['config']['deleted_students'] = $cleanDel;
         }
         $data['config']['rooms'] = array_values(array_unique(array_filter(array_map(function ($r) {
             return strtoupper(trim((string)$r));

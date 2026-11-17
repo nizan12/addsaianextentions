@@ -165,6 +165,9 @@ function sanitizeConfigForDashboard($config, $defaultAdminEmail) {
     if (empty($out['pc_overrides'])) {
         $out['pc_overrides'] = (object)[];
     }
+    if (empty($out['deleted_students'])) {
+        $out['deleted_students'] = (object)[];
+    }
     return $out;
 }
 
@@ -209,6 +212,27 @@ try {
             }
             usleep(500000);
             respond(['ok' => false, 'error' => 'Email atau Kata Sandi tidak sesuai.'], 401);
+            break;
+
+        case 'rehydrate_state':
+            $result = Storage::update(function (&$data) use ($jsonInput) {
+                Storage::ensureRoomsConfig($data);
+                if (!empty($jsonInput['students']) && is_array($jsonInput['students'])) {
+                    $delMap = $data['config']['deleted_students'] ?? [];
+                    foreach ($jsonInput['students'] as $st) {
+                        $sid = (string)($st['id'] ?? '');
+                        $stRoom = strtoupper(trim((string)($st['room_code'] ?? '')));
+                        if ($sid !== '' && $stRoom !== '' && in_array($stRoom, $data['config']['rooms'], true) && !isset($data['students'][$sid])) {
+                            $delSec = (int)($delMap[$sid] ?? 0);
+                            if ($delSec <= 0 || ((int)($st['last_seen'] ?? 0) > $delSec)) {
+                                $data['students'][$sid] = $st;
+                            }
+                        }
+                    }
+                }
+                return ['ok' => true];
+            });
+            respond($result);
             break;
 
         case 'sync_from_firebase':
@@ -275,6 +299,14 @@ try {
                     : $roomDefaultState;
                 $roomPin = (string)($data['config']['room_pins'][$normalizedRoom] ?? '');
 
+                $nowSec = time();
+                $effectiveNow = $nowSec;
+                if (!empty($data['config']['deleted_students'][$studentId])) {
+                    $prevDel = (int)$data['config']['deleted_students'][$studentId];
+                    $effectiveNow = max($nowSec, $prevDel + 1);
+                    unset($data['config']['deleted_students'][$studentId]);
+                    $data['config']['updated_at'] = date('c');
+                }
                 $upperHost = strtoupper(trim((string)$hostname));
                 $hostOverride = ($upperHost !== '' && isset($data['config']['pc_overrides'][$upperHost]) && is_array($data['config']['pc_overrides'][$upperHost]))
                     ? $data['config']['pc_overrides'][$upperHost]
@@ -301,7 +333,7 @@ try {
                     'pin_fail' => $existing['pin_fail'] ?? 0,
                     'pin_lock_until' => $existing['pin_lock_until'] ?? 0,
                     'joined_at' => $existing['joined_at'] ?? date('Y-m-d H:i:s'),
-                    'last_seen' => time(),
+                    'last_seen' => $effectiveNow,
                     'last_seen_str' => date('Y-m-d H:i:s')
                 ];
 
@@ -358,6 +390,14 @@ try {
                 $studentId = preg_replace('/[^a-zA-Z0-9_-]/', '_', $nim);
                 $globalTarget = $data['config']['global_status'] ?? 'LOCKED';
                 $reqRoom = strtoupper(trim($jsonInput['room_code'] ?? ''));
+                $nowSec = time();
+                $effectiveNow = $nowSec;
+                if (!empty($data['config']['deleted_students'][$studentId])) {
+                    $prevDel = (int)$data['config']['deleted_students'][$studentId];
+                    $effectiveNow = max($nowSec, $prevDel + 1);
+                    unset($data['config']['deleted_students'][$studentId]);
+                    $data['config']['updated_at'] = date('c');
+                }
 
                 if ($reqRoom === '' || !in_array($reqRoom, $data['config']['rooms'], true)) {
                     if (isset($data['students'][$studentId])) {
@@ -409,7 +449,7 @@ try {
                 }
                 $student['killed_processes_count'] = $killedCount;
                 $student['vpn_detected'] = $vpnDetected;
-                $student['last_seen'] = time();
+                $student['last_seen'] = $effectiveNow;
                 $student['last_seen_str'] = date('Y-m-d H:i:s');
 
                 if ($vpnDetected && !$prevVpn) {
@@ -550,8 +590,17 @@ try {
                 $now = time();
                 $matchedKey = findMatchingStudentKey($data, '', $upperHost, $clientId, '');
                 if ($matchedKey !== null) {
+                    $effectiveNow = $now;
+                    if (!empty($data['config']['deleted_students'][$matchedKey])) {
+                        $prevDel = (int)$data['config']['deleted_students'][$matchedKey];
+                        $effectiveNow = max($now, $prevDel + 1);
+                        unset($data['config']['deleted_students'][$matchedKey]);
+                        $data['config']['updated_at'] = date('c');
+                    }
                     $data['students'][$matchedKey]['ide_connected'] = true;
-                    $data['students'][$matchedKey]['ide_last_seen'] = $now;
+                    $data['students'][$matchedKey]['ide_last_seen'] = $effectiveNow;
+                    $data['students'][$matchedKey]['last_seen'] = $effectiveNow;
+                    $data['students'][$matchedKey]['last_seen_str'] = date('Y-m-d H:i:s');
                     if ($clientId !== '') {
                         $data['students'][$matchedKey]['client_id'] = $clientId;
                     }
@@ -561,6 +610,13 @@ try {
                 if (!empty($data['config']['rooms'])) {
                     $targetRoom = $data['config']['room_code'] ?: $data['config']['rooms'][0];
                     $safeId = 'IDE_' . preg_replace('/[^A-Z0-9_-]/', '_', $upperHost);
+                    $effectiveNow = $now;
+                    if (!empty($data['config']['deleted_students'][$safeId])) {
+                        $prevDel = (int)$data['config']['deleted_students'][$safeId];
+                        $effectiveNow = max($now, $prevDel + 1);
+                        unset($data['config']['deleted_students'][$safeId]);
+                        $data['config']['updated_at'] = date('c');
+                    }
                     $roomStatus = $data['config']['room_statuses'][$targetRoom] ?? ($data['config']['global_status'] ?? 'LOCKED');
                     $hostOverride = isset($data['config']['pc_overrides'][$upperHost]) && is_array($data['config']['pc_overrides'][$upperHost])
                         ? $data['config']['pc_overrides'][$upperHost]
@@ -587,8 +643,8 @@ try {
                         'joined_at' => $existing['joined_at'] ?? date('Y-m-d H:i:s'),
                     ], [
                         'ide_connected' => true,
-                        'ide_last_seen' => $now,
-                        'last_seen' => $now,
+                        'ide_last_seen' => $effectiveNow,
+                        'last_seen' => $effectiveNow,
                         'last_seen_str' => date('Y-m-d H:i:s')
                     ]);
                     return ['ok' => true, 'student_id' => $safeId, 'mode' => 'ide_student'];
@@ -658,9 +714,11 @@ try {
                 $lockedCount = 0;
                 $violationCount = 0;
 
+                $delMap = $data['config']['deleted_students'] ?? [];
                 foreach (($data['students'] ?? []) as $id => $st) {
+                    $delSec = (int)($delMap[$id] ?? 0);
                     $stRoom = strtoupper(trim($st['room_code'] ?? ''));
-                    if ($stRoom === '' || !in_array($stRoom, $data['config']['rooms'], true) || !empty($st['is_simulated'])) {
+                    if (($delSec > 0 && ((int)($st['last_seen'] ?? 0) <= $delSec)) || $stRoom === '' || !in_array($stRoom, $data['config']['rooms'], true) || !empty($st['is_simulated'])) {
                         unset($data['students'][$id]);
                         continue;
                     }
@@ -1049,18 +1107,36 @@ try {
         case 'set_student_command':
             $studentId = trim($jsonInput['student_id'] ?? '');
             $cmd = strtoupper(trim($jsonInput['command'] ?? ''));
+            if ($studentId === '') {
+                respond(['ok' => false, 'error' => 'ID mahasiswa wajib diisi.'], 400);
+            }
 
             $result = Storage::update(function (&$data) use ($studentId, $cmd) {
+                Storage::ensureRoomsConfig($data);
+                if ($cmd === 'REMOVE') {
+                    $nowSec = time();
+                    $stExisting = $data['students'][$studentId] ?? null;
+                    if (!isset($data['config']['deleted_students']) || !is_array($data['config']['deleted_students'])) {
+                        $data['config']['deleted_students'] = [];
+                    }
+                    $data['config']['deleted_students'][$studentId] = max(
+                        $nowSec,
+                        (int)($stExisting['last_seen'] ?? 0),
+                        (int)($data['config']['deleted_students'][$studentId] ?? 0)
+                    );
+                    $data['config']['updated_at'] = date('c');
+                    if ($stExisting) {
+                        $stRoom = $stExisting['room_code'] ?? ($data['config']['room_code'] ?? 'KUIS-AI-01');
+                        Storage::addLog($data, $stExisting['nim'], $stExisting['name'], $stExisting['hostname'], 'ADMIN_REMOVE', "Data sesi mahasiswa dihapus dari ruangan [{$stRoom}] oleh pengawas.", 'INFO', $stRoom);
+                        unset($data['students'][$studentId]);
+                    }
+                    return ['ok' => true, 'deleted_students' => $data['config']['deleted_students']];
+                }
                 if (!isset($data['students'][$studentId])) {
                     return ['ok' => false, 'error' => 'Data mahasiswa tidak ditemukan.'];
                 }
                 $st = &$data['students'][$studentId];
                 $stRoom = $st['room_code'] ?? ($data['config']['room_code'] ?? 'KUIS-AI-01');
-                if ($cmd === 'REMOVE') {
-                    Storage::addLog($data, $st['nim'], $st['name'], $st['hostname'], 'ADMIN_REMOVE', "Data sesi mahasiswa dihapus dari ruangan [{$stRoom}] oleh pengawas.", 'INFO', $stRoom);
-                    unset($data['students'][$studentId]);
-                    return ['ok' => true];
-                }
                 if (in_array($cmd, ['LOCKED', 'UNLOCKED'], true)) {
                     $isCmdLocked = ($cmd === 'LOCKED');
                     $st['target_status'] = $cmd;
