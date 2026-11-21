@@ -1,236 +1,254 @@
 <div align="center">
 
-# 🛡️ AI-Blocker Guard
+# GuardConsole & GuardAgent
 
-**Sistem pengawasan ujian & kuis yang memblokir AI dan game di PC mahasiswa — dikendalikan penuh dari satu dashboard web.**
+**Sistem pengawasan ujian laboratorium untuk memblokir akses AI, ekstensi IDE, dan game di PC mahasiswa, dikendalikan terpusat dari satu konsol web.**
 
-[![Platform](https://img.shields.io/badge/Client-Windows%2010%2F11-0078D6?logo=windows&logoColor=white)](#-instalasi-di-pc-mahasiswa)
-[![Dashboard](https://img.shields.io/badge/Dashboard-Vercel-000000?logo=vercel&logoColor=white)](https://blockai-wheat.vercel.app/)
-[![Sync](https://img.shields.io/badge/Sync-Firebase-FFCA28?logo=firebase&logoColor=black)](#-arsitektur)
-[![.NET](https://img.shields.io/badge/.NET%20Framework-4.x-512BD4?logo=dotnet&logoColor=white)](#-kompilasi-ulang-client)
-[![Node](https://img.shields.io/badge/API-Node.js%20%7C%20PHP-339933?logo=node.js&logoColor=white)](#-struktur-proyek)
+[![Client](https://img.shields.io/badge/Client-Windows_10_%2F_11-0E6245?style=flat-square&labelColor=181A1F)](./dist/AIBlockerSetup.exe)
+[![Agent](https://img.shields.io/badge/GuardAgent-v1.6.0-0E6245?style=flat-square&labelColor=181A1F)](#kompilasi-ulang-client)
+[![Runtime](https://img.shields.io/badge/.NET_Framework-4.x-0E6245?style=flat-square&labelColor=181A1F)](#kompilasi-ulang-client)
+[![API](https://img.shields.io/badge/API-Node.js_%7C_PHP-0E6245?style=flat-square&labelColor=181A1F)](#struktur-proyek)
+[![Sync](https://img.shields.io/badge/Sync-Firebase_%2F_KV-0E6245?style=flat-square&labelColor=181A1F)](#arsitektur)
 
-[**🌐 Buka Dashboard**](https://blockai-wheat.vercel.app/) · [**⬇️ Unduh Installer**](./dist/AIBlockerSetup.exe) · [**📖 Cara Pakai**](#-alur-penggunaan) · [**🧯 Troubleshooting**](#-troubleshooting)
+[Buka Dashboard](https://blockai-wheat.vercel.app/) · [Unduh Installer](./dist/AIBlockerSetup.exe) · [Arsitektur](#arsitektur) · [Alur Penggunaan](#alur-penggunaan) · [Kompilasi](#kompilasi-ulang-client) · [Troubleshooting](#troubleshooting)
 
 </div>
 
 ---
 
-## ✨ Kenapa AI-Blocker Guard?
+## Ringkasan Sistem
 
-Saat ujian pemrograman, mahasiswa bisa membuka ChatGPT di browser, memakai Copilot di VS Code, menjalankan Cursor, atau bahkan LLM lokal seperti Ollama. **AI-Blocker Guard** menutup semua celah itu sekaligus, dan dosen cukup menekan satu tombol **Kunci** / **Buka** dari dashboard.
+Saat ujian pemrograman berlangsung, peserta dapat mengakses chatbot AI di browser, asisten kode di VS Code, AI IDE terpisah seperti Cursor, atau menjalankan model LLM lokal. **GuardConsole** (konsol web pengawas) dan **GuardAgent** (agen desktop Windows) menutup celah tersebut secara bersamaan, sementara pengawas cukup mengelola kunci ruangan dan kebijakan blokir dari satu panel web.
 
-| | Fitur | Keterangan |
-|---|---|---|
-| 🏫 | **Manajemen Ruangan** | Ruangan dibuat sendiri oleh Admin (tidak ada ruangan bawaan). Setiap ruangan punya **PIN otorisasi keluar** masing-masing. |
-| 🎯 | **Kebijakan Blokir per Ruangan** | Daftar domain, proses, dan ekstensi IDE bisa diatur **global** atau **khusus per ruangan**. |
-| 🔒 | **Kunci / Buka Real-time** | Kunci per PC, per ruangan, atau semua ruangan. Bisa dikunci ulang kapan saja — tab yang sudah terbuka ikut terputus. |
-| ☁️ | **Sinkron via Firebase** | State dashboard tersimpan di Firebase sehingga konsisten di semua instance serverless Vercel. |
-| 🔑 | **Login Admin** | Dashboard web dilindungi halaman login. |
-| 🎮 | **Blokir Roblox** | Domain & proses Roblox (termasuk Bloxstrap / Fishstrap) ikut diblokir. |
-| 🖥️ | **Agen Selalu Aktif** | Aplikasi berjalan di tray & auto-start, tetap siaga menerima perintah Admin walau sedang tidak terkunci. |
+| Kapabilitas | Keterangan |
+|---|---|
+| **Manajemen Ruangan & PIN Otorisasi** | Admin membuat ruangan secara dinamis beserta **PIN keluar/buka kunci** khusus per ruangan yang diverifikasi server dan didukung hash PBKDF2 untuk mode offline. |
+| **Kebijakan Blokir Fleksibel** | Daftar domain, proses, dan ekstensi IDE dapat diterapkan secara **global** maupun **khusus per ruangan**, lengkap dengan sakelar cepat AI Chat dan Ekstensi IDE. |
+| **Kendali Kunci & Update Jarak Jauh** | Kunci atau buka kunci per PC, per ruangan, maupun seluruh ruangan secara real-time, serta kirim perintah **Remote Update** langsung ke agen. |
+| **Arsitektur Service Tanpa Pop-up UAC** | `AIBlockerGuard.exe` berjalan sebagai `asInvoker` di akun standar mahasiswa dan mendelegasikan aksi sistem ke Windows Service `AIBlockerGuardService` (`LocalSystem`) melalui Named Pipe. |
+| **Sinkronisasi Cloud & Mode Lokal** | Mendukung deployment serverless Vercel (Node.js + Firebase / Upstash KV) dan server lokal Laragon (PHP + JSON). |
+| **Antarmuka Terpadu (Light & Dark)** | Dashboard web responsif desktop/mobile, installer `AIBlockerSetup.exe`, dan panel desktop `GuardAgent` menggunakan bahasa visual dan dukungan tema Terang/Gelap yang konsisten. |
 
 ---
 
-## 🧱 5 Lapisan Proteksi
+## Arsitektur
 
 ```mermaid
 flowchart LR
-    A["🌐 Layer 1<br/>Hosts & DNS"] --> B["🧭 Layer 2<br/>Kebijakan Browser"]
-    B --> C["🧩 Layer 3<br/>Karantina Ekstensi IDE"]
-    C --> D["⚙️ Layer 4<br/>Process Killer"]
-    D --> E["🛰️ Layer 5<br/>Deteksi VPN"]
+    subgraph PC["PC Mahasiswa (Windows)"]
+        GuardAgent["AIBlockerGuard.exe (asInvoker)"]
+        GuardSvc["AIBlockerService.exe (LocalSystem)"]
+        GuardAgent <-->|"Named Pipe: AIBlockerGuardPipe"| GuardSvc
+    end
+    subgraph Server["Server (Vercel / Laragon)"]
+        API["REST API (api/server.js | api/index.php)"]
+        UI["GuardConsole (index.html + assets/guardconsole.css)"]
+    end
+    Store[("Firebase / KV / JSON")]
+    Admin["Dosen / Pengawas"]
+
+    GuardAgent -->|"join, heartbeat 3.5 dtk, violation"| API
+    API -->|"target_status, blocklist, PIN hash"| GuardAgent
+    Admin --> UI
+    UI -->|"kunci/buka, kebijakan, ruangan, update"| API
+    API <--> Store
 ```
+
+**Alur sinkronisasi dan eksekusi:**
+1. Agen mengirim `heartbeat` setiap sekitar `3,5` detik berisi status kunci lokal, jumlah karantina ekstensi, counter proses yang dihentikan, dan status deteksi VPN.
+2. Server membalas dengan `target_status` (`LOCKED` / `UNLOCKED`), hash PIN ruangan, serta kebijakan blocklist efektif untuk ruangan terkait; stempel waktu `cmd_updated_at` memastikan heartbeat PC tidak pernah menimpa perintah Admin terbaru.
+3. Operasi sistem (modifikasi file `hosts`, kebijakan browser `HKLM`, karantina ekstensi, dan self-update) dijalankan oleh `AIBlockerService.exe` berhak `LocalSystem` melalui `AIBlockerGuardPipe`, sehingga akun mahasiswa biasa tidak terkena pop-up UAC.
+
+---
+
+## 5 Lapisan Proteksi
 
 <details open>
-<summary><b>🌐 Layer 1 — Hosts & DNS Guard</b></summary>
+<summary><strong>Layer 1: Hosts &amp; DNS Guard</strong></summary>
 
-- Mengarahkan ±190 domain AI & game ke `0.0.0.0` lewat file `hosts` (ChatGPT, Claude, Gemini, DeepSeek, Perplexity, Copilot, Cursor, Codeium, OpenRouter, Roblox, dll).
-- **Integrity watcher** setiap 2,5 detik: jika file `hosts` diubah atau jumlah domainnya tidak cocok dengan kebijakan Admin, blokir langsung ditulis ulang dan pelanggaran dilaporkan ke dashboard.
-- Setiap perubahan status memicu `ipconfig /flushdns` **dan reset proses jaringan browser** (`NetworkService`) sehingga koneksi HTTP/2 & QUIC yang sudah terbuka langsung terputus — tanpa menutup jendela browser.
+- Mengarahkan `187` domain bawaan AI dan game ke `0.0.0.0` melalui file `hosts` Windows (ChatGPT, Claude, Gemini, DeepSeek, Perplexity, Copilot, Cursor, Codeium, OpenRouter, Roblox, dan layanan terkait).
+- **Integrity watcher** memeriksa konsistensi `hosts` setiap `2,5` detik saat terkunci; perubahan tidak sah langsung ditimpa ulang dan dicatat sebagai insiden ke dashboard.
+- Setiap pergantian kunci memicu `ipconfig /flushdns` serta me-reset proses jaringan browser (`NetworkService`) agar koneksi HTTP/2 dan QUIC yang terlanjur terbuka langsung terputus tanpa menutup tab/jendela utama.
 </details>
 
 <details>
-<summary><b>🧭 Layer 2 — Kebijakan Browser (Chrome / Edge / Brave)</b></summary>
+<summary><strong>Layer 2: Kebijakan Browser (Chrome, Edge, Brave)</strong></summary>
 
-- Menulis daftar domain ke kebijakan **`URLBlocklist`** → halaman terblokir dengan `ERR_BLOCKED_BY_ADMINISTRATOR`.
-- Mematikan **DNS-over-HTTPS**, DNS internal browser (`BuiltInDnsClientEnabled`), dan **QUIC** agar blokir `hosts` tidak bisa dilewati.
-- Menonaktifkan AI bawaan browser: Gemini (Chrome), Copilot Sidebar (Edge), Leo AI (Brave), serta Copilot Chat bawaan VS Code.
-- Semua kebijakan dihapus otomatis saat kunci dibuka.
+- Menuliskan daftar domain aktif ke kebijakan **`URLBlocklist`** sehingga halaman yang diakses menampilkan `ERR_BLOCKED_BY_ADMINISTRATOR`.
+- Menonaktifkan **DNS-over-HTTPS (DoH)**, DNS internal browser (`BuiltInDnsClientEnabled`), dan protokol **QUIC** agar aturan `hosts` tidak dilewati.
+- Menonaktifkan fitur AI bawaan browser: Gemini (Chrome), Copilot Sidebar (Edge), Leo AI (Brave), dan Copilot Chat bawaan VS Code. Seluruh kebijakan dibersihkan otomatis saat kunci dibuka.
 </details>
 
 <details>
-<summary><b>🧩 Layer 3 — Karantina Ekstensi IDE</b></summary>
+<summary><strong>Layer 3: Karantina Ekstensi IDE</strong></summary>
 
-- Memindahkan sementara ekstensi AI VS Code ke folder karantina: GitHub Copilot, Codeium, Cline, Roo Code, Continue, Tabnine, Supermaven, Amazon Q, Gemini Code Assist, Kilo Code, dll.
-- Saat dibuka, seluruh ekstensi dikembalikan **100% seperti semula**.
+- Memindahkan sementara modul ekstensi AI pada VS Code dan IDE turunannya ke folder karantina aman (GitHub Copilot, Codeium, Cline, Roo Code, Continue, Tabnine, Supermaven, Amazon Q, Gemini Code Assist, Kilo Code, dan lainnya).
+- Saat penguncian dibuka oleh Admin atau PIN ruangan, seluruh ekstensi dikembalikan utuh ke lokasi semula.
 </details>
 
 <details>
-<summary><b>⚙️ Layer 4 — Process Killer & Local LLM</b></summary>
+<summary><strong>Layer 4: Process Killer &amp; Local LLM</strong></summary>
 
-- Menghentikan paksa setiap 2,5 detik: **AI IDE** (Cursor, Windsurf, Trae, PearAI, Void), **aplikasi AI desktop** (ChatGPT, Claude, Copilot, Perplexity), **LLM lokal** (Ollama, LM Studio, Jan, GPT4All, llama.cpp, KoboldCpp, AnythingLLM, Msty), dan **Roblox**.
-- Memantau port LLM lokal: `11434`, `1234`, `1337`, `8080`, `5001`.
+- Memeriksa dan menghentikan paksa setiap `2,5` detik: **AI IDE** (Cursor, Windsurf, Trae, PearAI, Void), **aplikasi AI desktop** (ChatGPT, Claude, Copilot, Perplexity), **LLM lokal** (Ollama, LM Studio, Jan, GPT4All, llama.cpp, KoboldCpp, AnythingLLM, Msty), serta **Roblox** (termasuk Bloxstrap dan Fishstrap).
+- Memantau port server LLM lokal: `11434`, `1234`, `1337`, dan `5001`.
 </details>
 
 <details>
-<summary><b>🛰️ Layer 5 — Deteksi VPN / Tunnel</b></summary>
+<summary><strong>Layer 5: Deteksi VPN &amp; Tunnel</strong></summary>
 
-- Mendeteksi adaptor VPN aktif (termasuk Cloudflare WARP) dan menampilkan peringatan **VPN_ALERT** di dashboard.
+- Mendeteksi adaptor VPN atau tunnel aktif (termasuk Cloudflare WARP) pada antarmuka jaringan Windows dan mengirimkan peringatan ke panel telemetri maupun jurnal insiden dashboard.
 </details>
 
 ---
 
-## 🏗️ Arsitektur
+## Alur Penggunaan
 
-```mermaid
-flowchart LR
-    subgraph PC["💻 PC Mahasiswa (Windows)"]
-        G["GuardAgent<br/>AIBlockerGuard.exe"]
-    end
-    subgraph Cloud["☁️ Vercel"]
-        API["REST API<br/>api/server.js"]
-        UI["GuardConsole<br/>index.html"]
-    end
-    FB[("🔥 Firebase<br/>Cloud State")]
-    D["👩‍🏫 Dosen / Pengawas"]
+### 1. Persiapan Dashboard (Dosen / Pengawas)
+1. Buka konsol web di **<https://blockai-wheat.vercel.app/>** (atau `http://localhost/blockwebanaiinideforquiz/` pada Laragon lokal) lalu masuk sebagai Admin.
+2. Buka menu **Ruangan & PIN Pengawas**, tambahkan **Kode Ruangan** (contoh: `LAB-701`) dan **PIN Otorisasi**.
+3. *(Opsional)* Atur kebijakan domain, proses, atau ekstensi khusus pada menu **Kebijakan Blokir Fleksibel**, atau biarkan mengikuti **Kebijakan Global**.
 
-    G -- "join · heartbeat 3,5 dtk · violation" --> API
-    API -- "target_status · blocklist · PIN ruangan" --> G
-    D --> UI -- "kunci / buka · atur blokir · ruangan" --> API
-    API <--> FB
-```
+### 2. Pemasangan Agen (PC Mahasiswa)
+1. Unduh [`AIBlockerSetup.exe`](./dist/AIBlockerSetup.exe) lalu jalankan sebagai **Administrator** (hanya diperlukan sekali saat pemasangan untuk mendaftarkan Windows Service `AIBlockerGuardService`).
+2. Tentukan direktori tujuan dan opsi konfigurasi di installer, lalu klik **Pasang Agen**.
+3. Setelah **GuardAgent** terbuka, isi **NIM / ID Perangkat** dan **Nama Peserta / Nama PC Lab**, pilih kode ruangan pada dropdown **Ruangan Sesi**, lalu klik **Hubungkan ke Ruangan & Sinkronkan Server**.
 
-**Alur perintah:**
-1. Agen mengirim `heartbeat` setiap ±3,5 detik berisi status lokal & telemetri.
-2. Server membalas dengan `target_status` (`LOCKED` / `UNLOCKED`) dan **blocklist efektif** untuk ruangan tersebut.
-3. Perintah Admin diberi stempel waktu `cmd_updated_at`, sehingga heartbeat dari PC **tidak pernah menimpa** perintah Kunci yang lebih baru.
+### 3. Operasi Saat Ujian
 
----
-
-## 🚀 Alur Penggunaan
-
-### 1️⃣ Dosen — Siapkan Dashboard
-1. Buka dashboard: **<https://blockai-wheat.vercel.app/>** (atau `http://localhost/blockwebanaiinideforquiz/` di Laragon) dan login.
-2. Masuk ke menu **Ruangan** → **+ Tambah**, isi **Kode Ruangan** (mis. `LAB-701`) dan **PIN Otorisasi**.
-3. *(Opsional)* Klik **Atur Blokir** pada ruangan untuk membuat kebijakan khusus, atau biarkan mengikuti **Kebijakan Global**.
-
-### 2️⃣ Mahasiswa — Pasang Agen
-1. Unduh [`AIBlockerSetup.exe`](./dist/AIBlockerSetup.exe) → klik kanan → **Run as administrator**.
-2. Isi **NIM**, **Nama**, lalu **pilih ruangan** dari daftar yang dibuat dosen.
-3. Agen akan berjalan di system tray dan otomatis aktif saat Windows menyala.
-
-### 3️⃣ Saat Ujian
 | Aksi | Cara |
 |---|---|
-| 🔒 Kunci semua / satu ruangan | Tombol **Kunci** di header atau di daftar Ruangan |
-| 🔒 Kunci satu PC | Tombol **Kunci** pada kartu mahasiswa |
-| 🔓 Buka kunci | Tombol **Buka**, atau mahasiswa memasukkan **PIN ruangan** di aplikasi |
-| 📝 Ubah domain yang diblokir | Menu **Kebijakan Blokir** → pilih ruangan → **Simpan** (langsung diterapkan ke PC yang terkunci) |
-| 📋 Lihat pelanggaran | Menu **Jurnal Audit** |
+| Kunci semua atau satu ruangan | Gunakan sakelar global di header konsol atau tombol kunci pada halaman **Ruangan & PIN Pengawas** |
+| Kunci satu perangkat mahasiswa | Klik tombol **Kunci** pada baris perangkat di tab **Perangkat Mahasiswa** |
+| Buka kunci perangkat / sesi | Klik tombol **Buka** dari konsol web, atau gunakan tombol **Buka Kunci Darurat (PIN Ruangan)** pada panel agen |
+| Ubah daftar domain / proses / ekstensi | Buka tab **Kebijakan Blokir Fleksibel**, pilih cakupan global atau ruangan, lalu simpan (sinkron otomatis ke PC terkunci) |
+| Perbarui agen jarak jauh (Remote Update) | Kirim instruksi **Update** dari konsol Admin untuk memperbarui `AIBlockerGuard.exe` secara otomatis |
+| Pantau pelanggaran & insiden | Buka tab **Log Audit & Insiden** |
 
 > [!TIP]
-> PIN tiap ruangan bisa dilihat & disalin langsung dari menu **Ruangan**. Berikan PIN hanya ketika mahasiswa memang boleh keluar.
+> PIN otorisasi tiap ruangan dapat dilihat dan disalin langsung dari menu **Ruangan & PIN Pengawas**. Bagikan PIN hanya kepada pengawas atau saat peserta selesai dan diizinkan keluar sesi.
 
 ---
 
-## 📦 Paket Distribusi
+## Paket Distribusi
 
-| File | Fungsi |
-|---|---|
-| [`dist/AIBlockerSetup.exe`](./dist/AIBlockerSetup.exe) | **Installer** — memasang agen ke `C:\Program Files\AIBlockerGuard\` + auto-start. *(Direkomendasikan)* |
-| [`dist/AIBlockerGuard.exe`](./dist/AIBlockerGuard.exe) | **Portable** — satu file, langsung jalan sebagai Administrator. |
-| [`dist/VSCodeSetup.exe`](./dist/VSCodeSetup.exe) | **VS Code Terproteksi (System Installer)** — memasang `Code - OSS` (x64) ke `Program Files` lengkap dengan kunci AI Agent & Ekstensi *(disimpan via Git LFS)*. |
-| [`dist/Emergency-Restore.bat`](./dist/Emergency-Restore.bat) | **Pemulihan darurat** — membersihkan `hosts`, kebijakan browser, dan mengembalikan ekstensi IDE. |
+| File | Hak Akses | Fungsi |
+|---|---|---|
+| [`dist/AIBlockerSetup.exe`](./dist/AIBlockerSetup.exe) | `requireAdministrator` | **Installer utama (Direkomendasikan)**: menanamkan `AIBlockerService.exe` dan `AIBlockerGuard.exe`, mengatur izin `ProgramData`, mendaftarkan Windows Service `AIBlockerGuardService`, membuat `Restore-Normal.bat`, serta mengonfigurasi auto-start dan pintasan desktop. |
+| [`dist/AIBlockerGuard.exe`](./dist/AIBlockerGuard.exe) | `asInvoker` | **Panel desktop & system tray agen (`v1.6.0`)**: antarmuka kontrol peserta, sinkronisasi server, dialog verifikasi PIN, dan pemantauan lokal 24/7. |
+| [`dist/AIBlockerService.exe`](./dist/AIBlockerService.exe) | `LocalSystem` | **Windows Service (`AIBlockerGuardService`)**: mengeksekusi penulisan `hosts`, kebijakan browser, karantina ekstensi, dan self-update lewat `AIBlockerGuardPipe` tanpa UAC. |
+| [`dist/VSCodeSetup.exe`](./dist/VSCodeSetup.exe) | System Installer | **VS Code Terproteksi (`Code - OSS` x64)**: paket instalasi editor laboratorium dengan pembatasan AI Agent dan ekstensi *(disimpan via Git LFS)*. |
+| [`dist/Emergency-Restore.bat`](./dist/Emergency-Restore.bat) | Administrator | **Skrip pemulihan darurat**: membersihkan blokir `hosts`, memulihkan kebijakan DNS browser, dan mengembalikan ekstensi IDE apabila perangkat mati mendadak. |
 
 ---
 
-## 🗂️ Struktur Proyek
+## Struktur Proyek
 
 ```text
 blockwebanaiinideforquiz/
-├── index.html / index.php     # GuardConsole — dashboard pengawas (login, ruangan, monitor, kebijakan, audit)
+├── index.html                  # GuardConsole: halaman utama dashboard pengawas & halaman login
+├── index.php                   # Wrapper PHP yang menyajikan index.html pada Laragon/Apache
+├── assets/
+│   └── guardconsole.css        # Design system Light & Dark theme konsol web
 ├── api/
-│   ├── server.js              # REST API serverless (Vercel) + sinkronisasi Firebase
-│   └── index.php              # REST API versi PHP (Laragon / lokal)
-├── includes/Storage.php       # Penyimpanan JSON lokal + daftar blokir bawaan
-├── storage/database.json      # Data lokal (mode PHP)
+│   ├── server.js               # REST API serverless (Vercel) + sinkronisasi Firebase / KV
+│   └── index.php               # REST API versi PHP (server lokal Laragon)
+├── includes/
+│   └── Storage.php             # Penyimpanan JSON lokal + daftar blokir bawaan (mode PHP)
+├── storage/
+│   └── database.json           # State database lokal (mode PHP)
 ├── client-src/
-│   ├── Program.cs             # Source GuardAgent (C# WinForms)
-│   ├── Installer.cs           # Source installer
-│   └── app.manifest           # Manifest requireAdministrator
-├── dist/                      # Hasil build siap distribusi
-├── build.ps1                  # Skrip kompilasi .exe
-└── vercel.json / package.json # Konfigurasi deploy Vercel
+│   ├── Program.cs              # Source GuardAgent panel desktop, tray, & GuardEngine (C# WinForms)
+│   ├── Service.cs              # Source Windows Service AIBlockerGuardService (LocalSystem)
+│   ├── Installer.cs            # Source AIBlockerSetup.exe (C# WinForms installer)
+│   ├── app.manifest            # Manifest asInvoker untuk AIBlockerGuard.exe
+│   └── setup.manifest          # Manifest requireAdministrator untuk AIBlockerSetup.exe
+├── dist/                       # Paket biner siap distribusi & instalasi lab
+├── build.ps1                   # Skrip kompilasi Service, Client, dan Setup via csc.exe (.NET 4.x)
+├── vercel.json                 # Routing Vercel rewrite & header unduhan /dist/*
+└── package.json                # Metadata proyek Node.js (>= 18.x)
 ```
 
 ---
 
-## ☁️ Deploy ke Vercel
+## Deploy ke Vercel
 
-**Via GitHub (otomatis):**
+**Via GitHub (Otomatis):**
 1. Push repositori ke GitHub.
-2. Import di [vercel.com/new](https://vercel.com/new) → **Deploy** (tanpa build command tambahan).
-3. Setiap `git push origin main` akan otomatis ter-deploy ulang.
+2. Import proyek di [vercel.com/new](https://vercel.com/new) lalu klik **Deploy** (tanpa perlu perintah build tambahan).
+3. Setiap `git push origin main` akan memicu deployment produksi baru secara otomatis.
 
 **Via CLI:**
 ```powershell
 npx vercel --prod
 ```
 
-Endpoint yang dipakai agen: `https://<project-anda>.vercel.app/api/index.php`
+Endpoint API yang digunakan oleh agen: `https://<project-anda>.vercel.app/api/index.php`
 
 > [!NOTE]
-> Penyimpanan state memakai **Firebase** secara default. Jika variabel `KV_REST_API_URL` & `KV_REST_API_TOKEN` (Upstash Redis / Vercel KV) tersedia, server akan memakainya sebagai penyimpanan utama.
+> Penyimpanan cloud memakai **Firebase** secara bawaan. Apabila environment variable `KV_REST_API_URL` dan `KV_REST_API_TOKEN` (Upstash Redis / Vercel KV) dikonfigurasi, backend akan menggunakannya sebagai penyimpanan utama.
 
 ---
 
-## 🛠️ Kompilasi Ulang Client
+## Kompilasi Ulang Client
 
-Butuh .NET Framework 4.x (sudah bawaan Windows 10/11). Jalankan:
+Membutuhkan compiler C# `.NET Framework 4.x` (`C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe`, tersedia bawaan di Windows 10/11). Jalankan:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\build.ps1
 ```
 
-Hasil: `dist\AIBlockerGuard.exe` dan `dist\AIBlockerSetup.exe`.
+Skrip akan menghasilkan ketiga executable secara berurutan di folder `dist\`:
+1. `dist\AIBlockerService.exe`
+2. `dist\AIBlockerGuard.exe`
+3. `dist\AIBlockerSetup.exe` (otomatis menanamkan biner service dan guard terbaru)
 
 > [!IMPORTANT]
-> Setelah build ulang, **tutup GuardAgent** yang sedang berjalan lalu jalankan ulang `AIBlockerSetup.exe` sebagai Administrator agar versi baru terpasang.
+> Setelah build ulang selesai, jalankan ulang `AIBlockerSetup.exe` sebagai Administrator pada PC target (installer akan menghentikan service/proses lama secara otomatis) atau picu Remote Update dari dashboard untuk memperbarui agen yang sudah terpasang.
 
 ---
 
-## 🧯 Troubleshooting
+## Troubleshooting
 
 <details>
-<summary><b>Situs masih bisa dibuka setelah dikunci ulang</b></summary>
+<summary><strong>Situs AI atau Roblox masih terbuka setelah ruangan dikunci</strong></summary>
 
-- Pastikan versi agen terbaru sudah terpasang (jalankan ulang installer sebagai Administrator).
-- Tunggu satu siklus heartbeat (±3,5 detik), lalu refresh tab.
-- Cek kebijakan aktif di browser: buka `edge://policy` atau `chrome://policy` → `URLBlocklist` harus berisi daftar domain.
+- Pastikan biner agen terbaru (`v1.6.0`) dan service `AIBlockerGuardService` sudah terpasang dengan menjalankan ulang `AIBlockerSetup.exe` sebagai Administrator.
+- Tunggu satu siklus heartbeat (`3,5` detik), lalu muat ulang tab browser.
+- Periksa kebijakan aktif di `edge://policy` atau `chrome://policy` dan pastikan `URLBlocklist` memuat daftar domain blokir.
 </details>
 
 <details>
-<summary><b>PC tidak muncul di dashboard</b></summary>
+<summary><strong>PC mahasiswa tidak muncul pada daftar perangkat dashboard</strong></summary>
 
-- Pastikan ruangan yang dipilih di aplikasi **masih ada** di dashboard (ruangan yang dihapus akan meminta mahasiswa memilih ulang).
-- Periksa URL server di aplikasi: harus diakhiri `/api/index.php`.
+- Pastikan kode ruangan yang dipilih di aplikasi masih terdaftar di konsol Admin (ruangan yang dihapus akan mereset pilihan ruangan pada agen).
+- Periksa kembali field **Endpoint Server** di aplikasi: pastikan berakhiran `/api/index.php` dan dapat diakses dari jaringan laboratorium.
 </details>
 
 <details>
-<summary><b>PC mati saat ujian & internet/ekstensi tidak normal</b></summary>
+<summary><strong>Perangkat mati mendadak saat ujian sehingga hosts atau ekstensi IDE belum pulih</strong></summary>
 
-Jalankan [`Emergency-Restore.bat`](./dist/Emergency-Restore.bat) sebagai Administrator, atau:
+Jalankan [`dist/Emergency-Restore.bat`](./dist/Emergency-Restore.bat) sebagai Administrator, atau eksekusi perintah berikut:
 
 ```powershell
 "C:\Program Files\AIBlockerGuard\AIBlockerGuard.exe" --restore
 ```
 </details>
 
+<details>
+<summary><strong>File AIBlockerSetup.exe hilang atau dihapus oleh Windows Defender</strong></summary>
+
+File `.exe` custom yang belum memiliki tanda tangan digital kadang dikarantina oleh Windows Security. Periksa **Protection History** pada Windows Security, tambahkan folder `dist\` ke daftar **Exclusion** jika diperlukan, lalu pulihkan file dari Git atau build ulang:
+
+```powershell
+git checkout -- dist/AIBlockerSetup.exe
+```
+Atau kompilasi ulang seluruh paket dari source menggunakan `build.ps1`.
+</details>
+
 ---
 
 <div align="center">
 
-Dibuat untuk menjaga **integritas akademik** di laboratorium komputer. 🎓
+**GuardConsole & GuardAgent** · Created by Nizan
 
 </div>
