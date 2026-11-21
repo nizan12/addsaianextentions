@@ -1085,7 +1085,6 @@
     <!-- ======================================================================= -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-        import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-analytics.js";
         import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 
@@ -1101,8 +1100,6 @@
 
         try {
             const app = initializeApp(firebaseConfig);
-            let analytics = null;
-            try { analytics = getAnalytics(app); } catch (e) {}
             const auth = getAuth(app);
             const db = getFirestore(app);
 
@@ -1399,6 +1396,8 @@
         const explicitlyRemovedStudentIds = new Map();
         let serverDeletedStudents = {};
         const explicitlyDeletedRooms = new Set();
+        const recentAddedRooms = new Set();
+        let recentRoomMutationUntilMs = 0;
 
         function isStudentSuppressed(st) {
             if (!st || !st.id) return false;
@@ -2393,7 +2392,10 @@
             const errBanner = document.getElementById('dashboardErrorBanner');
             const errText = document.getElementById('dashboardErrorText');
             try {
-                const res = await fetch('api/index.php?action=dashboard_state');
+                const url = isManualRetry
+                    ? 'api/index.php?action=dashboard_state&force_cloud=1'
+                    : 'api/index.php?action=dashboard_state';
+                const res = await fetch(url);
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
                 if (!data.ok) {
@@ -2406,6 +2408,27 @@
 
                 hasLoadedOnce = true;
                 if (errBanner) errBanner.classList.add('hidden');
+
+                const syncDot = document.getElementById('firebaseSyncDot');
+                const syncLbl = document.getElementById('firebaseSyncLabel');
+                if (syncDot && syncLbl) {
+                    const cs = data.cloud_storage;
+                    if (cs && typeof cs === 'object') {
+                        if (cs.ok) {
+                            syncDot.className = 'status-dot is-accent';
+                            syncLbl.textContent = cs.backend === 'kv' ? 'Cloud Aktif (KV)' : 'Cloud Aktif (Firebase)';
+                            syncLbl.removeAttribute('title');
+                        } else {
+                            syncDot.className = 'status-dot is-warning';
+                            syncLbl.textContent = 'Mode Sementara (/tmp)';
+                            if (cs.error) syncLbl.title = cs.error;
+                        }
+                    } else {
+                        syncDot.className = 'status-dot is-accent';
+                        syncLbl.textContent = 'Penyimpanan Lokal';
+                        syncLbl.removeAttribute('title');
+                    }
+                }
 
                 currentRoomCode = data.config.room_code || '';
                 currentUnlockPin = data.config.unlock_pin || '202699';
@@ -2451,7 +2474,17 @@
                     idePassBadge.className = isCustomIdePass ? 'tag tag-accent tag-mono' : 'tag tag-mono';
                 }
                 const serverRooms = Array.isArray(data.config.rooms) ? data.config.rooms : [];
-                cachedRooms = serverRooms.filter(r => !explicitlyDeletedRooms.has(r));
+                let mergedRooms = serverRooms.filter(r => !explicitlyDeletedRooms.has(r));
+                if (Date.now() < recentRoomMutationUntilMs && recentAddedRooms.size > 0) {
+                    recentAddedRooms.forEach(r => {
+                        if (r && !explicitlyDeletedRooms.has(r) && !mergedRooms.includes(r)) {
+                            mergedRooms.push(r);
+                        }
+                    });
+                } else if (Date.now() >= recentRoomMutationUntilMs) {
+                    recentAddedRooms.clear();
+                }
+                cachedRooms = mergedRooms;
                 cachedRoomStatuses = data.config.room_statuses || {};
                 cachedRoomPins = data.config.room_pins || {};
                 cachedRoomBlocklists = data.config.room_blocklists || {};
@@ -3201,13 +3234,22 @@
             });
             const data = await res.json();
             if (data.ok) {
+                recentRoomMutationUntilMs = Date.now() + 8000;
+                recentAddedRooms.delete(oldRoom);
+                if (data.room_code) recentAddedRooms.add(data.room_code);
                 if (Array.isArray(data.rooms)) cachedRooms = data.rooms;
                 if (data.room_statuses) cachedRoomStatuses = data.room_statuses;
                 if (data.room_pins) cachedRoomPins = data.room_pins;
                 if (selectedRoom === oldRoom) selectedRoom = data.room_code;
                 closeRoomModal();
-                showToast(`Ruangan [${data.room_code}] & PIN (${data.room_pin || roomPin}) berhasil disimpan`);
-                fetchDashboard();
+                updateRoomSelectorOptions();
+                renderRoomsManager();
+                if (data.cloud_storage && data.cloud_storage.ok === false) {
+                    showToast(`Ruangan [${data.room_code}] tersimpan sementara di server, tetapi sinkronisasi cloud gagal (${data.cloud_storage.error || 'cek Firebase/KV'}).`, true);
+                } else {
+                    showToast(`Ruangan [${data.room_code}] & PIN (${data.room_pin || roomPin}) berhasil disimpan`);
+                }
+                fetchDashboard(true);
             } else {
                 showToast(data.error || 'Gagal menyimpan perubahan ruangan', true);
             }
@@ -3236,13 +3278,21 @@
             });
             const data = await res.json();
             if (data.ok) {
+                recentRoomMutationUntilMs = Date.now() + 8000;
                 explicitlyDeletedRooms.delete(data.room_code);
+                recentAddedRooms.add(data.room_code);
                 if (Array.isArray(data.rooms)) cachedRooms = data.rooms;
                 if (data.room_statuses) cachedRoomStatuses = data.room_statuses;
                 if (data.room_pins) cachedRoomPins = data.room_pins;
                 selectedRoom = data.room_code;
-                showToast(`Ruangan [${data.room_code}] ditambahkan (PIN: ${data.room_pin})`);
-                fetchDashboard();
+                updateRoomSelectorOptions();
+                renderRoomsManager();
+                if (data.cloud_storage && data.cloud_storage.ok === false) {
+                    showToast(`Ruangan [${data.room_code}] tersimpan sementara di server, tetapi sinkronisasi cloud gagal (${data.cloud_storage.error || 'cek Firebase/KV'}).`, true);
+                } else {
+                    showToast(`Ruangan [${data.room_code}] ditambahkan (PIN: ${data.room_pin})`);
+                }
+                fetchDashboard(true);
             } else {
                 showToast(data.error || 'Gagal menambahkan ruangan', true);
             }
@@ -3257,6 +3307,8 @@
             });
             const data = await res.json();
             if (data.ok) {
+                recentRoomMutationUntilMs = Date.now() + 8000;
+                recentAddedRooms.delete(norm);
                 explicitlyDeletedRooms.add(norm);
                 for (const [id, entry] of knownStudentsCache.entries()) {
                     if (String(entry.student.room_code || '').toUpperCase() === norm) {
@@ -3268,8 +3320,10 @@
                 if (data.room_pins) cachedRoomPins = data.room_pins;
                 cachedStudents = cachedStudents.filter(st => (st.room_code || '').toUpperCase() !== norm);
                 if (selectedRoom === room_code) selectedRoom = 'ALL';
+                updateRoomSelectorOptions();
+                renderRoomsManager();
                 showToast(`Ruangan [${room_code}] berhasil dihapus`);
-                fetchDashboard();
+                fetchDashboard(true);
             } else {
                 showToast(data.error || 'Gagal menghapus ruangan', true);
             }

@@ -112,7 +112,7 @@ function getDefaultSchema() {
             quarantine_extensions: true,
             kill_processes: true,
             blocklist_customized: false,
-            updated_at: new Date().toISOString()
+            updated_at: '1970-01-01T00:00:00.000Z'
         },
         blocklist: {
             domains: [
@@ -199,8 +199,10 @@ let lastCloudReadMs = 0;
 let firestoreBackoffUntil = 0;
 let cachedFbIdToken = null;
 let cachedFbIdTokenExpMs = 0;
+let cloudHydrated = false;
+let lastCloudStatus = { backend: 'tmp_only', ok: false, error: '' };
 
-async function fetchWithTimeout(url, options = {}, timeoutMs = 1500) {
+async function fetchWithTimeout(url, options = {}, timeoutMs = 4500) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -210,13 +212,20 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 1500) {
     }
 }
 
-async function getFirebaseStoreToken() {
+async function getFirebaseStoreToken(forceRefresh = false) {
     const now = Date.now();
-    if (cachedFbIdToken && now < cachedFbIdTokenExpMs) {
+    if (!forceRefresh && cachedFbIdToken && now < cachedFbIdTokenExpMs) {
         return cachedFbIdToken;
     }
+    if (forceRefresh) {
+        cachedFbIdToken = null;
+        cachedFbIdTokenExpMs = 0;
+    }
     // Kredensial akun penyimpanan state diambil dari Environment Variables (tidak pernah ditulis di kode).
-    if (!FB_STORE_EMAIL || !FB_STORE_PASSWORD) return null;
+    if (!FB_STORE_EMAIL || !FB_STORE_PASSWORD) {
+        lastCloudStatus = { backend: 'firebase', ok: false, error: 'FB_STORE_EMAIL/FB_STORE_PASSWORD kosong' };
+        return null;
+    }
     const storeEmail = FB_STORE_EMAIL;
     const storePass = FB_STORE_PASSWORD;
     try {
@@ -224,13 +233,13 @@ async function getFirebaseStoreToken() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email: storeEmail, password: storePass, returnSecureToken: true })
-        }, 1500);
+        }, 4500);
         if (!res.ok) {
             res = await fetchWithTimeout(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${FIREBASE_API_KEY}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email: storeEmail, password: storePass, returnSecureToken: true })
-            }, 1500);
+            }, 4500);
         }
         if (res.ok) {
             const j = await res.json();
@@ -239,8 +248,13 @@ async function getFirebaseStoreToken() {
                 cachedFbIdTokenExpMs = now + 45 * 60 * 1000;
                 return cachedFbIdToken;
             }
+            lastCloudStatus = { backend: 'firebase', ok: false, error: 'Respons auth Firebase tidak menyertakan idToken' };
+        } else {
+            lastCloudStatus = { backend: 'firebase', ok: false, error: `Auth Firebase HTTP ${res.status}` };
         }
-    } catch (e) {}
+    } catch (e) {
+        lastCloudStatus = { backend: 'firebase', ok: false, error: e.message || 'Timeout auth Firebase' };
+    }
     return null;
 }
 
@@ -380,6 +394,18 @@ function packCloudPayload(data) {
         }
         encoded = zlib.deflateRawSync(Buffer.from(JSON.stringify(compact)), { level: 9 }).toString('base64url');
     }
+    if (encoded.length > 1980) {
+        // Tier 3: Drop ephemeral student telemetry first (repopulated automatically via heartbeat every 3.5s)
+        compact.s = {};
+        encoded = zlib.deflateRawSync(Buffer.from(JSON.stringify(compact)), { level: 9 }).toString('base64url');
+    }
+    if (encoded.length > 1980) {
+        // Tier 4: Preserve rooms, PINs, room statuses, and admin/IDE credentials within 2,048 char photoUrl limit
+        compact.cbl = null;
+        compact.cfg.rbl = {};
+        compact.cfg.bc = false;
+        encoded = zlib.deflateRawSync(Buffer.from(JSON.stringify(compact)), { level: 9 }).toString('base64url');
+    }
     return FB_STORE_PREFIX + encoded;
 }
 
@@ -494,45 +520,69 @@ function unpackCloudPayload(photoUrl) {
 
 async function readFromFirebase() {
     // Firebase Cloud State Store (blockai-ba569 via IdentityToolkit, akun khusus dari env) — lintas container Vercel
-    try {
-        const idToken = await getFirebaseStoreToken();
-        if (idToken) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+            const idToken = await getFirebaseStoreToken(attempt > 0);
+            if (!idToken) continue;
             const res = await fetchWithTimeout(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_API_KEY}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ idToken })
-            }, 1500);
+            }, 4500);
             if (res.ok) {
                 const j = await res.json();
                 const photoUrl = j?.users?.[0]?.photoUrl;
                 const unpacked = unpackCloudPayload(photoUrl);
-                if (unpacked) return unpacked;
+                if (unpacked) {
+                    lastCloudStatus = { backend: 'firebase', ok: true, error: '' };
+                    return unpacked;
+                }
+                lastCloudStatus = { backend: 'firebase', ok: true, error: '' };
+                return null;
             }
+            if (res.status === 400 || res.status === 401) {
+                cachedFbIdToken = null;
+                cachedFbIdTokenExpMs = 0;
+            }
+            lastCloudStatus = { backend: 'firebase', ok: false, error: `Lookup HTTP ${res.status}` };
+        } catch (e) {
+            lastCloudStatus = { backend: 'firebase', ok: false, error: e.message || 'Lookup network error' };
         }
-    } catch (e) {}
-
+    }
     return null;
 }
 
 async function writeToFirebase(data) {
     // Simpan ke Firebase Cloud State Store (blockai-ba569) agar semua container Vercel sinkron
-    try {
-        const idToken = await getFirebaseStoreToken();
-        if (idToken) {
-            const packedUrl = packCloudPayload(data);
+    const packedUrl = packCloudPayload(data);
+    for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+            const idToken = await getFirebaseStoreToken(attempt > 0);
+            if (!idToken) continue;
             const res = await fetchWithTimeout(`https://identitytoolkit.googleapis.com/v1/accounts:update?key=${FIREBASE_API_KEY}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ idToken, photoUrl: packedUrl })
-            }, 2500);
-            if (!res.ok) {
-                const errText = await res.text();
-                console.error('[writeToFirebase] Error updating cloud state:', res.status, errText);
+            }, 4500);
+            if (res.ok) {
+                lastCloudStatus = { backend: 'firebase', ok: true, error: '' };
+                return lastCloudStatus;
             }
+            const errText = await res.text();
+            console.error('[writeToFirebase] Error updating cloud state:', res.status, errText);
+            lastCloudStatus = { backend: 'firebase', ok: false, error: `HTTP ${res.status}` };
+            if (res.status === 400 || res.status === 401) {
+                cachedFbIdToken = null;
+                cachedFbIdTokenExpMs = 0;
+                continue;
+            }
+            return lastCloudStatus;
+        } catch (e) {
+            console.error('[writeToFirebase] Network error:', e.message);
+            lastCloudStatus = { backend: 'firebase', ok: false, error: e.message || 'Network error' };
         }
-    } catch (e) {
-        console.error('[writeToFirebase] Network error:', e.message);
     }
+    return lastCloudStatus;
 }
 
 async function readData(forceCloud = false) {
@@ -543,12 +593,20 @@ async function readData(forceCloud = false) {
         try {
             const resp = await fetchWithTimeout(`${process.env.KV_REST_API_URL}/get/aiblocker_db`, {
                 headers: { Authorization: `Bearer ${process.env.KV_REST_API_TOKEN}` }
-            }, 900);
+            }, 2500);
             const json = await resp.json();
             if (json && json.result) {
-                return typeof json.result === 'string' ? JSON.parse(json.result) : json.result;
+                const parsedKv = typeof json.result === 'string' ? JSON.parse(json.result) : json.result;
+                if (parsedKv && parsedKv.config) {
+                    cloudHydrated = true;
+                    lastCloudStatus = { backend: 'kv', ok: true, error: '' };
+                    memoryStore = parsedKv;
+                    return memoryStore;
+                }
             }
-        } catch (e) {}
+        } catch (e) {
+            lastCloudStatus = { backend: 'kv', ok: false, error: e.message || 'KV read error' };
+        }
     }
 
     // 2. Baca memory / /tmp terlebih dahulu
@@ -561,13 +619,16 @@ async function readData(forceCloud = false) {
     }
 
     // 3. Sinkronkan dari Firebase Cloud Store agar semua container Vercel memiliki state yang sama!
-    if (forceCloud || !memoryStore || (now - lastCloudReadMs) >= 1000) {
+    if (forceCloud || !memoryStore || memoryStore._isDefaultFallback || (now - lastCloudReadMs) >= 1000) {
         lastCloudReadMs = now;
         const fbData = await readFromFirebase();
         if (fbData && fbData.config) {
+            cloudHydrated = true;
+            lastCloudStatus = { backend: 'firebase', ok: true, error: '' };
             const nowSec = Math.floor(now / 1000);
-            if (!memoryStore) {
+            if (!memoryStore || memoryStore._isDefaultFallback) {
                 memoryStore = fbData;
+                delete memoryStore._isDefaultFallback;
             } else {
                 const localDeleted = memoryStore.config?.deleted_students || {};
                 const fbDeleted = fbData.config.deleted_students || {};
@@ -586,6 +647,14 @@ async function readData(forceCloud = false) {
                     memoryStore.config = fbData.config;
                     if (fbData.blocklist) {
                         memoryStore.blocklist = fbData.blocklist;
+                    }
+                } else if (Array.isArray(fbData.config.rooms) && fbData.config.rooms.length > 0 && (!Array.isArray(memoryStore.config?.rooms) || memoryStore.config.rooms.length === 0)) {
+                    const delRooms = new Set(Array.isArray(memoryStore.config?.deleted_rooms) ? memoryStore.config.deleted_rooms : []);
+                    const recoveredRooms = fbData.config.rooms.filter(r => !delRooms.has(r));
+                    if (recoveredRooms.length > 0) {
+                        memoryStore.config.rooms = recoveredRooms;
+                        memoryStore.config.room_statuses = { ...(fbData.config.room_statuses || {}), ...(memoryStore.config.room_statuses || {}) };
+                        memoryStore.config.room_pins = { ...(fbData.config.room_pins || {}), ...(memoryStore.config.room_pins || {}) };
                     }
                 }
 
@@ -630,34 +699,51 @@ async function readData(forceCloud = false) {
 
     if (!memoryStore) {
         memoryStore = getDefaultSchema();
-        try {
-            fs.writeFileSync(TMP_DB_PATH, JSON.stringify(memoryStore, null, 2), 'utf8');
-        } catch (e) {}
+        memoryStore._isDefaultFallback = true;
     }
     return memoryStore;
 }
 
-async function writeData(data) {
+async function writeData(data, options = {}) {
+    const allowFallbackWrite = Boolean(options && options.allowFallbackWrite);
+    if (allowFallbackWrite) {
+        delete data._isDefaultFallback;
+        cloudHydrated = true;
+    }
     memoryStore = data;
     lastCloudReadMs = Date.now();
     try {
         fs.writeFileSync(TMP_DB_PATH, JSON.stringify(data, null, 2), 'utf8');
     } catch (e) {}
 
-    await writeToFirebase(data);
+    // Lindungi state cloud agar fallback kosong akibat cold-start timeout tidak pernah menimpa Firebase
+    if (data._isDefaultFallback && !allowFallbackWrite) {
+        return lastCloudStatus;
+    }
+
+    let fbWriteRes = await writeToFirebase(data);
 
     if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
         try {
-            await fetchWithTimeout(`${process.env.KV_REST_API_URL}/set/aiblocker_db`, {
+            const kvResp = await fetchWithTimeout(`${process.env.KV_REST_API_URL}/set/aiblocker_db`, {
                 method: 'POST',
                 headers: {
                     Authorization: `Bearer ${process.env.KV_REST_API_TOKEN}`,
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify(JSON.stringify(data))
-            }, 900);
-        } catch (e) {}
+            }, 2500);
+            if (kvResp.ok) {
+                lastCloudStatus = { backend: 'kv', ok: true, error: '' };
+                return lastCloudStatus;
+            }
+        } catch (e) {
+            if (!fbWriteRes.ok) {
+                lastCloudStatus = { backend: 'kv', ok: false, error: e.message || 'KV write error' };
+            }
+        }
     }
+    return fbWriteRes;
 }
 
 function nowFormatted() {
@@ -944,7 +1030,8 @@ module.exports = async (req, res) => {
 
     try {
         const isMutating = action !== 'dashboard_state' && action !== 'state' && action !== 'get_rooms' && action !== 'blocklist';
-        const data = await readData(isMutating);
+        const forceCloudParam = queryParams.force_cloud === '1' || queryParams.force_cloud === 'true';
+        const data = await readData(isMutating || forceCloudParam);
         if (!data.students || Array.isArray(data.students)) data.students = {};
         ensureRoomsConfig(data);
         purgeDeletedStudents(data);
@@ -1423,6 +1510,7 @@ module.exports = async (req, res) => {
                 return res.status(200).json({
                     ok: true,
                     server_time: nowFormatted(),
+                    cloud_storage: lastCloudStatus,
                     config: sanitizeConfigForDashboard(data.config),
                     stats: {
                         total_students: students.length,
@@ -1495,9 +1583,10 @@ module.exports = async (req, res) => {
                     addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ROOM_COMMAND', `Pengawas memilih ${label} untuk ruangan [${targetRoom}].`, 'INFO', targetRoom);
                 }
 
-                await writeData(data);
+                const cloudWrite = await writeData(data, { allowFallbackWrite: true });
                 return res.status(200).json({
                     ok: true,
+                    cloud_storage: cloudWrite,
                     global_status: data.config.global_status,
                     lock_ai: Boolean(data.config.lock_ai),
                     lock_extensions: Boolean(data.config.lock_extensions),
@@ -1537,7 +1626,7 @@ module.exports = async (req, res) => {
                             data.config.ide_hosts = (data.config.ide_hosts || []).filter((ih) => String(ih?.h || '').trim().toUpperCase() !== resolvedHost);
                         }
                         data.config.updated_at = new Date().toISOString();
-                        await writeData(data);
+                        await writeData(data, { allowFallbackWrite: true });
                         return res.status(200).json({
                             ok: true,
                             pc_overrides: data.config.pc_overrides,
@@ -1579,7 +1668,7 @@ module.exports = async (req, res) => {
                     const modLabel = mod === 'AI' ? 'AI Chat / Agent' : (mod === 'EXT' ? 'Ekstensi IDE' : 'Semua Modul');
                     const pcLabel = overrideKey || targetStudentId;
                     addLog(data, targetStudentId || 'ADMIN', 'Dosen Pengawas', pcLabel, 'MODULE_STATUS', `${modLabel} pada PC [${pcLabel}] diatur ke ${status}.`, 'INFO');
-                    await writeData(data);
+                    await writeData(data, { allowFallbackWrite: true });
                     return res.status(200).json({
                         ok: true,
                         student_id: matchedKey || targetStudentId,
@@ -1623,7 +1712,7 @@ module.exports = async (req, res) => {
                 data.config.updated_at = new Date().toISOString();
                 const modLabel = mod === 'AI' ? 'AI Chat / Agent' : (mod === 'EXT' ? 'Ekstensi IDE' : 'Semua Modul');
                 addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'MODULE_STATUS', `Status ${modLabel} diatur ke ${status} (Semua PC mengikuti global).`, 'INFO');
-                await writeData(data);
+                await writeData(data, { allowFallbackWrite: true });
                 return res.status(200).json({
                     ok: true,
                     global_status: data.config.global_status || 'LOCKED',
@@ -1646,9 +1735,10 @@ module.exports = async (req, res) => {
                 registerRoomByAdmin(data, newRoom, customPin);
                 data.config.updated_at = new Date().toISOString();
                 addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ROOM_ADDED', `Ruangan baru [${newRoom}] ditambahkan (PIN: ${data.config.room_pins[newRoom]}).`, 'INFO', newRoom);
-                await writeData(data);
+                const cloudWrite = await writeData(data, { allowFallbackWrite: true });
                 return res.status(200).json({
                     ok: true,
+                    cloud_storage: cloudWrite,
                     room_code: newRoom,
                     room_pin: data.config.room_pins[newRoom],
                     rooms: data.config.rooms,
@@ -1698,9 +1788,10 @@ module.exports = async (req, res) => {
                 data.config.room_pins[newRoom] = resolvedPin;
                 data.config.updated_at = new Date().toISOString();
                 addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ROOM_UPDATED', `Ruangan [${oldRoom}] diperbarui menjadi [${newRoom}] (PIN: ${resolvedPin}).`, 'INFO', newRoom);
-                await writeData(data);
+                const cloudWrite = await writeData(data, { allowFallbackWrite: true });
                 return res.status(200).json({
                     ok: true,
+                    cloud_storage: cloudWrite,
                     room_code: newRoom,
                     room_pin: resolvedPin,
                     rooms: data.config.rooms,
@@ -1735,9 +1826,10 @@ module.exports = async (req, res) => {
                 }
                 data.config.updated_at = new Date().toISOString();
                 addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ROOM_REMOVED', `Ruangan [${delRoom}] beserta sesi di dalamnya telah dihapus.`, 'INFO');
-                await writeData(data);
+                const cloudWrite = await writeData(data, { allowFallbackWrite: true });
                 return res.status(200).json({
                     ok: true,
+                    cloud_storage: cloudWrite,
                     rooms: data.config.rooms,
                     room_statuses: data.config.room_statuses,
                     room_pins: data.config.room_pins,
@@ -1769,7 +1861,7 @@ module.exports = async (req, res) => {
                         addLog(data, st.nim, st.name, st.hostname, 'ADMIN_REMOVE', `Data sesi mahasiswa dihapus dari ruangan [${stRoom}] oleh pengawas.`, 'INFO', stRoom);
                         delete data.students[studentId];
                     }
-                    await writeData(data);
+                    await writeData(data, { allowFallbackWrite: true });
                     return res.status(200).json({ ok: true, deleted_students: data.config.deleted_students });
                 }
                 if (!data.students[studentId]) {
@@ -1797,7 +1889,7 @@ module.exports = async (req, res) => {
                         };
                     }
                     addLog(data, st.nim, st.name, st.hostname, 'REMOTE_CMD', `Pengawas mengubah status endpoint menjadi ${cmd} di [${stRoom}].`, 'INFO', stRoom);
-                    await writeData(data);
+                    await writeData(data, { allowFallbackWrite: true });
                     return res.status(200).json({ ok: true, target_status: cmd, status: cmd, lock_ai: isCmdLocked, lock_extensions: isCmdLocked });
                 }
                 if (cmd === 'UPDATE') {
@@ -1805,7 +1897,7 @@ module.exports = async (req, res) => {
                     st.pending_command = 'UPDATE';
                     st.cmd_updated_at = cmdTs;
                     addLog(data, st.nim, st.name, st.hostname, 'REMOTE_UPDATE', `Pengawas mengirim instruksi perbarui agen (self-update) ke [${st.hostname}].`, 'INFO', stRoom);
-                    await writeData(data);
+                    await writeData(data, { allowFallbackWrite: true });
                     return res.status(200).json({ ok: true, command: 'UPDATE' });
                 }
                 return res.status(400).json({ ok: false, error: 'Perintah tidak dikenali.' });
@@ -1830,7 +1922,7 @@ module.exports = async (req, res) => {
                         : 'Password buka kunci IDE (AI Chat & Ekstensi) telah diperbarui.',
                     'INFO'
                 );
-                await writeData(data);
+                await writeData(data, { allowFallbackWrite: true });
                 return res.status(200).json({
                     ok: true,
                     ide_password_hash: data.config.ide_password_hash,
@@ -1882,7 +1974,7 @@ module.exports = async (req, res) => {
                         ? 'Kata sandi login dashboard admin & buka kunci IDE telah diperbarui.'
                         : 'Kata sandi login dashboard admin telah diperbarui.');
                 addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ADMIN_PASSWORD_UPDATED', logMsg, 'INFO');
-                await writeData(data);
+                await writeData(data, { allowFallbackWrite: true });
                 return res.status(200).json({
                     ok: true,
                     has_custom_admin_password: Boolean(data.config.admin_password_hash),
@@ -1943,9 +2035,10 @@ module.exports = async (req, res) => {
                     ? String(data.config.admin_email).trim().toLowerCase()
                     : ADMIN_EMAIL;
                 addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'CONFIG_UPDATE', 'Konfigurasi ruangan & kebijakan blokir diperbarui.', 'INFO');
-                await writeData(data);
+                const cloudWrite = await writeData(data, { allowFallbackWrite: true });
                 return res.status(200).json({
                     ok: true,
+                    cloud_storage: cloudWrite,
                     token: signAdminToken(effectiveEmail),
                     config: sanitizeConfigForDashboard(data.config)
                 });
@@ -1991,9 +2084,10 @@ module.exports = async (req, res) => {
                 }
 
                 data.config.updated_at = new Date().toISOString();
-                await writeData(data);
+                const cloudWrite = await writeData(data, { allowFallbackWrite: true });
                 return res.status(200).json({
                     ok: true,
+                    cloud_storage: cloudWrite,
                     room_code: targetRoom || 'ALL',
                     blocklist: data.blocklist,
                     room_blocklists: data.config.room_blocklists,
@@ -2003,7 +2097,7 @@ module.exports = async (req, res) => {
 
             case 'clear_logs': {
                 data.logs = [];
-                await writeData(data);
+                await writeData(data, { allowFallbackWrite: true });
                 return res.status(200).json({ ok: true });
             }
 
@@ -2016,5 +2110,24 @@ module.exports = async (req, res) => {
         }
     } catch (err) {
         return res.status(500).json({ ok: false, error: err.message });
+    }
+};
+
+module.exports._internals = {
+    getDefaultSchema,
+    packCloudPayload,
+    unpackCloudPayload,
+    readData,
+    writeData,
+    ensureRoomsConfig,
+    registerRoomByAdmin,
+    getLastCloudStatus: () => lastCloudStatus,
+    resetMemoryStoreForTest: () => {
+        memoryStore = null;
+        lastCloudReadMs = 0;
+        cloudHydrated = false;
+        lastCloudStatus = { backend: 'tmp_only', ok: false, error: '' };
+        cachedFbIdToken = null;
+        cachedFbIdTokenExpMs = 0;
     }
 };
