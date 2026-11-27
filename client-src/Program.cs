@@ -241,6 +241,8 @@ namespace AIBlockerGuard
 
         public static int[] LocalAiPorts = new int[] { 11434, 1234, 1337, 5001 };
 
+        public static bool BlockSearchAi = true;
+
         public static bool IsAdministrator()
         {
             try
@@ -282,7 +284,8 @@ namespace AIBlockerGuard
                 {
                     { "cmd", "APPLY_SYSTEM_LOCK" },
                     { "domains", BlockedDomains },
-                    { "block_doh", true }
+                    { "block_doh", true },
+                    { "block_search_ai", BlockSearchAi }
                 });
                 if (res != null && res.ContainsKey("ok") && Convert.ToBoolean(res["ok"]))
                 {
@@ -296,6 +299,21 @@ namespace AIBlockerGuard
 
             try
             {
+                if (BlockedDomains == null || BlockedDomains.Count == 0)
+                {
+                    if (File.Exists(HostsPath))
+                    {
+                        FileInfo fiClean = new FileInfo(HostsPath);
+                        if (fiClean.Exists && fiClean.IsReadOnly) fiClean.IsReadOnly = false;
+                        string rawHosts = File.ReadAllText(HostsPath, Encoding.UTF8);
+                        string stripped = StripHostsBlockContent(rawHosts);
+                        File.WriteAllText(HostsPath, stripped.TrimEnd() + Environment.NewLine, Encoding.UTF8);
+                        FlushDns();
+                    }
+                    statusMessage = "Layer 1: 0 domain diblokir di hosts.";
+                    return true;
+                }
+
                 string backupPath = Path.Combine(AppDataDir, "hosts.original.bak");
                 if (File.Exists(HostsPath) && !File.Exists(backupPath))
                 {
@@ -513,6 +531,9 @@ namespace AIBlockerGuard
                         if (string.IsNullOrEmpty(d) || d.Contains(" ")) continue;
                         uniqueEntries.Add(d);
                     }
+                }
+                if (BlockSearchAi)
+                {
                     foreach (string p in SearchAiBlockPatterns)
                     {
                         uniqueEntries.Add(p);
@@ -541,24 +562,40 @@ namespace AIBlockerGuard
                                     key.SetValue("BuiltInDnsClientEnabled", 0, RegistryValueKind.DWord);
                                     key.SetValue("QuicAllowed", 0, RegistryValueKind.DWord);
 
-                                    if (bPath.EndsWith("Chrome"))
+                                    if (BlockSearchAi)
                                     {
-                                        key.SetValue("GenAiDefaultSettings", 2, RegistryValueKind.DWord);
-                                        key.SetValue("AIModeSettings", 1, RegistryValueKind.DWord);
-                                        key.SetValue("GeminiSettings", 1, RegistryValueKind.DWord);
-                                        key.SetValue("GenAILocalFoundationalModelSettings", 1, RegistryValueKind.DWord);
+                                        if (bPath.EndsWith("Chrome"))
+                                        {
+                                            key.SetValue("GenAiDefaultSettings", 2, RegistryValueKind.DWord);
+                                            key.SetValue("AIModeSettings", 1, RegistryValueKind.DWord);
+                                            key.SetValue("GeminiSettings", 1, RegistryValueKind.DWord);
+                                            key.SetValue("GenAILocalFoundationalModelSettings", 1, RegistryValueKind.DWord);
+                                        }
+                                        else if (bPath.EndsWith("Edge"))
+                                        {
+                                            key.SetValue("HubsSidebarEnabled", 0, RegistryValueKind.DWord);
+                                            key.SetValue("CopilotCDPPageContext", 0, RegistryValueKind.DWord);
+                                            key.SetValue("CopilotPageContext", 0, RegistryValueKind.DWord);
+                                            key.SetValue("EdgeEntraCopilotPageContext", 0, RegistryValueKind.DWord);
+                                            key.SetValue("DiscoverPageContextEnabled", 0, RegistryValueKind.DWord);
+                                        }
+                                        else if (bPath.EndsWith("Brave"))
+                                        {
+                                            key.SetValue("BraveAIChatEnabled", 0, RegistryValueKind.DWord);
+                                        }
                                     }
-                                    else if (bPath.EndsWith("Edge"))
+                                    else
                                     {
-                                        key.SetValue("HubsSidebarEnabled", 0, RegistryValueKind.DWord);
-                                        key.SetValue("CopilotCDPPageContext", 0, RegistryValueKind.DWord);
-                                        key.SetValue("CopilotPageContext", 0, RegistryValueKind.DWord);
-                                        key.SetValue("EdgeEntraCopilotPageContext", 0, RegistryValueKind.DWord);
-                                        key.SetValue("DiscoverPageContextEnabled", 0, RegistryValueKind.DWord);
-                                    }
-                                    else if (bPath.EndsWith("Brave"))
-                                    {
-                                        key.SetValue("BraveAIChatEnabled", 0, RegistryValueKind.DWord);
+                                        key.DeleteValue("GenAiDefaultSettings", false);
+                                        key.DeleteValue("AIModeSettings", false);
+                                        key.DeleteValue("GeminiSettings", false);
+                                        key.DeleteValue("GenAILocalFoundationalModelSettings", false);
+                                        key.DeleteValue("HubsSidebarEnabled", false);
+                                        key.DeleteValue("CopilotCDPPageContext", false);
+                                        key.DeleteValue("CopilotPageContext", false);
+                                        key.DeleteValue("EdgeEntraCopilotPageContext", false);
+                                        key.DeleteValue("DiscoverPageContextEnabled", false);
+                                        key.DeleteValue("BraveAIChatEnabled", false);
                                     }
 
                                     key.DeleteValue("DefaultSearchProviderEnabled", false);
@@ -569,7 +606,7 @@ namespace AIBlockerGuard
 
                                     // Rebuild URLBlocklist so Chromium immediately blocks even already-open tabs
                                     key.DeleteSubKeyTree("URLBlocklist", false);
-                                    if (hasDomains && uniqueEntries.Count > 0)
+                                    if (uniqueEntries.Count > 0)
                                     {
                                         using (RegistryKey ubKey = key.CreateSubKey("URLBlocklist"))
                                         {
@@ -3897,7 +3934,7 @@ namespace AIBlockerGuard
 
             // Layer 1: Hosts & DNS
             string hostsMsg;
-            if (GuardEngine.BlockedDomains.Count > 0)
+            if (GuardEngine.BlockedDomains.Count > 0 || GuardEngine.BlockSearchAi)
             {
                 GuardEngine.ApplyHostsBlock(false, out hostsMsg);
                 AddLog(hostsMsg);
@@ -4060,13 +4097,18 @@ namespace AIBlockerGuard
                     return null;
                 }
 
+                Dictionary<string, object> cfgObj = response.ContainsKey("config") ? (response["config"] as Dictionary<string, object>) : null;
                 if (response.ContainsKey("blocklist"))
                 {
                     var bl = response["blocklist"] as Dictionary<string, object>;
-                    if (bl != null)
+                    if (bl != null || cfgObj != null)
                     {
-                        UpdateLocalBlocklistFromServer(bl);
+                        UpdateLocalBlocklistFromServer(bl, cfgObj);
                     }
+                }
+                else if (cfgObj != null)
+                {
+                    UpdateLocalBlocklistFromServer(null, cfgObj);
                 }
 
                 string targetStatus = "LOCKED";
@@ -4170,10 +4212,15 @@ namespace AIBlockerGuard
 
                 if (res.ContainsKey("ok") && (bool)res["ok"])
                 {
+                    Dictionary<string, object> hbCfgObj = res.ContainsKey("config") ? (res["config"] as Dictionary<string, object>) : null;
                     if (res.ContainsKey("blocklist"))
                     {
                         var bl = res["blocklist"] as Dictionary<string, object>;
-                        if (bl != null) UpdateLocalBlocklistFromServer(bl);
+                        if (bl != null || hbCfgObj != null) UpdateLocalBlocklistFromServer(bl, hbCfgObj);
+                    }
+                    else if (hbCfgObj != null)
+                    {
+                        UpdateLocalBlocklistFromServer(null, hbCfgObj);
                     }
 
                     // Sinkronkan PIN hash khusus ruangan dari server untuk cadangan offline aman
@@ -4444,11 +4491,34 @@ namespace AIBlockerGuard
             catch { }
         }
 
-        private void UpdateLocalBlocklistFromServer(Dictionary<string, object> bl)
+        private void UpdateLocalBlocklistFromServer(Dictionary<string, object> bl, Dictionary<string, object> cfg = null)
         {
             try
             {
-                if (bl.ContainsKey("domains"))
+                bool domainsChanged = false;
+                bool searchAiChanged = false;
+                bool extsChanged = false;
+
+                if (bl != null && bl.ContainsKey("block_search_ai") && bl["block_search_ai"] != null)
+                {
+                    bool nextSearchAi = Convert.ToBoolean(bl["block_search_ai"]);
+                    if (nextSearchAi != GuardEngine.BlockSearchAi)
+                    {
+                        GuardEngine.BlockSearchAi = nextSearchAi;
+                        searchAiChanged = true;
+                    }
+                }
+                else if (cfg != null && cfg.ContainsKey("block_search_ai") && cfg["block_search_ai"] != null)
+                {
+                    bool nextSearchAi = Convert.ToBoolean(cfg["block_search_ai"]);
+                    if (nextSearchAi != GuardEngine.BlockSearchAi)
+                    {
+                        GuardEngine.BlockSearchAi = nextSearchAi;
+                        searchAiChanged = true;
+                    }
+                }
+
+                if (bl != null && bl.ContainsKey("domains"))
                 {
                     var doms = bl["domains"] as System.Collections.ArrayList;
                     if (doms != null)
@@ -4459,30 +4529,13 @@ namespace AIBlockerGuard
                             .Distinct(StringComparer.OrdinalIgnoreCase)
                             .ToList();
 
-                        bool changed = serverDoms.Count != GuardEngine.BlockedDomains.Count ||
+                        domainsChanged = serverDoms.Count != GuardEngine.BlockedDomains.Count ||
                             !serverDoms.All(d => GuardEngine.BlockedDomains.Contains(d, StringComparer.OrdinalIgnoreCase));
 
                         GuardEngine.BlockedDomains = serverDoms;
-
-                        if (changed && isLocked)
-                        {
-                            if (GuardEngine.BlockedDomains.Count > 0)
-                            {
-                                string msg;
-                                GuardEngine.ApplyHostsBlock(false, out msg);
-                                GuardEngine.ApplyBrowserPolicies(false);
-                                AddLog("Kebijakan domain diperbarui dari Admin (" + GuardEngine.BlockedDomains.Count + " domain diblokir).");
-                            }
-                            else
-                            {
-                                GuardEngine.RemoveHostsBlock();
-                                GuardEngine.ApplyBrowserPolicies(false);
-                                AddLog("Kebijakan domain diperbarui dari Admin (0 domain diblokir).");
-                            }
-                        }
                     }
                 }
-                if (bl.ContainsKey("processes"))
+                if (bl != null && bl.ContainsKey("processes"))
                 {
                     var procs = bl["processes"] as System.Collections.ArrayList;
                     if (procs != null)
@@ -4494,18 +4547,56 @@ namespace AIBlockerGuard
                             .ToList();
                     }
                 }
-                if (bl.ContainsKey("ide_extensions"))
+                if (bl != null && bl.ContainsKey("ide_extensions"))
                 {
                     var exts = bl["ide_extensions"] as System.Collections.ArrayList;
                     if (exts != null)
                     {
-                        GuardEngine.BlockedExtensionPatterns = exts.Cast<object>()
+                        var serverExts = exts.Cast<object>()
                             .Select(x => Convert.ToString(x).Trim())
                             .Where(x => !string.IsNullOrEmpty(x))
                             .Distinct(StringComparer.OrdinalIgnoreCase)
                             .ToList();
+
+                        extsChanged = serverExts.Count != GuardEngine.BlockedExtensionPatterns.Count ||
+                            !serverExts.All(ex => GuardEngine.BlockedExtensionPatterns.Contains(ex, StringComparer.OrdinalIgnoreCase));
+
+                        GuardEngine.BlockedExtensionPatterns = serverExts;
                     }
                 }
+
+                if ((domainsChanged || searchAiChanged) && isLocked)
+                {
+                    if (GuardEngine.BlockedDomains.Count > 0 || GuardEngine.BlockSearchAi)
+                    {
+                        string msg;
+                        GuardEngine.ApplyHostsBlock(false, out msg);
+                        GuardEngine.ApplyBrowserPolicies(false);
+                        AddLog("Kebijakan domain & Mode AI diperbarui dari Admin (" + GuardEngine.BlockedDomains.Count + " domain, Mode AI=" + (GuardEngine.BlockSearchAi ? "BLOKIR" : "IZIN") + ").");
+                    }
+                    else
+                    {
+                        GuardEngine.RemoveHostsBlock();
+                        GuardEngine.ApplyBrowserPolicies(false);
+                        AddLog("Kebijakan domain & Mode AI diperbarui dari Admin (0 domain & Mode AI diizinkan).");
+                    }
+                }
+
+                if (extsChanged && isLocked)
+                {
+                    GuardEngine.RestoreQuarantinedExtensions();
+                    if (GuardEngine.BlockedExtensionPatterns.Count > 0)
+                    {
+                        quarantinedExtensions = GuardEngine.ScanAndQuarantineExtensions(false);
+                    }
+                    else
+                    {
+                        quarantinedExtensions = new List<string>();
+                    }
+                    telemetryLedger.SetCell(1, quarantinedExtensions.Count + " Modul", quarantinedExtensions.Count > 0 ? TelemetryTone.Accent : TelemetryTone.Neutral);
+                    AddLog("Kebijakan ekstensi IDE diperbarui (" + GuardEngine.BlockedExtensionPatterns.Count + " pola, " + quarantinedExtensions.Count + " modul dikunci).");
+                }
+
                 telemetryLedger.SetCell(0, GuardEngine.BlockedDomains.Count + " Domain", TelemetryTone.Neutral);
             }
             catch { }

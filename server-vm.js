@@ -6,7 +6,8 @@ const { URL } = require('url');
 function loadEnvFile(filePath) {
     try {
         if (!fs.existsSync(filePath)) return;
-        const lines = fs.readFileSync(filePath, 'utf8').split(/\r?\n/);
+        const rawText = fs.readFileSync(filePath, 'utf8').replace(/^\uFEFF/, '');
+        const lines = rawText.split(/\r?\n/);
         for (const rawLine of lines) {
             const line = rawLine.trim();
             if (!line || line.startsWith('#')) continue;

@@ -637,44 +637,118 @@
                         </div>
                     </section>
 
-                    <!-- VIEW 3: KEBIJAKAN DAFTAR BLOKIR FLEKSIBEL (GLOBAL & PER-RUANGAN) -->
+                    <!-- VIEW 3: KEBIJAKAN DAFTAR BLOKIR FLEKSIBEL (GLOBAL, PER-RUANGAN & PER-PC) -->
                     <section id="view-rules" class="view-section hidden">
                         <div class="panel panel-padded stack-lg">
                             <div class="row-between">
                                 <div>
-                                    <h2 class="panel-title">Manajemen Blokir Domain &amp; Aplikasi Secara Fleksibel (Per-Ruangan)</h2>
-                                    <p class="panel-desc">Atur layanan AI, website, atau proses aplikasi mana yang diblokir secara Global maupun khusus untuk masing-masing ruangan.</p>
+                                    <h2 class="panel-title">Manajemen Blokir Domain, Mode AI, Proses &amp; Ekstensi</h2>
+                                    <p class="panel-desc">Atur kebijakan secara Global, khusus Per Ruangan, maupun khusus untuk Perangkat (PC) tertentu.</p>
                                 </div>
                                 <div class="row-wrap">
-                                    <button type="button" onclick="toggleAllDomainGroups(true)" class="btn btn-sm">Pilih Semua</button>
-                                    <button type="button" onclick="toggleAllDomainGroups(false)" class="btn btn-sm">Kosongkan Semua</button>
                                     <button type="button" id="btnResetRoomRules" onclick="resetRoomBlocklistToGlobal()" class="btn btn-sm btn-soft-warning hidden">Reset ke Kebijakan Global</button>
-                                    <button type="button" id="btnSaveBlocklist" onclick="saveBlocklist()" class="btn btn-sm btn-primary">Simpan &amp; Terapkan Kebijakan</button>
+                                    <button type="button" id="btnResetPcRules" onclick="resetPcBlocklist()" class="btn btn-sm btn-soft-warning hidden">Reset PC ke Ikut Ruangan/Global</button>
+                                    <button type="button" id="btnSaveBlocklist" onclick="saveBlocklist()" class="btn btn-sm btn-primary">Simpan Kebijakan Global</button>
                                 </div>
                             </div>
 
-                            <!-- Bar Pemilih Ruangan untuk Kebijakan Blokir -->
-                            <div class="rules-scope-bar">
-                                <div class="rules-scope-controls">
-                                    <label for="rulesRoomSelect" class="field-label" style="margin-bottom:0;">Target Ruangan Kebijakan:</label>
-                                    <select id="rulesRoomSelect" onchange="onSelectRulesRoom(this.value)" class="select-control">
-                                        <option value="ALL">Semua Ruangan (Kebijakan Global Default)</option>
-                                    </select>
-                                    <span id="rulesScopeBadge" class="tag">Kebijakan Global Default</span>
+                            <!-- Panel Target Cakupan Kebijakan (Global / Ruangan / Per-PC) -->
+                            <div class="rules-scope-panel">
+                                <div class="rules-scope-head">
+                                    <div class="rules-scope-main">
+                                        <span class="field-label" style="margin-bottom:0;">Target Cakupan Kebijakan:</span>
+                                        <div class="segmented-control" role="group" aria-label="Target cakupan kebijakan blokir">
+                                            <button type="button" id="btnScopeGlobal" onclick="setRulesScope('GLOBAL')" class="seg-btn is-active">Global (Semua)</button>
+                                            <button type="button" id="btnScopeRoom" onclick="setRulesScope('ROOM')" class="seg-btn">Per Ruangan</button>
+                                            <button type="button" id="btnScopePc" onclick="setRulesScope('PC')" class="seg-btn">Perangkat (PC)</button>
+                                        </div>
+                                        <div id="rulesRoomSelectorRow" class="rules-scope-controls hidden">
+                                            <label for="rulesRoomSelect" class="sr-only">Pilih Ruangan Kebijakan</label>
+                                            <select id="rulesRoomSelect" onchange="onSelectRulesRoom(this.value)" class="select-control">
+                                                <option value="ALL">Semua Ruangan (Kebijakan Global)</option>
+                                            </select>
+                                        </div>
+                                        <span id="rulesScopeBadge" class="tag">Mode Edit: Kebijakan Global (Semua Ruangan)</span>
+                                    </div>
+                                    <div class="muted-note">
+                                        Prioritas berlaku: <strong>PC Tertentu &gt; Ruangan &gt; Global</strong>.
+                                    </div>
                                 </div>
-                                <div class="muted-note">
-                                    Ruangan tanpa aturan khusus otomatis mengikuti <strong>Kebijakan Global</strong>.
+
+                                <!-- Pemilih Multi-PC (Muncul saat Target = Perangkat PC) -->
+                                <div id="pcTargetPanel" class="pc-target-panel hidden">
+                                    <div class="pc-target-toolbar">
+                                        <div class="pc-target-filters">
+                                            <label for="pcTargetRoomFilter" class="sr-only">Filter ruangan PC</label>
+                                            <select id="pcTargetRoomFilter" onchange="renderPcTargetList()" class="select-control">
+                                                <option value="ALL">Semua Ruangan</option>
+                                            </select>
+                                            <label for="pcTargetSearchInput" class="sr-only">Cari PC berdasarkan hostname, NIM, atau nama</label>
+                                            <input type="text" id="pcTargetSearchInput" oninput="renderPcTargetList()" placeholder="Cari Hostname / NIM / Nama..." class="input-control">
+                                        </div>
+                                        <div class="row-wrap" style="gap:6px;">
+                                            <span id="pcTargetCountBadge" class="tag tag-mono">0 PC dipilih</span>
+                                            <button type="button" onclick="selectAllVisibleTargetPcs(true)" class="btn btn-xs">Pilih Semua Tampil</button>
+                                            <button type="button" onclick="selectAllVisibleTargetPcs(false)" class="btn btn-xs">Kosongkan Pilihan</button>
+                                        </div>
+                                    </div>
+
+                                    <div id="pcTargetListContainer" class="pc-target-grid"></div>
+
+                                    <div class="pc-manual-add-row">
+                                        <div class="pc-manual-form">
+                                            <label for="customPcTargetInput" class="sr-only">Tambah target Hostname atau NIM manual</label>
+                                            <input type="text" id="customPcTargetInput" onkeydown="if(event.key==='Enter'){event.preventDefault(); addManualTargetPc();}" placeholder="Tambah Hostname/NIM manual (mis. PC-LAB-07)..." class="input-control">
+                                            <button type="button" onclick="addManualTargetPc()" class="btn btn-xs btn-primary">+ Pilih PC</button>
+                                        </div>
+                                        <div class="muted-note">
+                                            Centang satu atau beberapa PC sekaligus untuk menerapkan kebijakan di bawah, atau klik <strong>Muat</strong> untuk mengedit aturan PC tersebut.
+                                        </div>
+                                    </div>
                                 </div>
+                            </div>
+
+                            <!-- Kontrol Khusus: Blokir Mode AI Browser & Pencarian AI -->
+                            <div class="section-block" style="padding-top:4px; border-top:0;">
+                                <button type="button" id="btnToggleBlockSearchAi" onclick="toggleBlockSearchAiSetting()" class="policy-toggle-card is-active" aria-pressed="true">
+                                    <div class="policy-toggle-left">
+                                        <div class="policy-toggle-icon" aria-hidden="true">
+                                            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                                                <circle cx="11" cy="11" r="7"/>
+                                                <path stroke-linecap="round" d="M20 20l-3.5-3.5"/>
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M11 8v6M8 11h6"/>
+                                            </svg>
+                                        </div>
+                                        <div style="min-width:0;">
+                                            <div class="policy-toggle-title">
+                                                <span>Blokir Mode AI Browser &amp; Pencarian AI</span>
+                                                <span id="searchAiStatusTag" class="tag tag-accent">Aktif (Diblokir)</span>
+                                            </div>
+                                            <div class="policy-toggle-desc">
+                                                Memblokir tab Mode AI Google (<code>udm=50</code> / <code>/aimode</code>), Gemini Omnibox Chrome, Sidebar Copilot Edge, Brave AI, Bing Chat, serta Duck.ai saat PC terkunci tanpa memblokir Google Search biasa.
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="policy-toggle-right">
+                                        <span id="searchAiSwitchTrack" class="switch-track is-all" aria-hidden="true">
+                                            <span class="switch-thumb"></span>
+                                        </span>
+                                    </div>
+                                </button>
                             </div>
 
                             <!-- 01. Kategori Layanan Populer -->
-                            <div class="section-block" style="padding-top:4px; border-top:0;">
+                            <div class="section-block">
                                 <div class="section-heading-row">
                                     <div class="section-heading">
                                         <span class="section-num">01</span>
                                         <span>Pilih Cepat Berdasarkan Layanan / Kategori</span>
                                     </div>
-                                    <span id="activeDomainsCounterBadge" class="tag tag-mono">0 domain aktif</span>
+                                    <div class="row-wrap" style="gap:6px;">
+                                        <button type="button" onclick="toggleAllDomainGroups(true)" class="btn btn-xs">Pilih Semua AI &amp; Game</button>
+                                        <button type="button" onclick="toggleAllDomainGroups(false)" class="btn btn-xs">Kosongkan Domain</button>
+                                        <span id="activeDomainsCounterBadge" class="tag tag-mono">0 domain diblokir</span>
+                                    </div>
                                 </div>
                                 <div id="domainCategoryCards" class="category-grid"></div>
                             </div>
@@ -712,31 +786,87 @@
                                 </div>
                             </div>
 
-                            <!-- 03 & 04. Proses & Ekstensi IDE -->
+                            <!-- 03 & 04. Proses & Ekstensi IDE dengan Checklist Interaktif + Aktivasi Massal -->
                             <div class="section-block">
                                 <div class="dual-textarea-grid">
-                                    <div class="stack-sm">
-                                        <div class="row-between">
-                                            <label for="inputProcesses" class="section-heading">
-                                                <span class="section-num">03</span>
-                                                <span>Proses Aplikasi Desktop Diblokir</span>
-                                            </label>
-                                            <span class="tag tag-mono">Process Guard</span>
+                                    <!-- 03. Proses Aplikasi Desktop -->
+                                    <div class="guard-checklist-card">
+                                        <div class="guard-card-head">
+                                            <div class="stack-xs" style="gap:3px;">
+                                                <div class="section-heading">
+                                                    <span class="section-num">03</span>
+                                                    <span>Proses Aplikasi Desktop Diblokir</span>
+                                                </div>
+                                                <p class="field-help" style="margin:0;">Executable (tanpa <code>.exe</code>) yang dihentikan otomatis saat PC terkunci.</p>
+                                            </div>
+                                            <div class="guard-card-actions">
+                                                <span id="activeProcessesCounterBadge" class="tag tag-mono">0 proses aktif</span>
+                                                <button type="button" onclick="toggleAllProcesses(true)" class="btn btn-xs">Aktifkan Semua</button>
+                                                <button type="button" onclick="toggleAllProcesses(false)" class="btn btn-xs">Nonaktifkan Semua</button>
+                                            </div>
                                         </div>
-                                        <p class="field-help" style="margin-top:0;">Nama executable (tanpa <code>.exe</code>) yang dihentikan otomatis saat ruangan dikunci.</p>
-                                        <textarea id="inputProcesses" rows="10" class="textarea-control"></textarea>
+
+                                        <div id="processQuickGroups" class="quick-group-row"></div>
+
+                                        <div class="mini-add-row">
+                                            <label for="filterProcessChipInput" class="sr-only">Filter daftar proses</label>
+                                            <input type="text" id="filterProcessChipInput" oninput="renderProcessChecklist()" placeholder="Filter proses..." class="input-control">
+                                            <label for="customProcessInput" class="sr-only">Tambah nama proses custom</label>
+                                            <input type="text" id="customProcessInput" onkeydown="if(event.key==='Enter'){event.preventDefault(); addCustomProcess();}" placeholder="Tambah proses (mis. Discord)..." class="input-control">
+                                            <button type="button" onclick="addCustomProcess()" class="btn btn-xs btn-primary">+ Tambah</button>
+                                        </div>
+
+                                        <div class="checklist-box" style="max-height:230px;">
+                                            <div id="processChecklistContainer" class="checklist-grid"></div>
+                                        </div>
+
+                                        <details class="raw-mode-details">
+                                            <summary>
+                                                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                                                <span>Mode Teks Mentah Proses (Sinkron Otomatis)</span>
+                                            </summary>
+                                            <textarea id="inputProcesses" oninput="syncProcessesFromTextarea()" rows="7" class="textarea-control" aria-label="Mode teks mentah proses aplikasi desktop"></textarea>
+                                        </details>
                                     </div>
 
-                                    <div class="stack-sm">
-                                        <div class="row-between">
-                                            <label for="inputExtensions" class="section-heading">
-                                                <span class="section-num">04</span>
-                                                <span>ID Ekstensi IDE Dikarantina (VS Code)</span>
-                                            </label>
-                                            <span class="tag tag-mono">Extension Guard</span>
+                                    <!-- 04. Ekstensi IDE VS Code -->
+                                    <div class="guard-checklist-card">
+                                        <div class="guard-card-head">
+                                            <div class="stack-xs" style="gap:3px;">
+                                                <div class="section-heading">
+                                                    <span class="section-num">04</span>
+                                                    <span>ID Ekstensi IDE Dikarantina (VS Code)</span>
+                                                </div>
+                                                <p class="field-help" style="margin:0;">Prefix ekstensi pada <code>~/.vscode/extensions</code> yang dikunci sementara.</p>
+                                            </div>
+                                            <div class="guard-card-actions">
+                                                <span id="activeExtensionsCounterBadge" class="tag tag-mono">0 ekstensi aktif</span>
+                                                <button type="button" onclick="toggleAllExtensions(true)" class="btn btn-xs">Aktifkan Semua</button>
+                                                <button type="button" onclick="toggleAllExtensions(false)" class="btn btn-xs">Nonaktifkan Semua</button>
+                                            </div>
                                         </div>
-                                        <p class="field-help" style="margin-top:0;">Prefix folder ekstensi pada <code>~/.vscode/extensions</code> yang dikunci sementara.</p>
-                                        <textarea id="inputExtensions" rows="10" class="textarea-control"></textarea>
+
+                                        <div id="extensionQuickGroups" class="quick-group-row"></div>
+
+                                        <div class="mini-add-row">
+                                            <label for="filterExtensionChipInput" class="sr-only">Filter daftar ekstensi IDE</label>
+                                            <input type="text" id="filterExtensionChipInput" oninput="renderExtensionChecklist()" placeholder="Filter ekstensi..." class="input-control">
+                                            <label for="customExtensionInput" class="sr-only">Tambah ID ekstensi IDE custom</label>
+                                            <input type="text" id="customExtensionInput" onkeydown="if(event.key==='Enter'){event.preventDefault(); addCustomExtension();}" placeholder="Tambah ID ekstensi..." class="input-control">
+                                            <button type="button" onclick="addCustomExtension()" class="btn btn-xs btn-primary">+ Tambah</button>
+                                        </div>
+
+                                        <div class="checklist-box" style="max-height:230px;">
+                                            <div id="extensionChecklistContainer" class="checklist-grid"></div>
+                                        </div>
+
+                                        <details class="raw-mode-details">
+                                            <summary>
+                                                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                                                <span>Mode Teks Mentah Ekstensi (Sinkron Otomatis)</span>
+                                            </summary>
+                                            <textarea id="inputExtensions" oninput="syncExtensionsFromTextarea()" rows="7" class="textarea-control" aria-label="Mode teks mentah ID ekstensi IDE"></textarea>
+                                        </details>
                                     </div>
                                 </div>
                             </div>
@@ -1285,6 +1415,74 @@
                     'c0.rbxcdn.com', 'c1.rbxcdn.com', 'c2.rbxcdn.com', 'c3.rbxcdn.com', 'c4.rbxcdn.com', 'c5.rbxcdn.com', 'c6.rbxcdn.com', 'c7.rbxcdn.com',
                     'robloxlabs.com', 'corp.roblox.com', 'en.help.roblox.com'
                 ]
+            },
+            {
+                id: 'search_ai_engines',
+                title: 'Mesin Pencari Ber-AI (Google / Bing)',
+                desc: 'Blokir total Google & Bing (ujian tertutup)',
+                optInOnly: true,
+                domains: [
+                    'google.com', 'www.google.com', 'google.co.id', 'www.google.co.id',
+                    'bing.com', 'www.bing.com', 'search.yahoo.com'
+                ]
+            }
+        ];
+
+        const PROCESS_CATALOG_GROUPS = [
+            {
+                id: 'ide_desktop',
+                title: 'AI Code IDE',
+                processes: ['Cursor', 'Windsurf', 'Trae', 'PearAI', 'Void']
+            },
+            {
+                id: 'ai_llm_desktop',
+                title: 'Chatbot & LLM Lokal',
+                processes: [
+                    'ChatGPT', 'Claude', 'Copilot', 'Perplexity',
+                    'ollama', 'ollama_llama_server', 'ollama app',
+                    'LM Studio', 'lm-studio', 'jan', 'Jan', 'gpt4all', 'GPT4All',
+                    'llama-server', 'llama-cli', 'koboldcpp', 'text-generation-webui', 'anythingllm', 'AnythingLLM', 'msty', 'Msty'
+                ]
+            },
+            {
+                id: 'game_roblox',
+                title: 'Roblox & Game',
+                processes: [
+                    'RobloxPlayerBeta', 'RobloxPlayerLauncher', 'RobloxPlayerInstaller',
+                    'RobloxStudioBeta', 'RobloxStudioLauncherBeta', 'RobloxStudioInstaller',
+                    'RobloxCrashHandler', 'Windows10Universal', 'Roblox', 'Bloxstrap', 'Fishstrap'
+                ]
+            }
+        ];
+
+        const EXTENSION_CATALOG_GROUPS = [
+            {
+                id: 'ext_copilot',
+                title: 'Copilot & Cloud Assistant',
+                extensions: [
+                    'github.copilot', 'github.copilot-chat',
+                    'amazonwebservices.amazon-q-vscode', 'amazonwebservices.aws-toolkit-vscode',
+                    'google.geminicodeassist', 'googlecloudtools.cloudcode'
+                ]
+            },
+            {
+                id: 'ext_agentic',
+                title: 'Agentic Coding',
+                extensions: [
+                    'saoudrizwan.claude-dev', 'rooveterinaryinc.roo-cline',
+                    'kilocode.kilo-code', 'augment.vscode-augment',
+                    'continue.continue', 'sourcegraph.cody-ai'
+                ]
+            },
+            {
+                id: 'ext_autocomplete',
+                title: 'Autocomplete & Multi-Model',
+                extensions: [
+                    'codeium.codeium', 'codium.codium', 'tabnine.tabnine-vscode',
+                    'supermaven.supermaven', 'blackboxapp.blackbox',
+                    'DanielSanMedium.dscodegpt', 'genieai.chatgpt-vscode',
+                    'bito.bito', 'Pieces.pieces-vscode'
+                ]
             }
         ];
 
@@ -1299,7 +1497,7 @@
             },
             rules: {
                 title: 'Kebijakan Blokir Fleksibel',
-                subtitle: 'Konfigurasi daftar domain AI, aplikasi desktop, dan ekstensi IDE secara global maupun per ruangan.'
+                subtitle: 'Konfigurasi blokir domain AI, Mode AI browser, proses desktop, dan ekstensi IDE secara Global, per Ruangan, maupun per PC.'
             },
             settings: {
                 title: 'Ruangan, PIN & Kredensial Pengawas',
@@ -1316,13 +1514,17 @@
         let currentViewMode = 'table';
         let selectedRoom = 'ALL';
         let selectedRulesRoom = 'ALL';
+        let selectedRulesScope = 'GLOBAL';
+        let selectedTargetPcs = new Set();
+        let activeBlockSearchAi = true;
         let cachedStudents = [];
         let cachedLogs = [];
         let cachedRooms = [];
         let cachedRoomStatuses = {};
         let cachedRoomPins = {};
         let cachedRoomBlocklists = {};
-        let cachedGlobalBlocklist = { domains: [], processes: [], ide_extensions: [] };
+        let cachedPcBlocklists = {};
+        let cachedGlobalBlocklist = { domains: [], processes: [], ide_extensions: [], block_search_ai: true };
         let cachedGlobalStatus = 'LOCKED';
         let cachedLockAi = true;
         let cachedLockExt = true;
@@ -1336,7 +1538,12 @@
         let currentUnlockPin = '202699';
         let currentRoomCode = '';
         let allKnownDomains = [];
+        let optInOnlyDomainsSet = new Set();
         let activeBlockedDomainsSet = new Set();
+        let allKnownProcesses = [];
+        let activeBlockedProcessesMap = new Map();
+        let allKnownExtensions = [];
+        let activeBlockedExtensionsMap = new Map();
         let toastTimer = null;
 
         // Inisialisasi daftar seluruh domain katalog
@@ -1344,6 +1551,27 @@
             g.domains.forEach(d => {
                 const clean = d.trim().toLowerCase();
                 if (!allKnownDomains.includes(clean)) allKnownDomains.push(clean);
+                if (g.optInOnly) optInOnlyDomainsSet.add(clean);
+            });
+        });
+
+        PROCESS_CATALOG_GROUPS.forEach(g => {
+            g.processes.forEach(p => {
+                const clean = p.trim();
+                const lower = clean.toLowerCase();
+                if (clean && !allKnownProcesses.some(x => x.toLowerCase() === lower)) {
+                    allKnownProcesses.push(clean);
+                }
+            });
+        });
+
+        EXTENSION_CATALOG_GROUPS.forEach(g => {
+            g.extensions.forEach(ext => {
+                const clean = ext.trim();
+                const lower = clean.toLowerCase();
+                if (clean && !allKnownExtensions.some(x => x.toLowerCase() === lower)) {
+                    allKnownExtensions.push(clean);
+                }
             });
         });
 
@@ -1554,7 +1782,8 @@
             ide_ai: `<svg width="20" height="20" style="color:#181A1F;" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2L2 7.5V16.5L12 22L22 16.5V7.5L12 2ZM12 4.3L19.3 8.3L12 12.3L4.7 8.3L12 4.3ZM4 9.9L11 13.7V20.1L4 16.2V9.9ZM13 20.1V13.7L20 9.9V16.2L13 20.1Z"/></svg>`,
             llm_api: `<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#FFD21E"/><circle cx="8" cy="10" r="1.5" fill="#1F2937"/><circle cx="16" cy="10" r="1.5" fill="#1F2937"/><path d="M8 14.5C8.8 16.5 10.3 17.5 12 17.5C13.7 17.5 15.2 16.5 16 14.5" stroke="#1F2937" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M4 14C4.5 15.5 6 16.5 7.5 16" stroke="#E65100" stroke-width="1.5" stroke-linecap="round" fill="none"/><path d="M20 14C19.5 15.5 18 16.5 16.5 16" stroke="#E65100" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg>`,
             api_llm: `<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#FFD21E"/><circle cx="8" cy="10" r="1.5" fill="#1F2937"/><circle cx="16" cy="10" r="1.5" fill="#1F2937"/><path d="M8 14.5C8.8 16.5 10.3 17.5 12 17.5C13.7 17.5 15.2 16.5 16 14.5" stroke="#1F2937" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M4 14C4.5 15.5 6 16.5 7.5 16" stroke="#E65100" stroke-width="1.5" stroke-linecap="round" fill="none"/><path d="M20 14C19.5 15.5 18 16.5 16.5 16" stroke="#E65100" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg>`,
-            roblox: `<svg width="20" height="20" style="color:#E11D48;" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5.16 2.5L21.5 6.84L18.84 23.16L2.5 18.82L5.16 2.5ZM10.59 10.05L9.61 16.03L15.6 17.01L16.58 11.03L10.59 10.05Z"/></svg>`
+            roblox: `<svg width="20" height="20" style="color:#E11D48;" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5.16 2.5L21.5 6.84L18.84 23.16L2.5 18.82L5.16 2.5ZM10.59 10.05L9.61 16.03L15.6 17.01L16.58 11.03L10.59 10.05Z"/></svg>`,
+            search_ai_engines: `<svg width="20" height="20" style="color:#0E6245;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path stroke-linecap="round" d="M20 20l-3.5-3.5"/><path stroke-linecap="round" d="M8.5 8.5l5 5M13.5 8.5l-5 5"/></svg>`
         };
 
         const BRAND_SVG_URLS = {
@@ -1637,13 +1866,332 @@
 
         function toggleAllDomainGroups(enable) {
             if (enable) {
-                allKnownDomains.forEach(d => activeBlockedDomainsSet.add(d.toLowerCase()));
+                allKnownDomains.forEach(d => {
+                    if (!optInOnlyDomainsSet.has(d)) {
+                        activeBlockedDomainsSet.add(d.toLowerCase());
+                    }
+                });
             } else {
                 activeBlockedDomainsSet.clear();
             }
             syncTextareaFromSet();
             renderDomainCategoryCards();
             renderDomainChecklist();
+        }
+
+        // ====================================================================
+        // KONTROL MODE AI BROWSER + PROSES DESKTOP (03) + EKSTENSI IDE (04)
+        // ====================================================================
+        function renderBlockSearchAiUI() {
+            const btn = document.getElementById('btnToggleBlockSearchAi');
+            const tag = document.getElementById('searchAiStatusTag');
+            const track = document.getElementById('searchAiSwitchTrack');
+            const active = Boolean(activeBlockSearchAi);
+            if (btn) {
+                btn.classList.toggle('is-active', active);
+                btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+            }
+            if (tag) {
+                tag.className = active ? 'tag tag-accent' : 'tag tag-warning';
+                tag.textContent = active ? 'Aktif (Diblokir)' : 'Nonaktif (Diizinkan)';
+            }
+            if (track) {
+                track.className = active ? 'switch-track is-all' : 'switch-track';
+            }
+        }
+
+        function toggleBlockSearchAiSetting() {
+            activeBlockSearchAi = !activeBlockSearchAi;
+            renderBlockSearchAiUI();
+        }
+
+        function ensureKnownProcess(name) {
+            const clean = String(name || '').trim();
+            if (!clean) return '';
+            const lower = clean.toLowerCase();
+            const existing = allKnownProcesses.find(x => x.toLowerCase() === lower);
+            if (existing) return existing;
+            allKnownProcesses.unshift(clean);
+            return clean;
+        }
+
+        function initFlexibleProcessManager(processesArray) {
+            activeBlockedProcessesMap = new Map();
+            (processesArray || []).forEach(p => {
+                const clean = String(p || '').trim();
+                if (!clean) return;
+                const canon = ensureKnownProcess(clean);
+                activeBlockedProcessesMap.set(canon.toLowerCase(), clean);
+            });
+            syncProcessesTextareaFromMap();
+            renderProcessQuickGroups();
+            renderProcessChecklist();
+        }
+
+        function syncProcessesTextareaFromMap() {
+            const ta = document.getElementById('inputProcesses');
+            if (ta) {
+                ta.value = Array.from(activeBlockedProcessesMap.values()).join('\n');
+            }
+            const badge = document.getElementById('activeProcessesCounterBadge');
+            if (badge) {
+                badge.textContent = `${activeBlockedProcessesMap.size} proses aktif`;
+            }
+        }
+
+        function syncProcessesFromTextarea() {
+            const ta = document.getElementById('inputProcesses');
+            if (!ta) return;
+            const list = ta.value.split('\n').map(s => s.trim()).filter(Boolean);
+            activeBlockedProcessesMap = new Map();
+            list.forEach(p => {
+                const canon = ensureKnownProcess(p);
+                activeBlockedProcessesMap.set(canon.toLowerCase(), p);
+            });
+            const badge = document.getElementById('activeProcessesCounterBadge');
+            if (badge) badge.textContent = `${activeBlockedProcessesMap.size} proses aktif`;
+            renderProcessQuickGroups();
+            renderProcessChecklist();
+        }
+
+        function renderProcessQuickGroups() {
+            const box = document.getElementById('processQuickGroups');
+            if (!box) return;
+            box.innerHTML = PROCESS_CATALOG_GROUPS.map(g => {
+                const total = g.processes.length;
+                const activeCount = g.processes.filter(p => activeBlockedProcessesMap.has(p.toLowerCase())).length;
+                const cls = activeCount === total ? 'is-all' : (activeCount > 0 ? 'is-partial' : '');
+                return `
+                    <button type="button" onclick="toggleProcessGroup('${g.id}')" class="quick-group-pill ${cls}" aria-pressed="${activeCount === total ? 'true' : 'false'}">
+                        <span>${escapeHtml(g.title)}</span>
+                        <span class="font-mono">${activeCount}/${total}</span>
+                    </button>
+                `;
+            }).join('');
+        }
+
+        function toggleProcessGroup(groupId) {
+            const group = PROCESS_CATALOG_GROUPS.find(g => g.id === groupId);
+            if (!group) return;
+            const allActive = group.processes.every(p => activeBlockedProcessesMap.has(p.toLowerCase()));
+            group.processes.forEach(p => {
+                const key = p.toLowerCase();
+                if (allActive) {
+                    activeBlockedProcessesMap.delete(key);
+                } else {
+                    ensureKnownProcess(p);
+                    activeBlockedProcessesMap.set(key, p);
+                }
+            });
+            syncProcessesTextareaFromMap();
+            renderProcessQuickGroups();
+            renderProcessChecklist();
+        }
+
+        function toggleAllProcesses(enable) {
+            if (enable) {
+                allKnownProcesses.forEach(p => activeBlockedProcessesMap.set(p.toLowerCase(), p));
+            } else {
+                activeBlockedProcessesMap.clear();
+            }
+            syncProcessesTextareaFromMap();
+            renderProcessQuickGroups();
+            renderProcessChecklist();
+        }
+
+        function toggleSingleProcess(procName, checked) {
+            const clean = String(procName || '').trim();
+            if (!clean) return;
+            const key = clean.toLowerCase();
+            if (checked) {
+                ensureKnownProcess(clean);
+                activeBlockedProcessesMap.set(key, clean);
+            } else {
+                activeBlockedProcessesMap.delete(key);
+            }
+            syncProcessesTextareaFromMap();
+            renderProcessQuickGroups();
+            renderProcessChecklist();
+        }
+
+        function addCustomProcess() {
+            const inp = document.getElementById('customProcessInput');
+            if (!inp || !inp.value.trim()) return;
+            const raw = inp.value.trim().replace(/\.exe$/i, '');
+            if (!raw) return;
+            const canon = ensureKnownProcess(raw);
+            activeBlockedProcessesMap.set(canon.toLowerCase(), canon);
+            inp.value = '';
+            syncProcessesTextareaFromMap();
+            renderProcessQuickGroups();
+            renderProcessChecklist();
+            showToast(`Proses [${canon}] ditambahkan ke daftar blokir`);
+        }
+
+        function renderProcessChecklist() {
+            const box = document.getElementById('processChecklistContainer');
+            if (!box) return;
+            const q = (document.getElementById('filterProcessChipInput')?.value || '').trim().toLowerCase();
+            const filtered = allKnownProcesses.filter(p => !q || p.toLowerCase().includes(q));
+
+            if (!filtered.length) {
+                box.innerHTML = `<div class="muted-note" style="grid-column:1/-1; padding:8px;">Tidak ada proses yang cocok dengan filter "${escapeHtml(q)}".</div>`;
+                return;
+            }
+
+            box.innerHTML = filtered.map(p => {
+                const isChecked = activeBlockedProcessesMap.has(p.toLowerCase());
+                return `
+                    <label class="check-chip ${isChecked ? 'is-checked' : ''}">
+                        <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleSingleProcess('${escapeHtml(escJsArg(p))}', this.checked)">
+                        <span>${escapeHtml(p)}</span>
+                    </label>
+                `;
+            }).join('');
+        }
+
+        function ensureKnownExtension(extId) {
+            const clean = String(extId || '').trim();
+            if (!clean) return '';
+            const lower = clean.toLowerCase();
+            const existing = allKnownExtensions.find(x => x.toLowerCase() === lower);
+            if (existing) return existing;
+            allKnownExtensions.unshift(clean);
+            return clean;
+        }
+
+        function initFlexibleExtensionManager(extensionsArray) {
+            activeBlockedExtensionsMap = new Map();
+            (extensionsArray || []).forEach(ext => {
+                const clean = String(ext || '').trim();
+                if (!clean) return;
+                const canon = ensureKnownExtension(clean);
+                activeBlockedExtensionsMap.set(canon.toLowerCase(), clean);
+            });
+            syncExtensionsTextareaFromMap();
+            renderExtensionQuickGroups();
+            renderExtensionChecklist();
+        }
+
+        function syncExtensionsTextareaFromMap() {
+            const ta = document.getElementById('inputExtensions');
+            if (ta) {
+                ta.value = Array.from(activeBlockedExtensionsMap.values()).join('\n');
+            }
+            const badge = document.getElementById('activeExtensionsCounterBadge');
+            if (badge) {
+                badge.textContent = `${activeBlockedExtensionsMap.size} ekstensi aktif`;
+            }
+        }
+
+        function syncExtensionsFromTextarea() {
+            const ta = document.getElementById('inputExtensions');
+            if (!ta) return;
+            const list = ta.value.split('\n').map(s => s.trim()).filter(Boolean);
+            activeBlockedExtensionsMap = new Map();
+            list.forEach(ext => {
+                const canon = ensureKnownExtension(ext);
+                activeBlockedExtensionsMap.set(canon.toLowerCase(), ext);
+            });
+            const badge = document.getElementById('activeExtensionsCounterBadge');
+            if (badge) badge.textContent = `${activeBlockedExtensionsMap.size} ekstensi aktif`;
+            renderExtensionQuickGroups();
+            renderExtensionChecklist();
+        }
+
+        function renderExtensionQuickGroups() {
+            const box = document.getElementById('extensionQuickGroups');
+            if (!box) return;
+            box.innerHTML = EXTENSION_CATALOG_GROUPS.map(g => {
+                const total = g.extensions.length;
+                const activeCount = g.extensions.filter(ext => activeBlockedExtensionsMap.has(ext.toLowerCase())).length;
+                const cls = activeCount === total ? 'is-all' : (activeCount > 0 ? 'is-partial' : '');
+                return `
+                    <button type="button" onclick="toggleExtensionGroup('${g.id}')" class="quick-group-pill ${cls}" aria-pressed="${activeCount === total ? 'true' : 'false'}">
+                        <span>${escapeHtml(g.title)}</span>
+                        <span class="font-mono">${activeCount}/${total}</span>
+                    </button>
+                `;
+            }).join('');
+        }
+
+        function toggleExtensionGroup(groupId) {
+            const group = EXTENSION_CATALOG_GROUPS.find(g => g.id === groupId);
+            if (!group) return;
+            const allActive = group.extensions.every(ext => activeBlockedExtensionsMap.has(ext.toLowerCase()));
+            group.extensions.forEach(ext => {
+                const key = ext.toLowerCase();
+                if (allActive) {
+                    activeBlockedExtensionsMap.delete(key);
+                } else {
+                    ensureKnownExtension(ext);
+                    activeBlockedExtensionsMap.set(key, ext);
+                }
+            });
+            syncExtensionsTextareaFromMap();
+            renderExtensionQuickGroups();
+            renderExtensionChecklist();
+        }
+
+        function toggleAllExtensions(enable) {
+            if (enable) {
+                allKnownExtensions.forEach(ext => activeBlockedExtensionsMap.set(ext.toLowerCase(), ext));
+            } else {
+                activeBlockedExtensionsMap.clear();
+            }
+            syncExtensionsTextareaFromMap();
+            renderExtensionQuickGroups();
+            renderExtensionChecklist();
+        }
+
+        function toggleSingleExtension(extId, checked) {
+            const clean = String(extId || '').trim();
+            if (!clean) return;
+            const key = clean.toLowerCase();
+            if (checked) {
+                ensureKnownExtension(clean);
+                activeBlockedExtensionsMap.set(key, clean);
+            } else {
+                activeBlockedExtensionsMap.delete(key);
+            }
+            syncExtensionsTextareaFromMap();
+            renderExtensionQuickGroups();
+            renderExtensionChecklist();
+        }
+
+        function addCustomExtension() {
+            const inp = document.getElementById('customExtensionInput');
+            if (!inp || !inp.value.trim()) return;
+            const raw = inp.value.trim();
+            const canon = ensureKnownExtension(raw);
+            activeBlockedExtensionsMap.set(canon.toLowerCase(), canon);
+            inp.value = '';
+            syncExtensionsTextareaFromMap();
+            renderExtensionQuickGroups();
+            renderExtensionChecklist();
+            showToast(`Ekstensi [${canon}] ditambahkan ke daftar karantina`);
+        }
+
+        function renderExtensionChecklist() {
+            const box = document.getElementById('extensionChecklistContainer');
+            if (!box) return;
+            const q = (document.getElementById('filterExtensionChipInput')?.value || '').trim().toLowerCase();
+            const filtered = allKnownExtensions.filter(ext => !q || ext.toLowerCase().includes(q));
+
+            if (!filtered.length) {
+                box.innerHTML = `<div class="muted-note" style="grid-column:1/-1; padding:8px;">Tidak ada ekstensi yang cocok dengan filter "${escapeHtml(q)}".</div>`;
+                return;
+            }
+
+            box.innerHTML = filtered.map(ext => {
+                const isChecked = activeBlockedExtensionsMap.has(ext.toLowerCase());
+                return `
+                    <label class="check-chip ${isChecked ? 'is-checked' : ''}">
+                        <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleSingleExtension('${escapeHtml(escJsArg(ext))}', this.checked)">
+                        <span>${escapeHtml(ext)}</span>
+                    </label>
+                `;
+            }).join('');
         }
 
         function toggleSingleDomain(domain, checked) {
@@ -1829,8 +2377,24 @@
             window.scrollTo({ top: 0, behavior: 'auto' });
         }
 
+        function findPcBlocklistKey(studentId, hostname) {
+            if (!cachedPcBlocklists || typeof cachedPcBlocklists !== 'object') return '';
+            const idStr = String(studentId || '').trim();
+            const upperHost = String(hostname || '').trim().toUpperCase();
+            if (idStr && cachedPcBlocklists[idStr]) return idStr;
+            if (upperHost && cachedPcBlocklists[upperHost]) return upperHost;
+            const lowerId = idStr.toLowerCase();
+            const lowerHost = upperHost.toLowerCase();
+            for (const k of Object.keys(cachedPcBlocklists)) {
+                const lk = String(k || '').trim().toLowerCase();
+                if (lk && (lk === lowerId || lk === lowerHost)) return k;
+            }
+            return '';
+        }
+
         function getEffectiveBlocklistForRoom(roomCode) {
             const norm = String(roomCode || 'ALL').trim().toUpperCase();
+            const globalSearchAi = cachedGlobalBlocklist.block_search_ai !== false;
             if (norm !== 'ALL' && cachedRoomBlocklists && cachedRoomBlocklists[norm]) {
                 const rb = cachedRoomBlocklists[norm];
                 const rDomains = Array.isArray(rb) ? rb : (Array.isArray(rb.domains) ? rb.domains : (cachedGlobalBlocklist.domains || []));
@@ -1840,15 +2404,46 @@
                     domains: rDomains,
                     processes: rProcs,
                     ide_extensions: rExts,
-                    isCustom: true
+                    block_search_ai: (rb && rb.block_search_ai !== undefined) ? Boolean(rb.block_search_ai) : globalSearchAi,
+                    isCustom: true,
+                    policySource: 'room'
                 };
             }
             return {
                 domains: cachedGlobalBlocklist.domains || [],
                 processes: cachedGlobalBlocklist.processes || [],
                 ide_extensions: cachedGlobalBlocklist.ide_extensions || [],
-                isCustom: false
+                block_search_ai: globalSearchAi,
+                isCustom: false,
+                policySource: 'global'
             };
+        }
+
+        function getEffectiveBlocklistForPcKey(pcKey) {
+            const keyStr = String(pcKey || '').trim();
+            const st = cachedStudents.find(s => s && (s.id === keyStr || String(s.hostname || '').toUpperCase() === keyStr.toUpperCase()));
+            const roomEff = getEffectiveBlocklistForRoom(st ? st.room_code : 'ALL');
+            const matchedKey = findPcBlocklistKey(keyStr, st ? st.hostname : keyStr);
+            if (matchedKey && cachedPcBlocklists[matchedKey]) {
+                const pb = cachedPcBlocklists[matchedKey];
+                return {
+                    domains: Array.isArray(pb.domains) ? pb.domains : roomEff.domains,
+                    processes: Array.isArray(pb.processes) ? pb.processes : roomEff.processes,
+                    ide_extensions: Array.isArray(pb.ide_extensions) ? pb.ide_extensions : roomEff.ide_extensions,
+                    block_search_ai: pb.block_search_ai !== undefined ? Boolean(pb.block_search_ai) : roomEff.block_search_ai,
+                    isCustom: true,
+                    policySource: 'pc'
+                };
+            }
+            return roomEff;
+        }
+
+        function applyPolicyToEditor(eff) {
+            activeBlockSearchAi = eff.block_search_ai !== false;
+            renderBlockSearchAiUI();
+            initFlexibleDomainManager(eff.domains || []);
+            initFlexibleProcessManager(eff.processes || []);
+            initFlexibleExtensionManager(eff.ide_extensions || []);
         }
 
         function loadBlocklistIntoEditorForRoom(roomCode) {
@@ -1856,20 +2451,201 @@
             if (selectedRulesRoom !== 'ALL' && !cachedRooms.includes(selectedRulesRoom)) {
                 selectedRulesRoom = 'ALL';
             }
-            const eff = getEffectiveBlocklistForRoom(selectedRulesRoom);
-            initFlexibleDomainManager(eff.domains || []);
-            const procEl = document.getElementById('inputProcesses');
-            const extEl = document.getElementById('inputExtensions');
-            if (procEl) procEl.value = (eff.processes || []).join('\n');
-            if (extEl) extEl.value = (eff.ide_extensions || []).join('\n');
+            if (selectedRulesRoom === 'ALL' && selectedRulesScope === 'ROOM' && cachedRooms.length > 0) {
+                selectedRulesRoom = cachedRooms[0];
+            }
+            const eff = getEffectiveBlocklistForRoom(selectedRulesScope === 'GLOBAL' ? 'ALL' : selectedRulesRoom);
+            applyPolicyToEditor(eff);
             updateRulesRoomSelectorUI();
+        }
+
+        function loadEffectivePolicyFromPcKey(pcKey) {
+            if (!pcKey) return;
+            selectedTargetPcs.add(pcKey);
+            const eff = getEffectiveBlocklistForPcKey(pcKey);
+            applyPolicyToEditor(eff);
+            renderPcTargetList();
+            updateRulesRoomSelectorUI();
+            showToast(`Aturan PC [${pcKey}] dimuat ke editor`);
+        }
+
+        function setRulesScope(scope) {
+            const nextScope = ['GLOBAL', 'ROOM', 'PC'].includes(scope) ? scope : 'GLOBAL';
+            selectedRulesScope = nextScope;
+            if (nextScope === 'GLOBAL') {
+                loadBlocklistIntoEditorForRoom('ALL');
+            } else if (nextScope === 'ROOM') {
+                const candidate = (selectedRulesRoom && selectedRulesRoom !== 'ALL' && cachedRooms.includes(selectedRulesRoom))
+                    ? selectedRulesRoom
+                    : ((selectedRoom && selectedRoom !== 'ALL' && cachedRooms.includes(selectedRoom))
+                        ? selectedRoom
+                        : (cachedRooms[0] || 'ALL'));
+                loadBlocklistIntoEditorForRoom(candidate);
+            } else {
+                const firstTarget = Array.from(selectedTargetPcs)[0] || '';
+                const eff = firstTarget ? getEffectiveBlocklistForPcKey(firstTarget) : getEffectiveBlocklistForRoom(selectedRoom);
+                applyPolicyToEditor(eff);
+                renderPcTargetList();
+                updateRulesRoomSelectorUI();
+            }
+        }
+
+        function getKnownTargetPcEntries() {
+            const byKey = new Map();
+            cachedStudents.forEach(st => {
+                if (!st || !st.id) return;
+                const matchedKey = findPcBlocklistKey(st.id, st.hostname);
+                byKey.set(st.id, {
+                    key: st.id,
+                    hostname: st.hostname || st.id,
+                    name: st.name || st.id,
+                    nim: st.nim || st.id,
+                    room_code: (st.room_code || currentRoomCode || '-').toUpperCase(),
+                    is_online: Boolean(st.is_online),
+                    has_custom_policy: Boolean(st.has_custom_policy || matchedKey)
+                });
+            });
+            Object.keys(cachedPcBlocklists || {}).forEach(pk => {
+                const lower = pk.toLowerCase();
+                const already = Array.from(byKey.values()).some(item =>
+                    item.key.toLowerCase() === lower || String(item.hostname || '').toLowerCase() === lower
+                );
+                if (!already) {
+                    byKey.set(pk, {
+                        key: pk,
+                        hostname: pk,
+                        name: 'Perangkat Manual',
+                        nim: pk,
+                        room_code: 'CUSTOM',
+                        is_online: false,
+                        has_custom_policy: true
+                    });
+                }
+            });
+            Array.from(selectedTargetPcs).forEach(pk => {
+                if (!byKey.has(pk)) {
+                    byKey.set(pk, {
+                        key: pk,
+                        hostname: pk,
+                        name: 'Perangkat Dipilih',
+                        nim: pk,
+                        room_code: 'CUSTOM',
+                        is_online: false,
+                        has_custom_policy: Boolean(findPcBlocklistKey(pk, pk))
+                    });
+                }
+            });
+            return Array.from(byKey.values());
+        }
+
+        function getFilteredTargetPcEntries() {
+            const roomSel = document.getElementById('pcTargetRoomFilter');
+            const filterRoom = roomSel ? roomSel.value : 'ALL';
+            const q = (document.getElementById('pcTargetSearchInput')?.value || '').trim().toLowerCase();
+            return getKnownTargetPcEntries().filter(pc => {
+                if (filterRoom !== 'ALL' && pc.room_code !== filterRoom) return false;
+                if (q) {
+                    const hay = `${pc.hostname} ${pc.nim} ${pc.name} ${pc.room_code}`.toLowerCase();
+                    if (!hay.includes(q)) return false;
+                }
+                return true;
+            });
+        }
+
+        function renderPcTargetList() {
+            const roomSel = document.getElementById('pcTargetRoomFilter');
+            if (roomSel) {
+                const prev = roomSel.value || 'ALL';
+                let opts = `<option value="ALL">Semua Ruangan</option>`;
+                cachedRooms.forEach(r => {
+                    opts += `<option value="${escapeHtml(r)}">Ruangan ${escapeHtml(r)}</option>`;
+                });
+                roomSel.innerHTML = opts;
+                roomSel.value = (prev === 'ALL' || cachedRooms.includes(prev)) ? prev : 'ALL';
+            }
+
+            const countBadge = document.getElementById('pcTargetCountBadge');
+            if (countBadge) {
+                countBadge.textContent = `${selectedTargetPcs.size} PC dipilih`;
+                countBadge.className = selectedTargetPcs.size > 0 ? 'tag tag-accent tag-mono' : 'tag tag-mono';
+            }
+
+            const box = document.getElementById('pcTargetListContainer');
+            if (!box) return;
+            const entries = getFilteredTargetPcEntries();
+            if (!entries.length) {
+                box.innerHTML = `<div class="muted-note" style="grid-column:1/-1; padding:10px;">Belum ada PC terhubung yang cocok. Anda tetap bisa memasukkan Hostname/NIM manual di bawah.</div>`;
+                return;
+            }
+
+            box.innerHTML = entries.map(pc => {
+                const isSel = selectedTargetPcs.has(pc.key);
+                const jsKey = escapeHtml(escJsArg(pc.key));
+                const customTag = pc.has_custom_policy ? `<span class="tag tag-accent">Khusus</span>` : '';
+                return `
+                    <div class="pc-target-chip ${isSel ? 'is-selected' : ''}">
+                        <label class="pc-target-check">
+                            <input type="checkbox" ${isSel ? 'checked' : ''} onchange="toggleTargetPcSelection('${jsKey}', this.checked)">
+                            <div class="pc-target-info">
+                                <div class="pc-target-host">
+                                    <span class="status-dot ${pc.is_online ? 'is-accent' : ''}" aria-hidden="true"></span>
+                                    <span>${escapeHtml(pc.hostname)}</span>
+                                    <span class="tag tag-mono">${escapeHtml(pc.room_code)}</span>
+                                </div>
+                                <div class="pc-target-sub">${escapeHtml(pc.name)} (${escapeHtml(pc.nim)})</div>
+                            </div>
+                        </label>
+                        <div class="pc-target-actions">
+                            ${customTag}
+                            <button type="button" onclick="loadEffectivePolicyFromPcKey('${jsKey}')" class="btn btn-xs" title="Muat kebijakan PC ini ke editor">Muat</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function toggleTargetPcSelection(pcKey, checked) {
+            if (!pcKey) return;
+            if (checked) {
+                selectedTargetPcs.add(pcKey);
+            } else {
+                selectedTargetPcs.delete(pcKey);
+            }
+            renderPcTargetList();
+            updateRulesRoomSelectorUI();
+        }
+
+        function selectAllVisibleTargetPcs(selectAll) {
+            const visible = getFilteredTargetPcEntries();
+            if (selectAll) {
+                visible.forEach(pc => selectedTargetPcs.add(pc.key));
+            } else {
+                selectedTargetPcs.clear();
+            }
+            renderPcTargetList();
+            updateRulesRoomSelectorUI();
+        }
+
+        function addManualTargetPc() {
+            const inp = document.getElementById('customPcTargetInput');
+            if (!inp || !inp.value.trim()) return;
+            const raw = inp.value.trim();
+            const existing = cachedStudents.find(s =>
+                s && (s.id.toLowerCase() === raw.toLowerCase() || String(s.hostname || '').toLowerCase() === raw.toLowerCase())
+            );
+            const targetKey = existing ? existing.id : raw;
+            selectedTargetPcs.add(targetKey);
+            inp.value = '';
+            renderPcTargetList();
+            updateRulesRoomSelectorUI();
+            showToast(`Perangkat [${targetKey}] ditambahkan ke target`);
         }
 
         function updateRulesRoomSelectorUI() {
             const sel = document.getElementById('rulesRoomSelect');
             if (sel) {
                 const globalCount = (cachedGlobalBlocklist.domains || []).length;
-                let html = `<option value="ALL">Semua Ruangan: Kebijakan Global (${globalCount} domain)</option>`;
+                let html = `<option value="ALL">Pilih Ruangan...</option>`;
                 cachedRooms.forEach(r => {
                     const hasCustom = Boolean(cachedRoomBlocklists && cachedRoomBlocklists[r]);
                     const dCount = hasCustom
@@ -1885,18 +2661,36 @@
                 sel.value = selectedRulesRoom;
             }
 
+            const btnGlobal = document.getElementById('btnScopeGlobal');
+            const btnRoom = document.getElementById('btnScopeRoom');
+            const btnPc = document.getElementById('btnScopePc');
+            if (btnGlobal) btnGlobal.classList.toggle('is-active', selectedRulesScope === 'GLOBAL');
+            if (btnRoom) btnRoom.classList.toggle('is-active', selectedRulesScope === 'ROOM');
+            if (btnPc) btnPc.classList.toggle('is-active', selectedRulesScope === 'PC');
+
+            const roomRow = document.getElementById('rulesRoomSelectorRow');
+            const pcPanel = document.getElementById('pcTargetPanel');
+            if (roomRow) roomRow.classList.toggle('hidden', selectedRulesScope !== 'ROOM');
+            if (pcPanel) pcPanel.classList.toggle('hidden', selectedRulesScope !== 'PC');
+
             const badge = document.getElementById('rulesScopeBadge');
-            const btnReset = document.getElementById('btnResetRoomRules');
+            const btnResetRoom = document.getElementById('btnResetRoomRules');
+            const btnResetPc = document.getElementById('btnResetPcRules');
             const btnSave = document.getElementById('btnSaveBlocklist');
 
-            if (selectedRulesRoom === 'ALL') {
+            if (selectedRulesScope === 'PC') {
+                const selCount = selectedTargetPcs.size;
+                const anyCustom = Array.from(selectedTargetPcs).some(k => Boolean(findPcBlocklistKey(k, k)));
                 if (badge) {
-                    badge.className = 'tag';
-                    badge.textContent = 'Mode Edit: Kebijakan Global (Semua Ruangan)';
+                    badge.className = selCount > 0 ? 'tag tag-accent' : 'tag tag-warning';
+                    badge.textContent = selCount > 0
+                        ? `Mode Edit: ${selCount} Perangkat (PC) Dipilih`
+                        : 'Pilih minimal 1 PC target pada daftar di bawah';
                 }
-                if (btnReset) btnReset.classList.add('hidden');
-                if (btnSave) btnSave.textContent = 'Simpan Kebijakan Global';
-            } else {
+                if (btnResetRoom) btnResetRoom.classList.add('hidden');
+                if (btnResetPc) btnResetPc.classList.toggle('hidden', !(selCount > 0 && anyCustom));
+                if (btnSave) btnSave.textContent = selCount > 0 ? `Simpan untuk ${selCount} PC Terpilih` : 'Simpan untuk PC Terpilih';
+            } else if (selectedRulesScope === 'ROOM' && selectedRulesRoom !== 'ALL') {
                 const hasCustom = Boolean(cachedRoomBlocklists && cachedRoomBlocklists[selectedRulesRoom]);
                 if (badge) {
                     if (hasCustom) {
@@ -1907,12 +2701,22 @@
                         badge.textContent = `Ruangan [${selectedRulesRoom}] Mengikuti Global (Simpan untuk buat khusus)`;
                     }
                 }
-                if (btnReset) btnReset.classList.toggle('hidden', !hasCustom);
+                if (btnResetRoom) btnResetRoom.classList.toggle('hidden', !hasCustom);
+                if (btnResetPc) btnResetPc.classList.add('hidden');
                 if (btnSave) btnSave.textContent = `Simpan Khusus Ruangan [${selectedRulesRoom}]`;
+            } else {
+                if (badge) {
+                    badge.className = 'tag';
+                    badge.textContent = 'Mode Edit: Kebijakan Global (Semua Ruangan)';
+                }
+                if (btnResetRoom) btnResetRoom.classList.add('hidden');
+                if (btnResetPc) btnResetPc.classList.add('hidden');
+                if (btnSave) btnSave.textContent = 'Simpan Kebijakan Global';
             }
         }
 
         function onSelectRulesRoom(roomCode) {
+            selectedRulesScope = (roomCode && roomCode !== 'ALL') ? 'ROOM' : 'GLOBAL';
             loadBlocklistIntoEditorForRoom(roomCode || 'ALL');
         }
 
@@ -1923,10 +2727,24 @@
             if (hdrSel) hdrSel.value = selectedRoom;
             const mobSel = document.getElementById('mobileHeaderRoomSelect');
             if (mobSel) mobSel.value = selectedRoom;
+            selectedRulesScope = selectedRoom === 'ALL' ? 'GLOBAL' : 'ROOM';
             loadBlocklistIntoEditorForRoom(selectedRoom);
             updateSidebarPinUI();
             updateHeaderStatusUI();
             updateScopedStats();
+            switchTab('rules');
+        }
+
+        function openPcRulesEditor(studentId) {
+            const st = cachedStudents.find(s => s && s.id === studentId);
+            const targetKey = st ? st.id : String(studentId || '').trim();
+            if (!targetKey) return;
+            selectedRulesScope = 'PC';
+            selectedTargetPcs = new Set([targetKey]);
+            const eff = getEffectiveBlocklistForPcKey(targetKey);
+            applyPolicyToEditor(eff);
+            renderPcTargetList();
+            updateRulesRoomSelectorUI();
             switchTab('rules');
         }
 
@@ -1937,7 +2755,12 @@
             if (hdrSel) hdrSel.value = selectedRoom;
             const mobSel = document.getElementById('mobileHeaderRoomSelect');
             if (mobSel) mobSel.value = selectedRoom;
-            loadBlocklistIntoEditorForRoom(selectedRoom);
+            if (selectedRulesScope !== 'PC') {
+                selectedRulesScope = selectedRoom === 'ALL' ? 'GLOBAL' : 'ROOM';
+                loadBlocklistIntoEditorForRoom(selectedRoom);
+            } else {
+                renderPcTargetList();
+            }
             updateSidebarPinUI();
             updateHeaderStatusUI();
             updateScopedStats();
@@ -2492,6 +3315,9 @@
                 cachedRoomStatuses = data.config.room_statuses || {};
                 cachedRoomPins = data.config.room_pins || {};
                 cachedRoomBlocklists = data.config.room_blocklists || {};
+                cachedPcBlocklists = (data.config.pc_blocklists && typeof data.config.pc_blocklists === 'object' && !Array.isArray(data.config.pc_blocklists))
+                    ? data.config.pc_blocklists
+                    : {};
                 if (data.config.deleted_students && typeof data.config.deleted_students === 'object' && !Array.isArray(data.config.deleted_students)) {
                     serverDeletedStudents = data.config.deleted_students;
                 } else {
@@ -2613,6 +3439,7 @@
                 updateScopedStats();
                 renderCurrentStudents();
                 renderIdeOverridesPanel();
+                renderPcTargetList();
                 renderLogs(cachedLogs);
                 renderRoomsManager();
 
@@ -2744,6 +3571,10 @@
                 if (st.vpn_detected) {
                     stateBadge += ` <span class="tag tag-danger" title="Peringatan: Perangkat menggunakan koneksi proxy atau VPN!">VPN</span>`;
                 }
+                const hasCustomPcPolicy = Boolean(st.has_custom_policy || findPcBlocklistKey(st.id, st.hostname));
+                if (hasCustomPcPolicy) {
+                    stateBadge += ` <span class="tag tag-accent" title="PC ini menggunakan kebijakan blokir khusus">Aturan Khusus</span>`;
+                }
 
                 const extCount = st.quarantined_count || 0;
                 const { lockAi, lockExt, isCustomAi, isCustomExt } = getEffectivePcModules(st);
@@ -2819,6 +3650,9 @@
                             <div class="action-strip">
                                 <button type="button" onclick="sendStudentCmd('${jsId}', 'LOCKED')" class="seg-btn ${isLocked ? 'is-active' : ''}" title="Kunci perangkat ini">Kunci</button>
                                 <button type="button" onclick="sendStudentCmd('${jsId}', 'UNLOCKED')" class="seg-btn ${!isLocked ? 'is-active-warn' : ''}" title="Buka kunci perangkat ini">Buka</button>
+                                <button type="button" onclick="openPcRulesEditor('${jsId}')" class="icon-btn" title="Atur kebijakan blokir khusus PC ini" aria-label="Atur kebijakan blokir PC ${escapeHtml(st.hostname || st.name)}">
+                                    <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75"/></svg>
+                                </button>
                                 <button type="button" onclick="openStudentModal('${jsId}')" class="icon-btn" title="Detail perangkat" aria-label="Detail perangkat ${escapeHtml(st.name)}">
                                     <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/></svg>
                                 </button>
@@ -2839,6 +3673,7 @@
                 const incidents = st.killed_processes_count || 0;
                 const extCount = st.quarantined_count || 0;
                 const { lockAi, lockExt, isCustomAi, isCustomExt } = getEffectivePcModules(st);
+                const hasCustomPcPolicy = Boolean(st.has_custom_policy || findPcBlocklistKey(st.id, st.hostname));
                 const jsId = escapeHtml(escJsArg(st.id));
                 const jsHost = escapeHtml(escJsArg(st.hostname || ''));
                 const nextAi = lockAi ? 'UNLOCKED' : 'LOCKED';
@@ -2853,6 +3688,7 @@
                                     <span class="host-name" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(st.hostname)}</span>
                                 </div>
                                 <div class="row-wrap" style="gap:6px;">
+                                    ${hasCustomPcPolicy ? '<span class="tag tag-accent">Aturan Khusus</span>' : ''}
                                     <span class="tag tag-mono">${escapeHtml(stRoom)}</span>
                                     <span class="status-dot ${st.is_online ? 'is-accent' : ''}" title="${st.is_online ? 'Online' : 'Offline'}"></span>
                                 </div>
@@ -2900,6 +3736,9 @@
                         <div class="node-actions">
                             <button type="button" onclick="sendStudentCmd('${jsId}', 'LOCKED')" class="btn btn-sm btn-flex ${isLocked ? 'btn-primary' : ''}">Kunci</button>
                             <button type="button" onclick="sendStudentCmd('${jsId}', 'UNLOCKED')" class="btn btn-sm btn-flex ${!isLocked ? 'btn-soft-warning' : ''}">Buka</button>
+                            <button type="button" onclick="openPcRulesEditor('${jsId}')" class="icon-btn" title="Atur kebijakan blokir khusus PC ini" aria-label="Atur kebijakan blokir PC ${escapeHtml(st.hostname || st.name)}">
+                                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75"/></svg>
+                            </button>
                             <button type="button" onclick="openStudentModal('${jsId}')" class="icon-btn" title="Detail Perangkat" aria-label="Detail perangkat ${escapeHtml(st.name)}">
                                 <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/></svg>
                             </button>
@@ -3573,22 +4412,50 @@
         }
 
         async function saveBlocklist() {
-            const targetRoom = selectedRulesRoom || 'ALL';
+            const scope = selectedRulesScope || 'GLOBAL';
+            const targetRoom = scope === 'ROOM' ? (selectedRulesRoom || 'ALL') : 'ALL';
             const domains = document.getElementById('inputDomains').value.split('\n').map(s => s.trim().toLowerCase()).filter(Boolean);
             const processes = document.getElementById('inputProcesses').value.split('\n').map(s => s.trim()).filter(Boolean);
             const ide_extensions = document.getElementById('inputExtensions').value.split('\n').map(s => s.trim()).filter(Boolean);
+            const payload = {
+                target_scope: scope,
+                room_code: targetRoom,
+                domains,
+                processes,
+                ide_extensions,
+                block_search_ai: Boolean(activeBlockSearchAi)
+            };
+
+            if (scope === 'PC') {
+                const pcs = Array.from(selectedTargetPcs);
+                if (!pcs.length) {
+                    showToast('Pilih minimal 1 PC target terlebih dahulu', true);
+                    return;
+                }
+                payload.target_pcs = pcs;
+            }
 
             const res = await fetch('api/index.php?action=update_blocklist', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ room_code: targetRoom, domains, processes, ide_extensions })
+                body: JSON.stringify(payload)
             });
             const data = await res.json();
             if (data.ok) {
                 if (data.blocklist) cachedGlobalBlocklist = data.blocklist;
                 if (data.room_blocklists) cachedRoomBlocklists = data.room_blocklists;
-                loadBlocklistIntoEditorForRoom(targetRoom);
+                if (data.pc_blocklists) cachedPcBlocklists = data.pc_blocklists;
+
+                if (scope === 'PC') {
+                    const firstTarget = payload.target_pcs[0];
+                    applyPolicyToEditor(getEffectiveBlocklistForPcKey(firstTarget));
+                    renderPcTargetList();
+                    updateRulesRoomSelectorUI();
+                } else {
+                    loadBlocklistIntoEditorForRoom(targetRoom);
+                }
                 updateScopedStats();
+                renderCurrentStudents();
                 renderRoomsManager();
                 await syncStateToFirebaseIfAvailable({
                     room_code: currentRoomCode,
@@ -3599,9 +4466,13 @@
                     global_status: cachedGlobalStatus,
                     blocklist_customized: true
                 }, data.blocklist || cachedGlobalBlocklist);
-                const label = targetRoom === 'ALL' ? 'Kebijakan Global (Semua Ruangan)' : `Kebijakan khusus Ruangan [${targetRoom}]`;
-                showToast(`${label} berhasil disimpan (${domains.length} domain aktif)`);
+                const label = scope === 'PC'
+                    ? `Kebijakan khusus ${payload.target_pcs.length} PC`
+                    : (targetRoom === 'ALL' ? 'Kebijakan Global (Semua Ruangan)' : `Kebijakan khusus Ruangan [${targetRoom}]`);
+                showToast(`${label} disimpan (${domains.length} domain, ${processes.length} proses, ${ide_extensions.length} ekstensi)`);
                 fetchDashboard();
+            } else {
+                showToast('Gagal menyimpan kebijakan: ' + (data?.error || 'Unknown error'), true);
             }
         }
 
@@ -3611,14 +4482,16 @@
             const res = await fetch('api/index.php?action=update_blocklist', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ room_code: targetRoom, reset_room: true })
+                body: JSON.stringify({ target_scope: 'ROOM', room_code: targetRoom, reset_room: true })
             });
             const data = await res.json();
             if (data.ok) {
                 if (data.blocklist) cachedGlobalBlocklist = data.blocklist;
                 if (data.room_blocklists) cachedRoomBlocklists = data.room_blocklists;
+                if (data.pc_blocklists) cachedPcBlocklists = data.pc_blocklists;
                 loadBlocklistIntoEditorForRoom(targetRoom);
                 updateScopedStats();
+                renderCurrentStudents();
                 renderRoomsManager();
                 await syncStateToFirebaseIfAvailable({
                     room_code: currentRoomCode,
@@ -3630,6 +4503,29 @@
                     blocklist_customized: true
                 }, data.blocklist || cachedGlobalBlocklist);
                 showToast(`Ruangan [${targetRoom}] dikembalikan untuk mengikuti Kebijakan Global`);
+                fetchDashboard();
+            }
+        }
+
+        async function resetPcBlocklist() {
+            const pcs = Array.from(selectedTargetPcs);
+            if (!pcs.length) return;
+            const res = await fetch('api/index.php?action=update_blocklist', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ target_scope: 'PC', target_pcs: pcs, reset_pc: true })
+            });
+            const data = await res.json();
+            if (data.ok) {
+                if (data.blocklist) cachedGlobalBlocklist = data.blocklist;
+                if (data.room_blocklists) cachedRoomBlocklists = data.room_blocklists;
+                if (data.pc_blocklists) cachedPcBlocklists = data.pc_blocklists;
+                applyPolicyToEditor(getEffectiveBlocklistForPcKey(pcs[0]));
+                renderPcTargetList();
+                updateRulesRoomSelectorUI();
+                updateScopedStats();
+                renderCurrentStudents();
+                showToast(`${pcs.length} PC dikembalikan ke kebijakan Ruangan/Global`);
                 fetchDashboard();
             }
         }

@@ -178,11 +178,12 @@ namespace AIBlockerService
                 {
                     List<string> domains = ExtractStringList(req, "domains");
                     bool blockDoh = req.ContainsKey("block_doh") && Convert.ToBoolean(req["block_doh"]);
+                    bool blockSearchAi = !req.ContainsKey("block_search_ai") || Convert.ToBoolean(req["block_search_ai"]);
                     string msg;
                     bool hostsOk = ApplyHostsBlock(domains, out msg);
                     if (blockDoh)
                     {
-                        ApplyBrowserPolicies(domains);
+                        ApplyBrowserPolicies(domains, blockSearchAi);
                     }
                     else
                     {
@@ -281,6 +282,12 @@ namespace AIBlockerService
 
         private static bool ApplyHostsBlock(List<string> domains, out string statusMessage)
         {
+            if (domains == null || domains.Count == 0)
+            {
+                RemoveHostsBlock();
+                statusMessage = "Layer 1: 0 domain diblokir di hosts.";
+                return true;
+            }
             try
             {
                 if (!Directory.Exists(AppDataDir)) Directory.CreateDirectory(AppDataDir);
@@ -419,7 +426,7 @@ namespace AIBlockerService
             "search.yahoo.com/search?fr=ai"
         };
 
-        private static void ApplyBrowserPolicies(List<string> domains)
+        private static void ApplyBrowserPolicies(List<string> domains, bool blockSearchAi)
         {
             bool hasDomains = (domains != null && domains.Count > 0);
             HashSet<string> uniqueEntries = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -432,6 +439,9 @@ namespace AIBlockerService
                     if (string.IsNullOrEmpty(d) || d.Contains(" ")) continue;
                     uniqueEntries.Add(d);
                 }
+            }
+            if (blockSearchAi)
+            {
                 foreach (string p in SearchAiBlockPatterns)
                 {
                     uniqueEntries.Add(p);
@@ -456,24 +466,40 @@ namespace AIBlockerService
                             key.SetValue("BuiltInDnsClientEnabled", 0, RegistryValueKind.DWord);
                             key.SetValue("QuicAllowed", 0, RegistryValueKind.DWord);
 
-                            if (regPath.EndsWith("Chrome"))
+                            if (blockSearchAi)
                             {
-                                key.SetValue("GenAiDefaultSettings", 2, RegistryValueKind.DWord);
-                                key.SetValue("AIModeSettings", 1, RegistryValueKind.DWord);
-                                key.SetValue("GeminiSettings", 1, RegistryValueKind.DWord);
-                                key.SetValue("GenAILocalFoundationalModelSettings", 1, RegistryValueKind.DWord);
+                                if (regPath.EndsWith("Chrome"))
+                                {
+                                    key.SetValue("GenAiDefaultSettings", 2, RegistryValueKind.DWord);
+                                    key.SetValue("AIModeSettings", 1, RegistryValueKind.DWord);
+                                    key.SetValue("GeminiSettings", 1, RegistryValueKind.DWord);
+                                    key.SetValue("GenAILocalFoundationalModelSettings", 1, RegistryValueKind.DWord);
+                                }
+                                else if (regPath.EndsWith("Edge"))
+                                {
+                                    key.SetValue("HubsSidebarEnabled", 0, RegistryValueKind.DWord);
+                                    key.SetValue("CopilotCDPPageContext", 0, RegistryValueKind.DWord);
+                                    key.SetValue("CopilotPageContext", 0, RegistryValueKind.DWord);
+                                    key.SetValue("EdgeEntraCopilotPageContext", 0, RegistryValueKind.DWord);
+                                    key.SetValue("DiscoverPageContextEnabled", 0, RegistryValueKind.DWord);
+                                }
+                                else if (regPath.EndsWith("Brave"))
+                                {
+                                    key.SetValue("BraveAIChatEnabled", 0, RegistryValueKind.DWord);
+                                }
                             }
-                            else if (regPath.EndsWith("Edge"))
+                            else
                             {
-                                key.SetValue("HubsSidebarEnabled", 0, RegistryValueKind.DWord);
-                                key.SetValue("CopilotCDPPageContext", 0, RegistryValueKind.DWord);
-                                key.SetValue("CopilotPageContext", 0, RegistryValueKind.DWord);
-                                key.SetValue("EdgeEntraCopilotPageContext", 0, RegistryValueKind.DWord);
-                                key.SetValue("DiscoverPageContextEnabled", 0, RegistryValueKind.DWord);
-                            }
-                            else if (regPath.EndsWith("Brave"))
-                            {
-                                key.SetValue("BraveAIChatEnabled", 0, RegistryValueKind.DWord);
+                                key.DeleteValue("GenAiDefaultSettings", false);
+                                key.DeleteValue("AIModeSettings", false);
+                                key.DeleteValue("GeminiSettings", false);
+                                key.DeleteValue("GenAILocalFoundationalModelSettings", false);
+                                key.DeleteValue("HubsSidebarEnabled", false);
+                                key.DeleteValue("CopilotCDPPageContext", false);
+                                key.DeleteValue("CopilotPageContext", false);
+                                key.DeleteValue("EdgeEntraCopilotPageContext", false);
+                                key.DeleteValue("DiscoverPageContextEnabled", false);
+                                key.DeleteValue("BraveAIChatEnabled", false);
                             }
 
                             key.DeleteValue("DefaultSearchProviderEnabled", false);
@@ -483,7 +509,7 @@ namespace AIBlockerService
                             key.DeleteSubKeyTree("URLAllowlist", false);
 
                             key.DeleteSubKeyTree("URLBlocklist", false);
-                            if (hasDomains && uniqueEntries.Count > 0)
+                            if (uniqueEntries.Count > 0)
                             {
                                 using (RegistryKey ubKey = key.CreateSubKey("URLBlocklist"))
                                 {

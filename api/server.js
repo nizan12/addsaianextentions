@@ -99,6 +99,7 @@ function getDefaultSchema() {
             room_statuses: {},
             room_pins: {},
             room_blocklists: {},
+            pc_blocklists: {},
             global_status: 'LOCKED',
             lock_ai: true,
             lock_extensions: true,
@@ -187,7 +188,8 @@ function getDefaultSchema() {
                 'DanielSanMedium.dscodegpt', 'genieai.chatgpt-vscode', 'bito.bito',
                 'Pieces.pieces-vscode', 'kilocode.kilo-code', 'augment.vscode-augment'
             ],
-            local_ai_ports: [11434, 1234, 1337, 8080, 5001]
+            local_ai_ports: [11434, 1234, 1337, 8080, 5001],
+            block_search_ai: true
         },
         students: {},
         logs: []
@@ -366,6 +368,7 @@ function packCloudPayload(data) {
             ...(data.config.admin_password_hash ? { aph: data.config.admin_password_hash } : {}),
             ...(Object.keys(pco).length > 0 ? { pco } : {}),
             ...(ideHostsCompact.length > 0 ? { ih: ideHostsCompact } : {}),
+            bsa: data.blocklist?.block_search_ai === false ? 0 : 1,
             bc: Boolean(data.config.blocklist_customized),
             up: data.config.updated_at || new Date().toISOString()
         },
@@ -476,6 +479,14 @@ function unpackCloudPayload(photoUrl) {
             }
 
             const unpackedGst = parsed.cfg.gst || 'LOCKED';
+            const unpackedSearchAi = parsed.cfg.bsa === 0 ? false : true;
+            const unpackedBlocklist = parsed.cbl
+                ? {
+                    ...schema.blocklist,
+                    ...parsed.cbl,
+                    block_search_ai: parsed.cbl.block_search_ai !== undefined ? Boolean(parsed.cbl.block_search_ai) : unpackedSearchAi
+                }
+                : { ...schema.blocklist, block_search_ai: unpackedSearchAi };
             return {
                 config: {
                     ...schema.config,
@@ -497,7 +508,7 @@ function unpackCloudPayload(photoUrl) {
                     blocklist_customized: Boolean(parsed.cfg.bc),
                     updated_at: parsed.cfg.up || new Date().toISOString()
                 },
-                blocklist: parsed.cbl || schema.blocklist,
+                blocklist: unpackedBlocklist,
                 students: students,
                 logs: []
             };
@@ -950,6 +961,9 @@ function ensureRoomsConfig(data) {
     if (!data.config.room_blocklists || typeof data.config.room_blocklists !== 'object') {
         data.config.room_blocklists = {};
     }
+    if (!data.config.pc_blocklists || typeof data.config.pc_blocklists !== 'object' || Array.isArray(data.config.pc_blocklists)) {
+        data.config.pc_blocklists = {};
+    }
     const globLocked = (data.config.global_status || 'LOCKED') === 'LOCKED';
     if (typeof data.config.lock_ai !== 'boolean') {
         data.config.lock_ai = globLocked;
@@ -998,21 +1012,65 @@ function ensureRoomsConfig(data) {
         data.blocklist.processes = Array.from(new Set([...(data.blocklist.processes || []), ...defaults.processes]));
         data.blocklist.ide_extensions = Array.from(new Set([...(data.blocklist.ide_extensions || []), ...defaults.ide_extensions]));
     }
+    if (data.blocklist && data.blocklist.block_search_ai === undefined) {
+        data.blocklist.block_search_ai = true;
+    }
 }
 
-function getEffectiveBlocklist(data, roomCode) {
-    const norm = String(roomCode || '').trim().toUpperCase();
+function getEffectiveBlocklist(data, roomCode, studentId = '', hostname = '') {
+    const normRoom = String(roomCode || '').trim().toUpperCase();
+    const normId = String(studentId || '').trim();
+    const upperHost = String(hostname || '').trim().toUpperCase();
     const globalBl = data.blocklist || getDefaultSchema().blocklist;
-    if (norm && norm !== 'ALL' && data.config?.room_blocklists && data.config.room_blocklists[norm]) {
-        const rb = data.config.room_blocklists[norm];
+    const globalSearchAi = globalBl.block_search_ai !== false;
+    const defaultPorts = globalBl.local_ai_ports || [11434, 1234, 1337, 8080, 5001];
+
+    const pcMap = (data.config && data.config.pc_blocklists && typeof data.config.pc_blocklists === 'object' && !Array.isArray(data.config.pc_blocklists))
+        ? data.config.pc_blocklists
+        : {};
+    let pcBl = (normId && pcMap[normId]) || (upperHost && pcMap[upperHost]) || null;
+    if (!pcBl && (normId || upperHost)) {
+        const lowerId = normId.toLowerCase();
+        const lowerHost = upperHost.toLowerCase();
+        for (const [k, val] of Object.entries(pcMap)) {
+            const lk = String(k || '').trim().toLowerCase();
+            if (lk && (lk === lowerId || lk === lowerHost)) {
+                pcBl = val;
+                break;
+            }
+        }
+    }
+    if (pcBl && typeof pcBl === 'object') {
+        return {
+            domains: Array.isArray(pcBl.domains) ? pcBl.domains : (globalBl.domains || []),
+            processes: Array.isArray(pcBl.processes) ? pcBl.processes : (globalBl.processes || []),
+            ide_extensions: Array.isArray(pcBl.ide_extensions) ? pcBl.ide_extensions : (globalBl.ide_extensions || []),
+            block_search_ai: pcBl.block_search_ai !== undefined ? Boolean(pcBl.block_search_ai) : globalSearchAi,
+            local_ai_ports: defaultPorts,
+            policy_source: 'pc'
+        };
+    }
+
+    if (normRoom && normRoom !== 'ALL' && data.config?.room_blocklists && data.config.room_blocklists[normRoom]) {
+        const rb = data.config.room_blocklists[normRoom];
         return {
             domains: Array.isArray(rb.domains) ? rb.domains : (globalBl.domains || []),
             processes: Array.isArray(rb.processes) ? rb.processes : (globalBl.processes || []),
             ide_extensions: Array.isArray(rb.ide_extensions) ? rb.ide_extensions : (globalBl.ide_extensions || []),
-            local_ai_ports: globalBl.local_ai_ports || [11434, 1234, 1337, 8080, 5001]
+            block_search_ai: rb.block_search_ai !== undefined ? Boolean(rb.block_search_ai) : globalSearchAi,
+            local_ai_ports: defaultPorts,
+            policy_source: 'room'
         };
     }
-    return globalBl;
+
+    return {
+        domains: globalBl.domains || [],
+        processes: globalBl.processes || [],
+        ide_extensions: globalBl.ide_extensions || [],
+        block_search_ai: globalSearchAi,
+        local_ai_ports: defaultPorts,
+        policy_source: 'global'
+    };
 }
 
 function registerRoomByAdmin(data, roomCode, customPin = '') {
@@ -1393,7 +1451,7 @@ module.exports = async (req, res) => {
                 const roomDefaultState = data.config.room_statuses[normalizedRoom] || data.config.global_status || 'LOCKED';
                 const desiredState = (existing && existing.room_code === normalizedRoom && existing.target_status) ? existing.target_status : roomDefaultState;
                 const roomPin = data.config.room_pins[normalizedRoom] || '';
-                const effectiveBl = getEffectiveBlocklist(data, normalizedRoom);
+                const effectiveBl = getEffectiveBlocklist(data, normalizedRoom, studentId, hostname);
                 const nowSec = Math.floor(Date.now() / 1000);
                 let effectiveNow = nowSec;
                 if (data.config.deleted_students && data.config.deleted_students[studentId]) {
@@ -1448,6 +1506,7 @@ module.exports = async (req, res) => {
                         target_status: desiredState,
                         block_doh: data.config.block_doh,
                         block_vpn: data.config.block_vpn,
+                        block_search_ai: effectiveBl.block_search_ai !== false,
                         quarantine_extensions: data.config.quarantine_extensions,
                         kill_processes: data.config.kill_processes
                     },
@@ -1521,7 +1580,7 @@ module.exports = async (req, res) => {
                 const st = data.students[studentId];
                 if (name) st.name = name;
                 st.room_code = reqRoom;
-                const effectiveBl = getEffectiveBlocklist(data, st.room_code);
+                const effectiveBl = getEffectiveBlocklist(data, st.room_code, studentId, hostname);
                 const resolvedTarget = st.target_status || data.config.room_statuses[st.room_code] || globalTarget;
                 const isRecentCmd = (Date.now() - (st.cmd_updated_at || 0)) < 9000;
 
@@ -1566,6 +1625,7 @@ module.exports = async (req, res) => {
                         room_pin_hash: roomPin ? roomPinHash(st.room_code, roomPin) : '',
                         block_doh: data.config.block_doh,
                         block_vpn: data.config.block_vpn,
+                        block_search_ai: effectiveBl.block_search_ai !== false,
                         quarantine_extensions: effLockExt,
                         kill_processes: effLockAi,
                         lock_ai: effLockAi,
@@ -1669,8 +1729,13 @@ module.exports = async (req, res) => {
                     }
                     const st = { ...rawSt };
                     const isOnline = (nowSec - (st.last_seen || 0)) <= 45;
+                    const effBl = getEffectiveBlocklist(data, stRoom, st.id || id, st.hostname || '');
                     st.is_online = isOnline;
                     st.seconds_ago = Math.max(0, nowSec - (st.last_seen || nowSec));
+                    st.policy_source = effBl.policy_source || 'global';
+                    st.has_custom_policy = st.policy_source === 'pc';
+                    st.block_search_ai = effBl.block_search_ai !== false;
+                    st.blocked_domains_count = (effBl.domains || []).length;
                     if (isOnline) onlineCount++;
                     if (st.status === 'LOCKED') lockedCount++;
                     violationCount += parseInt(st.killed_processes_count || 0, 10);
@@ -2225,10 +2290,20 @@ module.exports = async (req, res) => {
 
             case 'save_blocklist':
             case 'update_blocklist': {
+                const rawScope = String(body.target_scope || '').trim().toUpperCase();
                 const targetRoom = String(body.room_code || 'ALL').trim().toUpperCase();
+                const hasPcTarget = rawScope === 'PC' || Array.isArray(body.target_pcs) || Boolean(body.target_pc);
+                const targetScope = hasPcTarget
+                    ? 'PC'
+                    : ((rawScope === 'ROOM' || (targetRoom && targetRoom !== 'ALL')) ? 'ROOM' : 'GLOBAL');
                 const resetRoom = Boolean(body.reset_room);
+                const resetPc = Boolean(body.reset_pc);
+
                 if (!data.config.room_blocklists || typeof data.config.room_blocklists !== 'object') {
                     data.config.room_blocklists = {};
+                }
+                if (!data.config.pc_blocklists || typeof data.config.pc_blocklists !== 'object' || Array.isArray(data.config.pc_blocklists)) {
+                    data.config.pc_blocklists = {};
                 }
 
                 const cleanDomains = Array.isArray(body.domains)
@@ -2240,8 +2315,48 @@ module.exports = async (req, res) => {
                 const cleanExts = Array.isArray(body.ide_extensions)
                     ? [...new Set(body.ide_extensions.map(s => String(s).trim()).filter(Boolean))]
                     : (data.blocklist.ide_extensions || []);
+                const cleanBlockSearchAi = body.block_search_ai !== undefined
+                    ? Boolean(body.block_search_ai)
+                    : (data.blocklist.block_search_ai !== false);
 
-                if (targetRoom && targetRoom !== 'ALL') {
+                const nowIso = new Date().toISOString();
+                let targetPcs = [];
+                let responseEffective = null;
+
+                if (targetScope === 'PC') {
+                    const rawTargets = [];
+                    if (Array.isArray(body.target_pcs)) rawTargets.push(...body.target_pcs);
+                    if (body.target_pc) rawTargets.push(body.target_pc);
+                    targetPcs = [...new Set(rawTargets.map(s => String(s || '').trim()).filter(Boolean))];
+                    if (!targetPcs.length) {
+                        return res.status(400).json({ ok: false, error: 'Pilih minimal 1 perangkat PC target.' });
+                    }
+
+                    if (resetPc) {
+                        for (const pk of targetPcs) {
+                            delete data.config.pc_blocklists[pk];
+                            const pkLower = pk.toLowerCase();
+                            for (const existingKey of Object.keys(data.config.pc_blocklists)) {
+                                if (existingKey.toLowerCase() === pkLower) {
+                                    delete data.config.pc_blocklists[existingKey];
+                                }
+                            }
+                        }
+                        addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'PC_BLOCKLIST_RESET', `Kebijakan khusus ${targetPcs.length} PC (${targetPcs.slice(0, 4).join(', ')}) dikembalikan ke kebijakan Ruangan/Global.`, 'INFO', targetRoom || 'ALL');
+                    } else {
+                        for (const pk of targetPcs) {
+                            data.config.pc_blocklists[pk] = {
+                                domains: cleanDomains,
+                                processes: cleanProcs,
+                                ide_extensions: cleanExts,
+                                block_search_ai: cleanBlockSearchAi,
+                                updated_at: nowIso
+                            };
+                        }
+                        addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'PC_BLOCKLIST_UPDATE', `Kebijakan khusus diterapkan untuk ${targetPcs.length} PC (${targetPcs.slice(0, 4).join(', ')}): ${cleanDomains.length} domain, ${cleanProcs.length} proses, ${cleanExts.length} ekstensi, Mode AI=${cleanBlockSearchAi ? 'BLOKIR' : 'IZIN'}.`, 'INFO', targetRoom || 'ALL');
+                    }
+                    responseEffective = getEffectiveBlocklist(data, targetRoom, targetPcs[0], targetPcs[0]);
+                } else if (targetScope === 'ROOM' && targetRoom && targetRoom !== 'ALL') {
                     if (resetRoom) {
                         delete data.config.room_blocklists[targetRoom];
                         addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'BLOCKLIST_RESET', `Kebijakan blokir khusus ruangan [${targetRoom}] dikembalikan ke Kebijakan Global.`, 'INFO', targetRoom);
@@ -2250,27 +2365,34 @@ module.exports = async (req, res) => {
                             domains: cleanDomains,
                             processes: cleanProcs,
                             ide_extensions: cleanExts,
-                            updated_at: new Date().toISOString()
+                            block_search_ai: cleanBlockSearchAi,
+                            updated_at: nowIso
                         };
-                        addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ROOM_BLOCKLIST_UPDATE', `Kebijakan blokir khusus ruangan [${targetRoom}] diperbarui (${cleanDomains.length} domain, ${cleanProcs.length} proses).`, 'INFO', targetRoom);
+                        addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'ROOM_BLOCKLIST_UPDATE', `Kebijakan blokir khusus ruangan [${targetRoom}] diperbarui (${cleanDomains.length} domain, ${cleanProcs.length} proses, ${cleanExts.length} ekstensi, Mode AI=${cleanBlockSearchAi ? 'BLOKIR' : 'IZIN'}).`, 'INFO', targetRoom);
                     }
+                    responseEffective = getEffectiveBlocklist(data, targetRoom);
                 } else {
                     data.config.blocklist_customized = true;
                     data.blocklist.domains = cleanDomains;
                     data.blocklist.processes = cleanProcs;
                     data.blocklist.ide_extensions = cleanExts;
-                    addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'BLOCKLIST_UPDATE', `Kebijakan blokir Global (Semua Ruangan) diperbarui (${cleanDomains.length} domain, ${cleanProcs.length} proses).`, 'INFO', 'ALL');
+                    data.blocklist.block_search_ai = cleanBlockSearchAi;
+                    addLog(data, 'ADMIN', 'Dosen Pengawas', 'DASHBOARD', 'BLOCKLIST_UPDATE', `Kebijakan blokir Global (Semua Ruangan) diperbarui (${cleanDomains.length} domain, ${cleanProcs.length} proses, ${cleanExts.length} ekstensi, Mode AI=${cleanBlockSearchAi ? 'BLOKIR' : 'IZIN'}).`, 'INFO', 'ALL');
+                    responseEffective = getEffectiveBlocklist(data, 'ALL');
                 }
 
-                data.config.updated_at = new Date().toISOString();
+                data.config.updated_at = nowIso;
                 const cloudWrite = await writeData(data, { allowFallbackWrite: true });
                 return res.status(200).json({
                     ok: true,
                     cloud_storage: cloudWrite,
+                    target_scope: targetScope,
                     room_code: targetRoom || 'ALL',
+                    target_pcs: targetPcs,
                     blocklist: data.blocklist,
                     room_blocklists: data.config.room_blocklists,
-                    effective_blocklist: getEffectiveBlocklist(data, targetRoom)
+                    pc_blocklists: data.config.pc_blocklists,
+                    effective_blocklist: responseEffective
                 });
             }
 
@@ -2303,6 +2425,7 @@ module.exports._internals = {
     readData,
     writeData,
     ensureRoomsConfig,
+    getEffectiveBlocklist,
     registerRoomByAdmin,
     flushLocalDbNow: () => (memoryStore && isLocalVmMode() ? scheduleLocalDbFlush(true) : lastCloudStatus),
     getLastCloudStatus: () => lastCloudStatus,
