@@ -482,14 +482,10 @@ namespace AIBlockerGuard
         // --------------------------------------------------------------------
         private static readonly string[] SearchAiBlockPatterns = new string[]
         {
-            "google.com/search",
-            "google.co.id/search",
             "google.com/aimode",
             "google.co.id/aimode",
             "google.com/search?udm=50",
             "google.co.id/search?udm=50",
-            "google.com/search?udm=14&udm=50",
-            "google.co.id/search?udm=14&udm=50",
             "bing.com/chat",
             "bing.com/copilotsearch",
             "bing.com/search?showconv=1",
@@ -507,8 +503,6 @@ namespace AIBlockerGuard
             try
             {
                 bool hasDomains = (BlockedDomains != null && BlockedDomains.Count > 0);
-                bool googleComBlocked = false;
-                bool googleCoIdBlocked = false;
                 HashSet<string> uniqueEntries = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
                 if (hasDomains)
@@ -517,8 +511,6 @@ namespace AIBlockerGuard
                     {
                         string d = (rawDomain ?? "").Trim().ToLowerInvariant();
                         if (string.IsNullOrEmpty(d) || d.Contains(" ")) continue;
-                        if (d == "google.com" || d == "www.google.com") googleComBlocked = true;
-                        if (d == "google.co.id" || d == "www.google.co.id") googleCoIdBlocked = true;
                         uniqueEntries.Add(d);
                     }
                     foreach (string p in SearchAiBlockPatterns)
@@ -569,22 +561,13 @@ namespace AIBlockerGuard
                                         key.SetValue("BraveAIChatEnabled", 0, RegistryValueKind.DWord);
                                     }
 
-                                    if (hasDomains && !googleComBlocked)
-                                    {
-                                        key.SetValue("DefaultSearchProviderEnabled", 1, RegistryValueKind.DWord);
-                                        key.SetValue("DefaultSearchProviderName", "Google Web (Mode Ujian)", RegistryValueKind.String);
-                                        key.SetValue("DefaultSearchProviderKeyword", "g", RegistryValueKind.String);
-                                        key.SetValue("DefaultSearchProviderSearchURL", "https://www.google.com/search?q={searchTerms}&udm=14", RegistryValueKind.String);
-                                    }
-                                    else
-                                    {
-                                        key.DeleteValue("DefaultSearchProviderEnabled", false);
-                                        key.DeleteValue("DefaultSearchProviderName", false);
-                                        key.DeleteValue("DefaultSearchProviderKeyword", false);
-                                        key.DeleteValue("DefaultSearchProviderSearchURL", false);
-                                    }
+                                    key.DeleteValue("DefaultSearchProviderEnabled", false);
+                                    key.DeleteValue("DefaultSearchProviderName", false);
+                                    key.DeleteValue("DefaultSearchProviderKeyword", false);
+                                    key.DeleteValue("DefaultSearchProviderSearchURL", false);
+                                    key.DeleteSubKeyTree("URLAllowlist", false);
 
-                                    // Rebuild URLBlocklist & URLAllowlist so Chromium immediately blocks even already-open tabs
+                                    // Rebuild URLBlocklist so Chromium immediately blocks even already-open tabs
                                     key.DeleteSubKeyTree("URLBlocklist", false);
                                     if (hasDomains && uniqueEntries.Count > 0)
                                     {
@@ -597,27 +580,6 @@ namespace AIBlockerGuard
                                                 {
                                                     ubKey.SetValue(idx.ToString(), entry, RegistryValueKind.String);
                                                     idx++;
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    key.DeleteSubKeyTree("URLAllowlist", false);
-                                    if (hasDomains && (!googleComBlocked || !googleCoIdBlocked))
-                                    {
-                                        using (RegistryKey uaKey = key.CreateSubKey("URLAllowlist"))
-                                        {
-                                            if (uaKey != null)
-                                            {
-                                                int aIdx = 1;
-                                                if (!googleComBlocked)
-                                                {
-                                                    uaKey.SetValue(aIdx.ToString(), "google.com/search?udm=14", RegistryValueKind.String);
-                                                    aIdx++;
-                                                }
-                                                if (!googleCoIdBlocked)
-                                                {
-                                                    uaKey.SetValue(aIdx.ToString(), "google.co.id/search?udm=14", RegistryValueKind.String);
                                                 }
                                             }
                                         }
