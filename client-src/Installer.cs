@@ -1951,6 +1951,33 @@ namespace AIBlockerInstaller
                     string appDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "AIBlockerGuard");
                     if (!Directory.Exists(appDataDir)) Directory.CreateDirectory(appDataDir);
                     RunHiddenProcess("icacls.exe", "\"" + appDataDir + "\" /grant *S-1-5-32-545:(OI)(CI)M /T /Q", 3000);
+
+                    string[] cfgPaths = new string[]
+                    {
+                        Path.Combine(appDataDir, "agent_config.json"),
+                        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AIBlockerGuard", "agent_config.json")
+                    };
+                    foreach (string cfgPath in cfgPaths)
+                    {
+                        try
+                        {
+                            if (File.Exists(cfgPath))
+                            {
+                                string cfgText = File.ReadAllText(cfgPath, Encoding.UTF8);
+                                if (cfgText.IndexOf("blockai-wheat.vercel.app", StringComparison.OrdinalIgnoreCase) >= 0)
+                                {
+                                    string updatedCfg = System.Text.RegularExpressions.Regex.Replace(
+                                        cfgText,
+                                        @"https?://blockai-wheat\.vercel\.app/api/index\.php",
+                                        "http://172.19.1.10/api/index.php",
+                                        System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                                    );
+                                    File.WriteAllText(cfgPath, updatedCfg, Encoding.UTF8);
+                                }
+                            }
+                        }
+                        catch { }
+                    }
                 }
                 catch { }
 

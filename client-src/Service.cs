@@ -402,8 +402,50 @@ namespace AIBlockerService
             catch { }
         }
 
+        private static readonly string[] SearchAiBlockPatterns = new string[]
+        {
+            "google.com/search",
+            "google.co.id/search",
+            "google.com/aimode",
+            "google.co.id/aimode",
+            "google.com/search?udm=50",
+            "google.co.id/search?udm=50",
+            "google.com/search?udm=14&udm=50",
+            "google.co.id/search?udm=14&udm=50",
+            "bing.com/chat",
+            "bing.com/copilotsearch",
+            "bing.com/search?showconv=1",
+            "duck.ai",
+            "duckduckgo.com/?ia=chat",
+            "search.brave.com/ask",
+            "search.brave.com/search?summary=1",
+            "yandex.com/search/neuro",
+            "search.yahoo.com/search?fr=ai"
+        };
+
         private static void ApplyBrowserPolicies(List<string> domains)
         {
+            bool hasDomains = (domains != null && domains.Count > 0);
+            bool googleComBlocked = false;
+            bool googleCoIdBlocked = false;
+            HashSet<string> uniqueEntries = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (hasDomains)
+            {
+                foreach (string rawDomain in domains)
+                {
+                    string d = (rawDomain ?? "").Trim().ToLowerInvariant();
+                    if (string.IsNullOrEmpty(d) || d.Contains(" ")) continue;
+                    if (d == "google.com" || d == "www.google.com") googleComBlocked = true;
+                    if (d == "google.co.id" || d == "www.google.co.id") googleCoIdBlocked = true;
+                    uniqueEntries.Add(d);
+                }
+                foreach (string p in SearchAiBlockPatterns)
+                {
+                    uniqueEntries.Add(p);
+                }
+            }
+
             string[] paths = new string[]
             {
                 @"SOFTWARE\Policies\Google\Chrome",
@@ -425,31 +467,71 @@ namespace AIBlockerService
                             if (regPath.EndsWith("Chrome"))
                             {
                                 key.SetValue("GenAiDefaultSettings", 2, RegistryValueKind.DWord);
+                                key.SetValue("AIModeSettings", 1, RegistryValueKind.DWord);
+                                key.SetValue("GeminiSettings", 1, RegistryValueKind.DWord);
+                                key.SetValue("GenAILocalFoundationalModelSettings", 1, RegistryValueKind.DWord);
                             }
                             else if (regPath.EndsWith("Edge"))
                             {
                                 key.SetValue("HubsSidebarEnabled", 0, RegistryValueKind.DWord);
                                 key.SetValue("CopilotCDPPageContext", 0, RegistryValueKind.DWord);
+                                key.SetValue("CopilotPageContext", 0, RegistryValueKind.DWord);
+                                key.SetValue("EdgeEntraCopilotPageContext", 0, RegistryValueKind.DWord);
+                                key.SetValue("DiscoverPageContextEnabled", 0, RegistryValueKind.DWord);
                             }
                             else if (regPath.EndsWith("Brave"))
                             {
                                 key.SetValue("BraveAIChatEnabled", 0, RegistryValueKind.DWord);
                             }
 
+                            if (hasDomains && !googleComBlocked)
+                            {
+                                key.SetValue("DefaultSearchProviderEnabled", 1, RegistryValueKind.DWord);
+                                key.SetValue("DefaultSearchProviderName", "Google Web (Mode Ujian)", RegistryValueKind.String);
+                                key.SetValue("DefaultSearchProviderKeyword", "g", RegistryValueKind.String);
+                                key.SetValue("DefaultSearchProviderSearchURL", "https://www.google.com/search?q={searchTerms}&udm=14", RegistryValueKind.String);
+                            }
+                            else
+                            {
+                                key.DeleteValue("DefaultSearchProviderEnabled", false);
+                                key.DeleteValue("DefaultSearchProviderName", false);
+                                key.DeleteValue("DefaultSearchProviderKeyword", false);
+                                key.DeleteValue("DefaultSearchProviderSearchURL", false);
+                            }
+
                             key.DeleteSubKeyTree("URLBlocklist", false);
-                            if (domains != null && domains.Count > 0)
+                            if (hasDomains && uniqueEntries.Count > 0)
                             {
                                 using (RegistryKey ubKey = key.CreateSubKey("URLBlocklist"))
                                 {
                                     if (ubKey != null)
                                     {
                                         int idx = 1;
-                                        foreach (string rawDomain in domains)
+                                        foreach (string entry in uniqueEntries)
                                         {
-                                            string d = (rawDomain ?? "").Trim().ToLowerInvariant();
-                                            if (string.IsNullOrEmpty(d) || d.Contains(" ")) continue;
-                                            ubKey.SetValue(idx.ToString(), d, RegistryValueKind.String);
+                                            ubKey.SetValue(idx.ToString(), entry, RegistryValueKind.String);
                                             idx++;
+                                        }
+                                    }
+                                }
+                            }
+
+                            key.DeleteSubKeyTree("URLAllowlist", false);
+                            if (hasDomains && (!googleComBlocked || !googleCoIdBlocked))
+                            {
+                                using (RegistryKey uaKey = key.CreateSubKey("URLAllowlist"))
+                                {
+                                    if (uaKey != null)
+                                    {
+                                        int aIdx = 1;
+                                        if (!googleComBlocked)
+                                        {
+                                            uaKey.SetValue(aIdx.ToString(), "google.com/search?udm=14", RegistryValueKind.String);
+                                            aIdx++;
+                                        }
+                                        if (!googleCoIdBlocked)
+                                        {
+                                            uaKey.SetValue(aIdx.ToString(), "google.co.id/search?udm=14", RegistryValueKind.String);
                                         }
                                     }
                                 }
@@ -502,11 +584,22 @@ namespace AIBlockerService
                             key.DeleteValue("BuiltInDnsClientEnabled", false);
                             key.DeleteValue("QuicAllowed", false);
                             key.DeleteValue("GenAiDefaultSettings", false);
+                            key.DeleteValue("AIModeSettings", false);
+                            key.DeleteValue("GeminiSettings", false);
+                            key.DeleteValue("GenAILocalFoundationalModelSettings", false);
                             key.DeleteValue("HubsSidebarEnabled", false);
                             key.DeleteValue("CopilotCDPPageContext", false);
+                            key.DeleteValue("CopilotPageContext", false);
+                            key.DeleteValue("EdgeEntraCopilotPageContext", false);
+                            key.DeleteValue("DiscoverPageContextEnabled", false);
                             key.DeleteValue("BraveAIChatEnabled", false);
+                            key.DeleteValue("DefaultSearchProviderEnabled", false);
+                            key.DeleteValue("DefaultSearchProviderName", false);
+                            key.DeleteValue("DefaultSearchProviderKeyword", false);
+                            key.DeleteValue("DefaultSearchProviderSearchURL", false);
                             key.DeleteValue("ChatEnabled", false);
                             key.DeleteSubKeyTree("URLBlocklist", false);
+                            key.DeleteSubKeyTree("URLAllowlist", false);
                         }
                     }
                 }
