@@ -585,28 +585,200 @@ async function writeToFirebase(data) {
     return lastCloudStatus;
 }
 
+function isLocalVmMode() {
+    return String(process.env.STORAGE_MODE || '').trim().toLowerCase() === 'local';
+}
+
+function getLocalDbPath() {
+    return process.env.LOCAL_DB_PATH
+        ? path.resolve(process.env.LOCAL_DB_PATH)
+        : path.join(__dirname, '..', 'storage', 'vm_database.json');
+}
+
+let localFlushTimer = null;
+let localDbLoaded = false;
+
+function flushLocalDbAtomic(data) {
+    const dbPath = getLocalDbPath();
+    try {
+        fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+        const cleanData = { ...data };
+        delete cleanData._isDefaultFallback;
+        const tmpPath = `${dbPath}.tmp`;
+        fs.writeFileSync(tmpPath, JSON.stringify(cleanData, null, 2), 'utf8');
+        fs.renameSync(tmpPath, dbPath);
+        lastCloudStatus = { backend: 'local_vm', ok: true, error: '' };
+    } catch (e) {
+        lastCloudStatus = { backend: 'local_vm', ok: false, error: e.message || 'Local DB write error' };
+    }
+    return lastCloudStatus;
+}
+
+function scheduleLocalDbFlush(immediate = false) {
+    if (!memoryStore) return lastCloudStatus;
+    if (immediate) {
+        if (localFlushTimer) {
+            clearTimeout(localFlushTimer);
+            localFlushTimer = null;
+        }
+        return flushLocalDbAtomic(memoryStore);
+    }
+    if (!localFlushTimer) {
+        localFlushTimer = setTimeout(() => {
+            localFlushTimer = null;
+            if (memoryStore && isLocalVmMode()) {
+                flushLocalDbAtomic(memoryStore);
+            }
+        }, 5000);
+        if (typeof localFlushTimer.unref === 'function') {
+            localFlushTimer.unref();
+        }
+    }
+    lastCloudStatus = { backend: 'local_vm', ok: true, error: '' };
+    return lastCloudStatus;
+}
+
+function loadLocalDbSync() {
+    const dbPath = getLocalDbPath();
+    let loaded = null;
+    try {
+        if (fs.existsSync(dbPath)) {
+            const parsed = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+            if (parsed && typeof parsed === 'object' && parsed.config) {
+                loaded = parsed;
+                delete loaded._isDefaultFallback;
+            }
+        }
+    } catch (e) {}
+
+    if (loaded) {
+        memoryStore = loaded;
+    } else {
+        memoryStore = getDefaultSchema();
+        delete memoryStore._isDefaultFallback;
+        memoryStore.config.updated_at = new Date().toISOString();
+        flushLocalDbAtomic(memoryStore);
+    }
+    localDbLoaded = true;
+    cloudHydrated = true;
+    lastCloudStatus = { backend: 'local_vm', ok: true, error: '' };
+    return memoryStore;
+}
+
+const KV_DB_KEY = 'aiblocker_db';
+
+function getKvConfig() {
+    const url = String(process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL || '').trim().replace(/\/+$/, '');
+    const writeToken = String(process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || '').trim();
+    const readToken = String(writeToken || process.env.KV_REST_API_READ_ONLY_TOKEN || '').trim();
+    return {
+        url,
+        writeToken,
+        readToken,
+        canRead: Boolean(url && readToken),
+        canWrite: Boolean(url && writeToken)
+    };
+}
+
+function parseKvPayload(raw) {
+    let parsed = raw;
+    try {
+        for (let i = 0; i < 2 && typeof parsed === 'string'; i++) {
+            parsed = JSON.parse(parsed);
+        }
+    } catch (e) {
+        return null;
+    }
+    return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : null;
+}
+
+async function readFromKV(key = KV_DB_KEY) {
+    const kv = getKvConfig();
+    if (!kv.canRead) {
+        return { configured: false, ok: false, empty: false, data: null };
+    }
+    try {
+        const resp = await fetchWithTimeout(`${kv.url}/get/${encodeURIComponent(key)}`, {
+            headers: { Authorization: `Bearer ${kv.readToken}` }
+        }, 3500);
+        if (!resp.ok) {
+            lastCloudStatus = { backend: 'kv', ok: false, error: `KV HTTP ${resp.status}` };
+            return { configured: true, ok: false, empty: false, data: null };
+        }
+        const json = await resp.json();
+        if (json && json.error) {
+            lastCloudStatus = { backend: 'kv', ok: false, error: String(json.error) };
+            return { configured: true, ok: false, empty: false, data: null };
+        }
+        if (json && json.result !== null && json.result !== undefined) {
+            const parsedKv = parseKvPayload(json.result);
+            if (parsedKv && parsedKv.config) {
+                return { configured: true, ok: true, empty: false, data: parsedKv };
+            }
+            lastCloudStatus = { backend: 'kv', ok: false, error: 'Payload KV tidak valid' };
+            return { configured: true, ok: false, empty: false, data: null };
+        }
+        return { configured: true, ok: true, empty: true, data: null };
+    } catch (e) {
+        lastCloudStatus = { backend: 'kv', ok: false, error: e.message || 'KV read error' };
+        return { configured: true, ok: false, empty: false, data: null };
+    }
+}
+
+async function writeToKV(data, key = KV_DB_KEY) {
+    const kv = getKvConfig();
+    if (!kv.canWrite) {
+        return { backend: 'kv', ok: false, error: 'KV write token kosong' };
+    }
+    try {
+        const cleanData = { ...data };
+        delete cleanData._isDefaultFallback;
+        const kvResp = await fetchWithTimeout(`${kv.url}/set/${encodeURIComponent(key)}`, {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${kv.writeToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(cleanData)
+        }, 3500);
+        let kvJson = null;
+        try {
+            kvJson = await kvResp.json();
+        } catch (e) {}
+        if (!kvResp.ok || (kvJson && kvJson.error)) {
+            const errMsg = (kvJson && kvJson.error) ? String(kvJson.error) : `KV HTTP ${kvResp.status}`;
+            return { backend: 'kv', ok: false, error: errMsg };
+        }
+        return { backend: 'kv', ok: true, error: '' };
+    } catch (e) {
+        return { backend: 'kv', ok: false, error: e.message || 'KV write error' };
+    }
+}
+
 async function readData(forceCloud = false) {
     const now = Date.now();
 
-    // 1. Jika Upstash Redis / Vercel KV dikonfigurasi
-    if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
-        try {
-            const resp = await fetchWithTimeout(`${process.env.KV_REST_API_URL}/get/aiblocker_db`, {
-                headers: { Authorization: `Bearer ${process.env.KV_REST_API_TOKEN}` }
-            }, 2500);
-            const json = await resp.json();
-            if (json && json.result) {
-                const parsedKv = typeof json.result === 'string' ? JSON.parse(json.result) : json.result;
-                if (parsedKv && parsedKv.config) {
-                    cloudHydrated = true;
-                    lastCloudStatus = { backend: 'kv', ok: true, error: '' };
-                    memoryStore = parsedKv;
-                    return memoryStore;
-                }
-            }
-        } catch (e) {
-            lastCloudStatus = { backend: 'kv', ok: false, error: e.message || 'KV read error' };
+    if (isLocalVmMode()) {
+        if (!memoryStore || !localDbLoaded) {
+            loadLocalDbSync();
         }
+        purgeDeletedStudents(memoryStore, Math.floor(now / 1000));
+        lastCloudStatus = { backend: 'local_vm', ok: true, error: '' };
+        return memoryStore;
+    }
+
+    // 1. Jika Upstash Redis / Vercel KV dikonfigurasi
+    const kvRes = await readFromKV();
+    if (kvRes.ok && kvRes.data) {
+        cloudHydrated = true;
+        lastCloudStatus = { backend: 'kv', ok: true, error: '' };
+        memoryStore = kvRes.data;
+        delete memoryStore._isDefaultFallback;
+        purgeDeletedStudents(memoryStore, Math.floor(now / 1000));
+        try {
+            fs.writeFileSync(TMP_DB_PATH, JSON.stringify(memoryStore, null, 2), 'utf8');
+        } catch (e) {}
+        return memoryStore;
     }
 
     // 2. Baca memory / /tmp terlebih dahulu
@@ -619,7 +791,7 @@ async function readData(forceCloud = false) {
     }
 
     // 3. Sinkronkan dari Firebase Cloud Store agar semua container Vercel memiliki state yang sama!
-    if (forceCloud || !memoryStore || memoryStore._isDefaultFallback || (now - lastCloudReadMs) >= 1000) {
+    if (forceCloud || !memoryStore || memoryStore._isDefaultFallback || (kvRes.configured && kvRes.empty) || (now - lastCloudReadMs) >= 1000) {
         lastCloudReadMs = now;
         const fbData = await readFromFirebase();
         if (fbData && fbData.config) {
@@ -694,6 +866,12 @@ async function readData(forceCloud = false) {
             try {
                 fs.writeFileSync(TMP_DB_PATH, JSON.stringify(memoryStore, null, 2), 'utf8');
             } catch (e) {}
+            if (kvRes.configured && kvRes.empty && getKvConfig().canWrite) {
+                const seedRes = await writeToKV(memoryStore);
+                if (seedRes.ok) {
+                    lastCloudStatus = seedRes;
+                }
+            }
         }
     }
 
@@ -712,6 +890,14 @@ async function writeData(data, options = {}) {
     }
     memoryStore = data;
     lastCloudReadMs = Date.now();
+
+    if (isLocalVmMode()) {
+        delete data._isDefaultFallback;
+        cloudHydrated = true;
+        const immediate = Boolean(options && (options.allowFallbackWrite || options.immediate));
+        return scheduleLocalDbFlush(immediate);
+    }
+
     try {
         fs.writeFileSync(TMP_DB_PATH, JSON.stringify(data, null, 2), 'utf8');
     } catch (e) {}
@@ -721,29 +907,22 @@ async function writeData(data, options = {}) {
         return lastCloudStatus;
     }
 
-    let fbWriteRes = await writeToFirebase(data);
-
-    if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
-        try {
-            const kvResp = await fetchWithTimeout(`${process.env.KV_REST_API_URL}/set/aiblocker_db`, {
-                method: 'POST',
-                headers: {
-                    Authorization: `Bearer ${process.env.KV_REST_API_TOKEN}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(JSON.stringify(data))
-            }, 2500);
-            if (kvResp.ok) {
-                lastCloudStatus = { backend: 'kv', ok: true, error: '' };
-                return lastCloudStatus;
-            }
-        } catch (e) {
-            if (!fbWriteRes.ok) {
-                lastCloudStatus = { backend: 'kv', ok: false, error: e.message || 'KV write error' };
-            }
+    const kv = getKvConfig();
+    if (kv.canWrite) {
+        const kvWriteRes = await writeToKV(data);
+        if (kvWriteRes.ok) {
+            lastCloudStatus = kvWriteRes;
+            return lastCloudStatus;
         }
+        const fbFallbackRes = await writeToFirebase(data);
+        if (fbFallbackRes.ok) {
+            return fbFallbackRes;
+        }
+        lastCloudStatus = kvWriteRes;
+        return lastCloudStatus;
     }
-    return fbWriteRes;
+
+    return await writeToFirebase(data);
 }
 
 function nowFormatted() {
@@ -2117,12 +2296,22 @@ module.exports._internals = {
     getDefaultSchema,
     packCloudPayload,
     unpackCloudPayload,
+    getKvConfig,
+    parseKvPayload,
+    readFromKV,
+    writeToKV,
     readData,
     writeData,
     ensureRoomsConfig,
     registerRoomByAdmin,
+    flushLocalDbNow: () => (memoryStore && isLocalVmMode() ? scheduleLocalDbFlush(true) : lastCloudStatus),
     getLastCloudStatus: () => lastCloudStatus,
     resetMemoryStoreForTest: () => {
+        if (localFlushTimer) {
+            clearTimeout(localFlushTimer);
+            localFlushTimer = null;
+        }
+        localDbLoaded = false;
         memoryStore = null;
         lastCloudReadMs = 0;
         cloudHydrated = false;

@@ -2367,6 +2367,7 @@
         }
 
         async function syncStateToFirebaseIfAvailable(configObj, blocklistObj) {
+            if (window.__guardStorageBackend === 'local_vm') return;
             if (window.__firebaseApp && window.__firebaseApp.saveStateToFirestore) {
                 await window.__firebaseApp.saveStateToFirestore({
                     config: configObj || {
@@ -2414,9 +2415,12 @@
                 if (syncDot && syncLbl) {
                     const cs = data.cloud_storage;
                     if (cs && typeof cs === 'object') {
+                        window.__guardStorageBackend = cs.backend || '';
                         if (cs.ok) {
                             syncDot.className = 'status-dot is-accent';
-                            syncLbl.textContent = cs.backend === 'kv' ? 'Cloud Aktif (KV)' : 'Cloud Aktif (Firebase)';
+                            syncLbl.textContent = cs.backend === 'local_vm'
+                                ? 'Server Lokal VM'
+                                : (cs.backend === 'kv' ? 'Cloud Aktif (KV)' : 'Cloud Aktif (Firebase)');
                             syncLbl.removeAttribute('title');
                         } else {
                             syncDot.className = 'status-dot is-warning';

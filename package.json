@@ -4,7 +4,8 @@
   "description": "GuardConsole & GuardAgent — Sistem Pengawasan & Pemblokir AI Ujian Laboratorium (Vercel Serverless + Local Laragon Ready)",
   "private": true,
   "scripts": {
-    "start": "echo 'Use Vercel CLI (npx vercel) or Laragon locally'"
+    "start": "echo 'Use Vercel CLI (npx vercel) or Laragon locally'",
+    "start:vm": "node server-vm.js"
   },
   "engines": {
     "node": ">=18.x"

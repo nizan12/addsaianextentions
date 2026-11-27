@@ -4,3 +4,6 @@ includes/
 storage/
 client-src/
 build.ps1
+.env
+.env.local
+.env.*.local

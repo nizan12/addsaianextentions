@@ -1072,7 +1072,7 @@ namespace AIBlockerGuard
                 Nim = Environment.MachineName,
                 Name = Environment.UserName + " (" + Environment.MachineName + ")",
                 RoomCode = "",
-                ServerUrl = "https://blockai-wheat.vercel.app/api/index.php",
+                ServerUrl = "http://172.19.1.10/api/index.php",
                 AutoStart = true,
                 IsConfigured = false
             };
