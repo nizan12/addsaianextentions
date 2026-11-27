@@ -10,8 +10,17 @@
         "quarantine_extensions": true,
         "kill_processes": true,
         "blocklist_customized": false,
-        "updated_at": "2026-11-10T07:38:59+00:00",
-        "room_blocklists": []
+        "updated_at": "2026-11-17T01:41:20+00:00",
+        "room_blocklists": [],
+        "deleted_rooms": [],
+        "lock_ai": true,
+        "lock_extensions": true,
+        "ide_password_hash": "",
+        "pc_overrides": [],
+        "ide_hosts": [],
+        "admin_email": "",
+        "admin_password_hash": "",
+        "deleted_students": []
     },
     "blocklist": {
         "domains": [
@@ -278,5 +287,28 @@
         ]
     },
     "students": [],
-    "logs": []
+    "logs": [
+        {
+            "id": "log_6afab9bb806b0",
+            "timestamp": "2026-11-16 08:07:23",
+            "nim": "VSCODE_USER",
+            "name": "User (VS Code IDE)",
+            "hostname": "VSCODE-CLIENT",
+            "room_code": "",
+            "type": "PIN_FAILED",
+            "message": "Percobaan PIN gagal di ruangan [].",
+            "severity": "WARNING"
+        },
+        {
+            "id": "log_6afab9bb7de44",
+            "timestamp": "2026-11-16 08:07:23",
+            "nim": "VSCODE_USER",
+            "name": "User (VS Code IDE)",
+            "hostname": "VSCODE-CLIENT",
+            "room_code": "",
+            "type": "PIN_FAILED",
+            "message": "Percobaan PIN gagal di ruangan [].",
+            "severity": "WARNING"
+        }
+    ]
 }

@@ -701,12 +701,19 @@ button {
    ========================================================================== */
 
 .app-shell {
+    position: relative;
     min-height: 100vh;
     display: flex;
     flex-direction: column;
 }
 
 @media (min-width: 1024px) {
+    html,
+    body {
+        height: 100%;
+        overflow: hidden;
+    }
+
     .app-shell {
         flex-direction: row;
         height: 100vh;
@@ -1135,6 +1142,7 @@ button {
    ========================================================================== */
 
 .main-column {
+    position: relative;
     flex: 1;
     min-width: 0;
     display: flex;
@@ -1422,6 +1430,7 @@ button {
 
 /* Workspace Scroll & Main */
 .workspace-scroll {
+    position: relative;
     flex: 1;
     overflow-y: auto;
 }
